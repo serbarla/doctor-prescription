@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | Product | PersonaSanus — prescription generator for doctors |
-| Status | Draft v0.1 — 2026-11-10 |
+| Status | Draft v0.2 — 2026-11-11 |
 | Platforms | Desktop (macOS, Windows) offline-first + universal Web (Chromium) — same experience |
-| Current stack | Dioxus 0.7.1 (`router`, `fullstack`) — `persona-sanus/Cargo.toml` |
-| Backend | SpaceTimeDB self-hosted with Docker (`docker compose`) on our own infrastructure |
+| Current stack | Dioxus 0.7.1 (`router`, `fullstack`) + axum 0.8 + sqlx 0.8 (sqlite) + RustAuth 0.3 — `persona-sanus/Cargo.toml` |
+| Backend | Single-node SQLite + RustAuth identity, self-hosted with Docker Compose on our own infrastructure (`docker-compose.yml`) |
 | Market | Ecuador — Spanish (`es-EC`), Ley Orgánica de Protección de Datos Personales + applicable health regulations (validate with legal counsel) |
 | v1 scope | Multi-user clinic: doctors + nursing/secretary staff, shared patients and templates; prescriptions only |
 | Output | A4 PDF via Chromium print-to-PDF — download or direct print; QR verification |
@@ -16,7 +16,7 @@
 
 Small/medium clinics in Ecuador produce prescriptions on paper, in Word, or from loose templates: inconsistent format, no synced history between consultation and front desk, and no way to verify authenticity.
 
-**Solution:** a desktop+web application where each doctor works with their own templates (logo, letterhead, signature, layout) and dynamic variables, edits the prescription in a rich-text editor with a true A4 preview, issues a PDF ready to download/print with a verifiable QR code, and keeps everything synced in SpaceTimeDB — including offline work on the desktop.
+**Solution:** a desktop+web application where each doctor works with their own templates (logo, letterhead, signature, layout) and dynamic variables, edits the prescription in a rich-text editor with a true A4 preview, issues a PDF ready to download/print with a verifiable QR code, and keeps everything in a single SQLite backend — with the desktop continuing to work offline (local cache + outbox) and syncing on reconnect.
 
 ## 2. Goals / non-goals
 
@@ -40,12 +40,12 @@ Small/medium clinics in Ecuador produce prescriptions on paper, in Word, or from
 | **Secretary** | Manage patients, reprint/download issued prescriptions, scheduling, cannot edit signed clinical content. |
 | **Public verifier** | No account: scans the QR → `#/verify/:code` page confirming authenticity plus minimal data (doctor, date, prescription number). |
 
-Permissions are enforced in SpaceTimeDB reducers (never client-side only). Signed/published prescriptions are immutable: any correction creates a new version that references the previous one.
+Permissions are enforced server-side in the authorized service layer (never client-side only). Signed/published prescriptions are immutable: any correction creates a new version that references the previous one.
 
 ## 4. Main flows
 
 1. **Issue prescription (online):** Login → search/create patient → choose template → rich-text editor (variables pre-loaded) → complete medications → A4 preview → *Sign and issue* → PDF generated (Chromium print-to-PDF) → Download / Print / Share options.
-2. **Issue prescription (offline, desktop):** same flow against the local cache; the prescription queues in an outbox with `pending_sync` status; on reconnect, reducers upload it with an idempotent `client_id`. Conflicts: server wins for signed data; only an in-progress draft warns of a conflict and requires a choice.
+2. **Issue prescription (offline, desktop):** same flow against the local cache; the prescription queues in an outbox with `pending_sync` status; on reconnect, server functions upload it with an idempotent `client_id`. Conflicts: server wins for signed data; only an in-progress draft warns of a conflict and requires a choice.
 3. **Personal template:** Doctor uploads logo/stamp → defines letterhead/footer (rich-text) → saves template → insertable variables (`{{patient.name}}`, `{{doctor.name}}`, `{{date}}`, `{{prescription.number}}`) → A4 preview → publish (new immutable version).
 4. **Verification:** patient/printer scans the QR → web opens the verification page → sees "Receta auténtica — issued by Dr. …, date …, No. …" plus the hash. No PHI.
 5. **Re-issue / download history:** search history → *Download PDF* (regenerates from the final versioned document, identical to the issued one). Only ≤ 1 month lives in the desktop local cache; the rest downloads on demand (current product decision).
@@ -63,7 +63,7 @@ Permissions are enforced in SpaceTimeDB reducers (never client-side only). Signe
 - FR-011: Each medication: name (free text), dose, route, frequency, duration, quantity, notes (all free text, no validation against an official database).
 - FR-012: Per-medication "Explain with LLM" link (configurable via `LLM_URL_TEMPLATE`; default: generic chat). Opens with the drug name only; never with PHI. The app never sends data to any LLM by itself.
 - FR-013: States: `draft → signed(published) → superseded/voided`. Signing locks editing. Voiding requires a reason and leaves an audit trail.
-- FR-014: Sequential prescription number per clinic, unique and gap-free in one network, assigned by a reducer at signing time.
+- FR-014: Sequential prescription number per clinic, unique and gap-free in one network, assigned server-side in a transaction at signing time.
 
 ### 5.3 Templates and rich-text editor
 - FR-020: Per-doctor templates (and clinic master templates): letterhead (logo, doctor/clinic details, colors) + body + footer (signature/stamp, QR, contact). Images uploaded to asset storage referenced by `asset_id`.
@@ -81,7 +81,7 @@ Permissions are enforced in SpaceTimeDB reducers (never client-side only). Signe
 
 ### 5.5 Sync, offline and local retention (desktop)
 - FR-040: Offline-first desktop: patients, published templates, and prescriptions (drafts + signed) are accessible offline after first login. Outbound operation queue with retries and visible status.
-- FR-041: Real-time sync via SpaceTimeDB subscriptions (online mode); on reconnect, drain the outbox with idempotent reducers (`client_id`).
+- FR-041: Real-time sync via server push/subscriptions (online mode); on reconnect, drain the outbox with idempotent server functions (`client_id`).
 - FR-042: **Local retention:** only prescriptions from the last **30 days** are kept locally (configurable calendar month). On expiry they are evicted from the local cache (not deleted from the server); on-demand re-download with a *Download* button.
 - FR-043: UX indicators: online / offline / syncing / pending uploads (count). Never hide data loss: if a signed operation could not be uploaded, the PDF carries a `PENDIENTE DE SINCRONIZACIÓN` marker and the QR activates only after sync.
 
@@ -90,7 +90,7 @@ Permissions are enforced in SpaceTimeDB reducers (never client-side only). Signe
 
 ## 6. Data model (SQLite)
 
-Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`):
+Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`); RustAuth owns the identity schema (email/password users, sessions) and `users.auth_user_id` links the app profile to the identity:
 
 | Table | Key fields |
 |---|---|
@@ -114,11 +114,11 @@ Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`):
 
 | Layer | Decision |
 |---|---|
-| Client | Dioxus 0.7.1, single codebase for web + desktop (features `web` / `desktop`). Routes: `/`, `/patients`, `/prescriptions/:id`, `/templates`, `/verify/:code`. |
+| Client | Dioxus 0.7.1, single codebase for web + desktop (features `web` / `desktop`). Implemented routes: `/`, `/login`, `/dashboard` (session-guarded). Target v1 routes: `/patients*`, `/prescriptions*` (incl. `:id/preview`), `/templates*`, `/settings*`, `/audit`, `/verify/:code`. |
 | State | Signals/context for session, role, sync status; `use_resource`/`use_server_future` for initial loads. Identical UI on desktop/web. |
 | Editor | Content-editable component (embedded Tiptap/ProseMirror via JS interop) emitting JSON; imported HTML is sanitized; persisted as `doc_json`. |
 | PDF | Chromium print-to-PDF from the 1:1 A4 print view; single shared HTML/CSS source for editor and printed output. Fallback: system print dialog. |
-| Backend | SQLite (auth-server, sqlx-sqlite, `auth.db` in the `auth-data` volume; Caddy/Nginx with TLS + encrypted daily backups of the SQLite file). RustAuth identity + `users` table. |
+| Backend | Single fullstack process (axum + Dioxus serve) with embedded SQLite via sqlx (`app.db` locally; `/data/app.db` in the `persona-data` volume under Docker). RustAuth identity (email/password, sessions) mounted same-origin at `/api/auth/*` + `users` table. Planned ops: Caddy/Nginx with TLS + encrypted daily backups of the SQLite file. |
 | Sync | Local cache (SQLite) + outbox; web always online-first (with a minimal queue if the network drops). |
 | Assets | Images (logos/stamps) in private object storage; short-lived signed URLs. |
 | LLM link | `clinics.llm_url_template`, e.g. `https://chat.openai.com/?q={med}` — filled only with `med_name`, explicit user click. |
@@ -152,10 +152,12 @@ Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`):
 
 ## 11. v1 roadmap
 
-- **M0 (foundation):** auth + roles, patient CRUD, SpaceTimeDB in Docker, CRUD reducers.
+- **M0 (foundation):** auth + roles, patient CRUD, SQLite service layer, Docker Compose deployment.
 - **M1 (editor + PDF):** templates + JSON editor + variables + A4 preview + Chromium PDF + filename + QR.
 - **M2 (offline):** desktop cache/outbox, 30-day retention, on-demand re-download, sync indicators.
 - **M3 (hardening):** audit, MFA, backups, verification rate limiting, QA with real A4 printers.
+
+M0 progress (2026-11-11): RustAuth sign-up/sign-in/sign-out with `POST /api/auth/*`, the `/login` page and session-guarded `/dashboard`, and the Docker Compose deployment (app container, `persona-data` volume, `/health` healthcheck) are implemented. Roles and patient CRUD remain.
 
 ## 12. Acceptance criteria (v1)
 
@@ -169,11 +171,11 @@ Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`):
 
 ## 13. Risks and open decisions
 
-- Dioxus 0.7 integration (CSS/JS interop + Rust SpaceTimeDB SDK + desktop WebView) is non-trivial — mitigate with an editor spike before M1.
+- Dioxus 0.7 integration (rich-text editor CSS/JS interop + desktop WebView) and the cache/outbox sync layer are non-trivial — mitigate with an editor spike before M1.
 - "What you see is the PDF" fidelity: any editor↔Chromium mismatch is fixed in the print HTML/CSS, never with a second template.
 - Free-text medication errors (spelling, dose): without an official database there is clinical risk — visible disclaimer and mandatory doctor verification; Phase 2: local catalog / CIMA-like database.
-- SpaceTimeDB in Docker on our own infrastructure: backups, TLS, and updates become our responsibility (runbook required).
+- Self-hosted Docker deployment (fullstack server + SQLite) on our own infrastructure: backups, TLS, and updates become our responsibility (runbook required).
 - Confirm with Ecuadorian counsel: prescription/audit retention, formal legal-validity requirements for the PDF/QR, and MSP/ACESS requirements for clinics.
 
 ---
-*Note: the repository already contains the Dioxus + router + fullstack base — this PRD is implemented on top of it, not as a new project.*
+*Note: the repository already contains the Dioxus + router + fullstack base with working RustAuth authentication (sign-up/sign-in, `/login`, session-guarded `/dashboard`) and a Docker Compose deployment — this PRD is implemented on top of it, not as a new project.*

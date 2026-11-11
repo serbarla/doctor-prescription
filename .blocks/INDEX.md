@@ -7,3 +7,5 @@ BLOCKS. Scripts in this repo are reusable blocks in .blocks/. Rules:
 6. Safe to re-run: idempotent, no prompts, cleans up after itself.
 7. Header first: name, summary, params, effects, example. caveman-blocks lint checks it.
 8. Compose: call existing blocks with caveman-blocks run instead of copying their code.
+
+json-peek     --path <path> [--depth 2]         Shape of a JSON or JSONL file: keys, row count, one sample.…

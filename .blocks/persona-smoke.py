@@ -7,8 +7,8 @@
 # matches = ['dx build --release --fullstack', 'cargo (check|clippy|fmt)']
 #
 # [returns]
+# doc = "checks merges static/build stages (fmt, check, clippy, build, health) with persona-probe checks; on failure exits non-zero with error plus partial checks. Spawning the throwaway server needs a machine where a child process can bind a local port."
 # keys = ["ok", "checks", "port"]
-# doc = "checks merges static/build stages (fmt, check, clippy, build, health) with persona-probe checks; on failure exits non-zero with error plus partial checks"
 #
 # [params]
 # dir = { type = "path", default = "persona-sanus", help = "app directory holding Cargo.toml and the release server binary" }

@@ -19,6 +19,9 @@
 # [provenance]
 # created = "2026-11-11"
 # source = "promoted: session verification flow"
+#
+# [stamp]
+# verified = "5912d0424fef"
 # ///
 """Verify the persona-sanus compose stack end to end and print one JSON verdict."""
 import argparse

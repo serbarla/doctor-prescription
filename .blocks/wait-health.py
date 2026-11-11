@@ -19,6 +19,9 @@
 # [provenance]
 # created = "2026-11-11"
 # source = "promoted: session verification polling"
+#
+# [stamp]
+# verified = "cf59c4e8dd46"
 # ///
 """Poll one URL until it returns the expected HTTP status; print a small JSON verdict."""
 import argparse

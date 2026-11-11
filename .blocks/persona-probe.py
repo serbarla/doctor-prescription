@@ -20,6 +20,9 @@
 # [provenance]
 # created = "2026-11-11"
 # source = "promoted: session verification flow"
+#
+# [stamp]
+# verified = "62d9ee212589"
 # ///
 """Probe one running persona-sanus server and print a small JSON verdict."""
 import argparse
@@ -71,12 +74,13 @@ def http_post(base, path, jar, payload):
 
 
 def get_json(base, path, jar):
-    """GET a JSON endpoint; return (status, parsed body or {})."""
+    """GET a JSON endpoint; return (status, parsed dict or {}) — null sessions become {}."""
     status, raw = http_get(base, path, jar)
     try:
-        return status, json.loads(raw or b"null")
+        parsed = json.loads(raw or b"null")
     except ValueError:
         return status, {}
+    return status, parsed if isinstance(parsed, dict) else {}
 
 
 def probe(base, email, password, name, flow):

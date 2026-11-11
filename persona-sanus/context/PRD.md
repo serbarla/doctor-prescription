@@ -88,13 +88,13 @@ Permissions are enforced in SpaceTimeDB reducers (never client-side only). Signe
 ### 5.6 Public verification
 - FR-050: Public endpoint without authentication: code → status (valid / voided / superseded / not found) + doctor, date, prescription number (no PHI). Per-IP rate limit + verification logging (audit, without storing raw IPs beyond what the law allows).
 
-## 6. Data model (SpaceTimeDB)
+## 6. Data model (SQLite)
 
 Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`):
 
 | Table | Key fields |
 |---|---|
-| `users` | `display_name`, `role`, `status`, `spacetime_identity` |
+| `users` | `display_name`, `role`, `status`, `auth_user_id` |
 | `doctors` | `user_id`, `specialty`, `license_no`, `signature_asset_id`, `phone`, `email` |
 | `clinics` | `name`, `address`, `phone`, `logo_asset_id`, `timezone`, `llm_url_template`, `retention_days=30` |
 | `clinic_members` | `clinic_id`, `user_id`, `role` |
@@ -106,9 +106,9 @@ Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`):
 | `verification_codes` | `prescription_id`, `code_hash`, `status`, `created_at` |
 | `audit_log` | `actor_id`, `action`, `entity`, `entity_id`, `metadata_json`, `at` |
 
-**Reducers (authorized mutations):** `register_user`, `create_patient`, `update_patient`, `create_template`, `publish_template_version`, `create_prescription(draft)`, `upsert_prescription_item`, `sign_prescription`, `void_prescription`, `create_verification_code`, `request_pdf_regeneration`, `evict_local_cache_row` (client-only), plus transactional `get_rx_number` at signing time.
+**Mutations (authorized service functions):** `register_user`, `create_patient`, `update_patient`, `create_template`, `publish_template_version`, `create_prescription(draft)`, `upsert_prescription_item`, `sign_prescription`, `void_prescription`, `create_verification_code`, `request_pdf_regeneration`, `evict_local_cache_row` (client-only), plus transactional `get_rx_number` at signing time.
 
-**Reads:** subscriptions scoped by `clinic_id`/`doctor_id`/`patient_id` with role filters; PHI only flows to authorized roles. Sensitive-read audit: log access to patients/prescriptions (who/when/what) — a healthcare traceability requirement.
+**Reads:** queries scoped by `clinic_id`/`doctor_id`/`patient_id` with role filters; PHI only flows to authorized roles. Sensitive-read audit: log access to patients/prescriptions (who/when/what) — a healthcare traceability requirement.
 
 ## 7. Technical architecture
 
@@ -118,18 +118,18 @@ Tables (all with standard `id`, `created_at`, `updated_at`, `created_by`):
 | State | Signals/context for session, role, sync status; `use_resource`/`use_server_future` for initial loads. Identical UI on desktop/web. |
 | Editor | Content-editable component (embedded Tiptap/ProseMirror via JS interop) emitting JSON; imported HTML is sanitized; persisted as `doc_json`. |
 | PDF | Chromium print-to-PDF from the 1:1 A4 print view; single shared HTML/CSS source for editor and printed output. Fallback: system print dialog. |
-| Backend | SpaceTimeDB in Docker (compose: `spacetimedb` + Caddy/Nginx with TLS + persistent volume + encrypted daily backups). SpaceTimeDB identity + `users` table. |
-| Sync | Rust SpaceTimeDB SDK on desktop; local cache (SQLite) + outbox; web always online-first (with a minimal queue if the network drops). |
+| Backend | SQLite (auth-server, sqlx-sqlite, `auth.db` in the `auth-data` volume; Caddy/Nginx with TLS + encrypted daily backups of the SQLite file). RustAuth identity + `users` table. |
+| Sync | Local cache (SQLite) + outbox; web always online-first (with a minimal queue if the network drops). |
 | Assets | Images (logos/stamps) in private object storage; short-lived signed URLs. |
 | LLM link | `clinics.llm_url_template`, e.g. `https://chat.openai.com/?q={med}` — filled only with `med_name`, explicit user click. |
 
-> Note: SpaceTimeDB already syncs over websocket subscriptions; desktop "offline-first" is built on top (cache + outbox + idempotency), not native to SpaceTimeDB — this is the main implementation risk.
+> Note: SQLite alone does not sync — desktop "offline-first" is built on top (cache + outbox + idempotency), which is the main implementation risk.
 
 ## 8. Non-functional requirements
 
 - **Ecuador locale/format:** 100% `es-EC` UI; `DD-MM-AAAA` dates in filenames and UI (`es-EC`), 24-hour time, currency N/A in v1. The 10-digit cédula is the preferred identifier.
 - **Performance:** create/edit a prescription < 2 s on the national network; PDF generated < 3 s; offline-first desktop is immediate (no network spinner to view recent history).
-- **Availability:** basic HA SpaceTimeDB on a Docker host (restart policies, healthchecks); RPO ≤ 24 h (daily backup), RTO ≤ 4 h in v1 (no critical medical SLA).
+- **Availability:** SQLite on a Docker host (restart policies, healthchecks); RPO ≤ 24 h (daily file backup), RTO ≤ 4 h in v1 (no critical medical SLA).
 - **Accessibility:** AA contrast, keyboard navigation in the editor and PDF viewer, visible focus.
 - **Compatibility:** macOS 13+, Windows 10/11 (WebView2), recent Chromium browsers (Chrome/Edge). Standard A4 printers; detect and warn on non-A4 paper.
 - **Traceability:** audit log with a minimum legal retention (define with counsel — initial suggestion 5 years, to confirm).

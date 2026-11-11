@@ -2,12 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Source | `context/PRD.md` (Draft v0.3 — 2026-11-11) §5.8, §7–§9, `context/database-design.md`, `context/sitemap.md` |
+| Source | `context/PRD.md` (Draft v0.7 — 2026-11-11) §5.4, §5.8, §7–§9, `context/database-design.md`, `context/sitemap.md` |
 | Baseline | Working tree 2026-11-11 — M0 auth implemented on the Dioxus fullstack base |
-| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 |
+| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `printpdf` 0.12 planned for M1 (not yet a dependency in `Cargo.toml`) |
 | Topology | One fullstack node: server binary + wasm bundle; one SQLite file on local disk |
 | Datastore | `app.db` locally · `/data/app.db` in Docker (`persona-data` volume) |
-| Public surface | `:8080` — Dioxus pages, `/api/auth/*`, `/health`; `⬜ /verify/:code` |
+| Public surface | `:8080` — Dioxus pages, `/api/auth/*`, `/health`; `⬜ /verify/:code`, `⬜ /api/prescriptions/:id/pdf` |
 | Build | `dx build --release --fullstack` → `target/dx/persona-sanus/release/web/{server,public}` |
 | Status key | ✅ Implemented · 🟡 Partial · ⬜ Planned |
 
@@ -24,7 +24,7 @@ The server process is the unit of deployment. There is no separate API service, 
 | Session cookie, SHA-256 token storage, 30-day expiry | ✅ | `src/auth_server.rs` |
 | SQLite pool + embedded migrations applied at boot | ✅ | `src/db.rs` |
 | Auth schema (`users`, `sessions`) | ✅ | `migrations/20261111000000_create_auth` |
-| App schema (`profiles`, `devices`, `assets`, clinical tables, `audit_log`, billing) | ⬜ | DB §5; no migration yet |
+| App schema (`profiles`, `devices`, `assets`, clinical tables, `audit_log`; billing is v1.1) | ⬜ | DB §5; no migration yet |
 | Roles, clinic membership, server-side authorization | ⬜ | PRD §3, DB §2 |
 | Patients, templates, prescriptions, items, verification | ⬜ | PRD §5.1–§5.6 |
 | A4 PDF + QR | ⬜ | PRD §5.4 |
@@ -47,13 +47,13 @@ flowchart LR
         AUTH["/api/auth/*<br/>Argon2 · opaque sessions"]
         HEALTH["/health"]
         SVC["Authorized service layer<br/>⬜ M0"]
-        JOBS["In-process scheduler<br/>⬜ M3/M4"]
+        JOBS["In-process scheduler<br/>⬜ M3"]
         POOL["Diesel r2d2 pool<br/>max_size = 8"]
     end
 
     DB[("SQLite<br/>app.db")]
-    OBJ[["MinIO private bucket<br/>images · 15-min signed URLs<br/>⬜ M1/M4"]]
-    PAY["PayPhone API Sale<br/>⬜ M4"]
+    OBJ[["MinIO private bucket<br/>images · 15-min signed URLs<br/>⬜ M1"]]
+    PAY["PayPhone Tokenization<br/>⬜ v1.1"]
 
     WEB -->|HTTPS| ROUTER
     DESK -->|HTTPS| ROUTER
@@ -75,16 +75,18 @@ flowchart LR
 | Feature | Pulls in | Produces | Used by |
 |---|---|---|---|
 | `default = ["web", "server"]` | both below | fullstack dev/prod build | `dx serve`, Docker |
-| `web` | `dioxus/web` | wasm client | browser |
-| `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`) | native server binary | node |
-| `desktop` | `dioxus/desktop` | native WebView app | macOS/Windows |
+| `web` | `dioxus/web`, `dioxus-motion` (`web`) | wasm client | browser |
+| `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `anyhow`; ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native server binary | node |
+| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`); ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native WebView app | macOS/Windows |
 | `mobile` | `dioxus/mobile` | declared, not v1 | — |
 
 `reqwest` and `serde_json` are unconditional and compile on both sides.
 
 Rules:
 
-- Server modules are gated in `src/main.rs`: `auth_server`, `db`, `schema`, and `server` only compile under `feature = "server"`. The non-server `main` launches `dioxus::launch(App)`; the server `main` is `#[tokio::main]`.
+- Server modules are gated in `src/main.rs`: `auth_server`, `db`, `schema`, and `server` compile under `feature = "server"` today. ⬜ M1 adds `pdf` (`server` and `desktop`) and `pdf_server` (`server`). The non-server `main` launches `dioxus::launch(App)`; the server `main` is `#[tokio::main]`.
+- When the renderer lands (⬜ M1), `printpdf` never enters the `web` feature: the wasm bundle must not carry a PDF engine. `default-features = false` drops printpdf's `html` layout (azul CSS/XML stack); `text_layout` is still required because font embedding goes through it, and `jpeg`/`png` add the image decoders used for logos, library images, and the QR bitmap. Never call `PdfDocument::from_html`.
+- `dioxus-motion` 0.4 ([upstream](https://github.com/wheregmis/dioxus-motion), MIT) is the typed, interruptible animation crate for Dioxus UI (springs, tweens, keyframes, presence, route transitions). It is an optional dependency that gets exactly one platform feature per build: `web` on wasm, `desktop` on the WebView app, `dioxus` alone for SSR. Its default `web` feature would drag `wasm-bindgen`/`web-sys` into the native server binary, hence `default-features = false`. Use the crates.io release, not the repository `main` branch, which carries unreleased breaking API changes.
 - Diesel, Argon2, and axum types must never appear in shared signatures. `SessionUser` is a plain struct in `src/auth.rs` precisely so the client can hold session state without pulling in the server stack.
 - `libsqlite3-sys` uses `bundled`: SQLite is compiled with the crate, so the runtime image needs no system `libsqlite3`.
 - `uuid` `v7` supplies sortable entity ids; `v4` supplies session-token entropy (DB §1).
@@ -98,6 +100,8 @@ Rules:
 | `src/auth.rs` | client | auth HTTP calls, `SessionUser`, response parsing | import server modules |
 | `src/auth_server.rs` | server | handlers, validation, Argon2, tokens, cookies, `with_conn` | build UI or HTML |
 | `src/db.rs` | server | pool, embedded migrations, SQL, models | emit HTTP responses |
+| `src/pdf.rs` (⬜ M1) | server + desktop | `printpdf` renderer: layout model → page ops, fonts, images, QR bitmap, A4 page boxes; pure, deterministic, no I/O | SQL, HTTP, UI, `from_html` |
+| `src/pdf_server.rs` (⬜ M1) | server | `GET /api/prescriptions/:id/pdf`, authorization, `Content-Disposition` filename, load pinned version + variables | layout or drawing logic |
 | `src/schema.rs` | server | Diesel `table!` definitions | drift from migrations |
 | `src/server.rs` | server | axum composition, `AppState`, `/health` | query the database directly |
 | `migrations/` | server | schema history | be edited after release |
@@ -108,12 +112,12 @@ Planned server components keep the same split rather than new top-level patterns
 
 | Component | Responsibility | Gate |
 |---|---|---|
-| Authorized service layer | mutations/reads with session, role, clinic membership, entitlement | every app write |
-| Sync API | idempotent outbox drain, cache reconciliation, push channel | `can_sync` |
-| Billing | PayPhone client, callback verification, entitlement transitions | administrator |
-| Jobs | trial, renewal, polling, dunning, retention, session purge | server-only, single node |
-| Assets | image library (5 active/past_due, 1 trialing/locked, 0 canceled, 10 MiB each), branding assets excluded, validation, quota, 15-min signed URLs | clinic state + Administrator/Doctor |
-| Print view | one HTML/CSS A4 source for editor and PDF | shared UI |
+| Authorized service layer | mutations/reads with session, role, clinic membership (entitlement is v1.1) | every app write |
+| Sync API | idempotent outbox drain, cache reconciliation, push channel | v1: none; v1.1: `can_sync` |
+| Billing (v1.1) | PayPhone tokenization client (`ctoken` capture, `/api/transaction/web` charges), consent, entitlement transitions | administrator |
+| Jobs | v1: retention (on in v1, D-12), session purge, asset cleanup; v1.1: trial, renewal, polling, dunning | server-only, single node |
+| Assets | image library 1 per clinic in v1 (5/1/0 in v1.1), logo excluded, validation, quota, 15-min signed URLs | role + quota (v1); clinic state (v1.1) |
+| PDF renderer | `printpdf` A4 rendering from the pinned `doc_json` + variables, shared by server and desktop | server + desktop |
 
 ## 4. Startup and request lifecycle
 
@@ -189,12 +193,12 @@ Connection rules:
 1. **Foreign keys.** SQLite requires `PRAGMA foreign_keys = ON` per connection. It is currently executed inside `auth_server::with_conn` on every checkout. Centralize it in an r2d2 connection customizer so no future query path can silently bypass it; the pool reuses connections, so a missed checkout is invisible until orphan rows appear.
 2. **Concurrency.** No `journal_mode`, `busy_timeout`, or `synchronous` pragma is set. With a pool of 8 plus scheduled jobs, SQLite's default rollback journal can return `SQLITE_BUSY` and block readers during writes. Set WAL, a busy timeout, and a retry policy for write transactions before M2.
 3. **Blocking work.** Diesel calls and Argon2 run in `spawn_blocking`. Never hold a pooled connection or a Dioxus signal lock across `.await`; `clippy.toml` already rejects the signal-lock case.
-4. **Transactions.** Multi-row invariants belong in one transaction: sign-up (user + session), signing (counter, prescription, items, verification code, audit), payment resolution (event + transaction + subscription), and retention trim. Only sign-up is implemented today.
-5. **Migrations.** Append-only and embedded. Planned order: `create_auth` ✅ → app schema ⬜ → billing ⬜ (DB §8). Update `src/schema.rs` in the same change as each migration; startup applies pending migrations before serving.
+4. **Transactions.** Multi-row invariants belong in one transaction: sign-up (user + session), signing (rx block, prescription, items, verification code, audit), payment resolution (event + transaction + subscription, v1.1), and retention trim. Only sign-up is implemented today.
+5. **Migrations.** Append-only and embedded. Planned order: `create_auth` ✅ → app schema ⬜ → billing ⬜ v1.1 (DB §8). Update `src/schema.rs` in the same change as each migration; startup applies pending migrations before serving.
 6. **Scoping.** Clinic and role filters belong in the service layer, never in client-supplied query parameters. The dashboard and route guards are not an authorization boundary.
 7. **Assets.** Uploads reserve a `pending` row and count it against the v1 quota (1 library image per clinic) in a `BEGIN IMMEDIATE` transaction, then upload and mark it `ready`; failures delete the row and object. Deletion checks `template_version_assets` and retained prescriptions before touching the object. The 5/1/0 state quota and the cancellation purge are v1.1 (PRD §5.8, D-05).
 
-Documentation drift: DB §9 attributes the foreign-key pragma to `src/db.rs`; the implemented location is `auth_server::with_conn`. This document follows the code; centralizing the pragma removes the ambiguity.
+The foreign-key pragma lives in `auth_server::with_conn`; `database-design.md` matches that. Centralize it in an r2d2 connection customizer before app-table queries land, so no future path can bypass it.
 
 ## 7. Client and route shell
 
@@ -230,12 +234,12 @@ Decision: use Dioxus server functions for application data and authorization; th
 
 | Domain | Server contract | Stores | Gate | Status | PRD |
 |---|---|---|---|---|---|
-| Profile and membership | session → profile, role, clinic membership | `users`, `sessions`, `profiles`, `clinic_members` | session | 🟡 identity only | §3, DB §2 |
+| Profile and membership | session → profile, role, clinic membership, doctor details | `users`, `sessions`, `profiles`, `clinic_members`, `doctors` | session | 🟡 identity only | §3, DB §2 |
 | Patients | CRUD, cédula dedupe, soft delete | `patients` | role + clinic | ⬜ | FR-001–003 |
 | Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | ⬜ | FR-020–024 |
 | Images | upload/delete, v1 quota (1), 15-min signed URLs, template pinning, placeholder rendering (v1.1) | `assets`, `template_version_assets` | role + quota | ⬜ | FR-080–085 |
-| Prescriptions | draft→signed→superseded/voided, ordered items, block-allocated number | `prescriptions`, `prescription_items`, `rx_counters`, `rx_blocks` | doctor signs; nursing drafts; secretary reads | ⬜ | FR-010–014 |
-| Verification | hashed code → public status, no PHI | `verification_codes` | public, rate limited | ⬜ | FR-050 |
+| Prescriptions | draft→signed→superseded/voided, ordered items, block-allocated number | `prescriptions`, `prescription_items`, `rx_counters`, `rx_blocks` | doctor signs; nursing drafts; secretary reads/reprints; administrator reads clinic-wide | ⬜ | FR-010–014 |
+| Verification | opaque code → public status, no PHI | `verification_codes` | public, rate limited | ⬜ | FR-050 |
 | Audit | append-only actor/action/entity and sensitive reads | `audit_log` | administrator read | ⬜ | PRD §6 |
 | Sync | idempotent mutations, block reconciliation, push | client cache + outbox | v1: none; v1.1: `can_sync` | ⬜ | FR-040–043 |
 | Billing (v1.1) | plan, trial, subscription, transactions, events | billing tables (not in v1) | administrator | ⬜ v1.1 | FR-060–070 |
@@ -264,7 +268,7 @@ Required server behavior:
 - Every outbox row carries the client-generated id. A replay must return the existing record, not duplicate it.
 - `prescriptions.client_id` is the only modeled idempotency key (DB §5). Patient create and template publish have no equivalent column, so a replay duplicates rows; an update is naturally idempotent when it carries the full state. Add a `client_id` (or request id) before M2, or make the server derive a stable key from the outbox payload.
 - Drain oldest-first with `attempts`, `next_retry_at`, and a visible failure state. Never discard the outbox; a rejected row stays visible until resolved.
-- Offline signing consumes the next number in the device's active `rx_blocks` row; on sync the server validates block ownership and non-reuse before accepting the write. Burned block tails remain gaps (D-02).
+- Offline signing consumes the next number in the device's active `rx_blocks` row; on sync the server validates block ownership and non-reuse before accepting the write. A web client registers a `devices` row with `platform='web'` and allocates a block the same way. Burned block tails remain gaps (D-02).
 - v1 has no entitlement gate. v1.1 re-evaluates `can_sync` on every mutation; reads of retained data stay allowed, and `locked`/`canceled` reject writes with `402 sync_locked`.
 - Server wins for signed data. Only an in-progress draft prompts for a conflict choice.
 - Cache eviction applies only to server-backed rows older than `clinics.retention_days` (default 30). Rows with no server copy are never evicted.
@@ -329,32 +333,35 @@ Rules:
 
 Pipeline:
 
-1. Load the pinned `template_versions.doc_json` plus the variable set (patient, doctor, clinic, prescription, medications).
-2. Render one HTML/CSS document at 210×297 mm using the same markup and styles as the A4 preview.
-3. Print to PDF from the platform print dialog (`window.print()` in Chromium/WebView → *Save as PDF*); no server renderer exists (D-01).
-4. Add the QR encoding `https://<domain>/verify/{code}`, the readable verification code, prescription number, and issue date/time. No PHI in the QR or URL.
-5. Name the file `{PatientName}-receta-{DD-MM-AAAA}-{DoctorName}.pdf`, sanitized and capped at 120 characters (FR-032).
-6. Regeneration uses the pinned template version and items, never the current template, so a reprint reproduces the issued content (client-rendered, not byte-identical).
+1. `GET /api/prescriptions/:id/pdf`: authorize the session, role, and clinic membership. `draft` is rejected (`422`); signed, superseded, and voided documents render. Provisional (`pending_sync`) documents exist only in the desktop cache (no server row), so the route never serves them; the desktop renders them locally.
+2. Load the pinned `template_versions.doc_json`, the pinned `template_version_assets`, the variable set (patient, doctor, clinic, prescription, medications), and the stored plaintext `verification_codes.code` (reprints reuse it, so the issued QR stays valid). Never the current template (FR-024).
+3. `pdf::render` builds a `PdfDocument` and one `PdfPage` per A4 sheet (210×297 mm) with explicit ops: embedded TTF text runs, rules, image XObjects, and the QR bitmap. Page breaks, repeated header/footer, and margins are computed by the renderer — there is no CSS engine.
+4. The QR encodes `https://<domain>/verify/{code}` and is embedded as a PNG XObject; the payload carries no PHI (FR-033). A provisional document draws a placeholder frame plus `PENDIENTE DE SINCRONIZACIÓN` and no scannable code.
+5. `save(&PdfSaveOptions::default(), &mut warnings)` returns the bytes. Web: the handler sends `application/pdf` with `Content-Disposition: attachment; filename="{Patient}-receta-{DD-MM-AAAA}-{Doctor}.pdf"` (FR-032). Desktop: the same `pdf::render` call runs in-process and writes the file locally — the route is not needed offline.
+6. Regeneration uses the pinned version and the same renderer build, so a reprint reproduces the issued content (not guaranteed byte-identical across renderer upgrades).
 
 Constraints:
 
-- One HTML/CSS source for editor and print. Fix fidelity in the print stylesheet, never with a second template (PRD §13).
-- The runtime image (`debian:bookworm-slim`) has no Chromium and needs none: PDF generation is client-side (D-01). `request_pdf_regeneration` returns the pinned document for the client to print; it never renders a PDF.
+- One layout model (`doc_json`) for editor, preview, and PDF. The preview is the browser projection; the PDF render is authoritative. Fix fidelity in `src/pdf.rs`, never with a second template.
+- `src/pdf.rs` is pure: no SQL, no filesystem, no clock beyond the passed issue timestamp. Input is the layout model + pinned asset bytes + variables, so desktop and server produce the same document and the golden fixture stays stable.
+- The runtime image (`debian:bookworm-slim`) gets no Chromium and no host fonts: the renderer embeds TTF bytes (`include_bytes!` or bundled assets), so output does not depend on the host's font set.
+- PDFs are never stored. There is no `pdf_blob` column; the route streams a fresh render from immutable data.
+- Rendering is CPU-bound: call it inside `spawn_blocking`, never on the reactor.
 - The public verification page will be unauthenticated and rate-limited. Its response is limited to status, doctor, date, and prescription number; "not found" means no matching `code_hash` row.
 
 ## 12. Billing and entitlement (v1.1 — not in v1)
 
 **Not implemented in v1.** v1 ships with no billing tables, entitlement gate, or scheduler; retention dates live on `clinics` (`server_retention_until`, `data_grace_ends_at`). The design below is the v1.1 plan (PRD D-04).
 
-- One subscription per clinic, created with the clinic. Trial and free-retention boundaries are set at creation and are not user-editable (FR-061).
+- One subscription per clinic, created with the clinic. The trial is set at creation; retention boundaries live only on `clinics` and are not user-editable (FR-061).
 - Plan amounts are seeded tax-inclusive; the IVA rate is effective-dated in `tax_rates`, and each transaction snapshots `tax_rate_bps`, `net_cents`, and `tax_cents` (DB §8). Later price or IVA changes never rewrite history.
-- Checkout inserts a `payment_transactions` row whose UUID v7 is the PayPhone `clientTransactionId`, then calls `POST /api/Sale`. The callback is only a hint; the server confirms with `GET /api/Sale/{transactionId}` and records one `payment_events` row per resolved status (`event_hash` unique).
+- Checkout (first charge) inserts a `payment_transactions` row whose UUID v7 is the PayPhone `clientTransactionId`, then redirects to the PayPhone payment button/box (Visa/Mastercard) with the plan amount, reference, and an HTTPS `responseUrl`. PayPhone returns `id`, `clientTransactionID`, and `ctoken`; the server confirms the charge and stores the token after consent (`payment_methods`). Renewals POST `/api/transaction/web` with the stored `ctoken` and an AES-256-CBC `cardHolder`. PayPhone states tokenization is not automatic recurring — the app schedules charges.
 - `can_sync` is derived from status plus time, not a mutable flag. It allows `trialing` before `trial_ends_at` and `active`/`past_due` before the grace deadline. `locked` and `canceled` deny writes with `402 sync_locked`.
 - Payment state never gates clinical work: patients, templates, editor, PDF/print, local history, already-issued QR verification, auth, and public verification remain available.
-- One in-flight pending transaction per subscription. Approval happens in the PayPhone app within 5 minutes; failed renewals get a 7-day `past_due` grace with retries on days 0, +2, and +4 before `locked`.
-- After a lapse, data beyond the free window is exportable for 30 days before the trim. The trim job is enabled after that window and never deletes the first 3 months; counsel sign-off remains a production prerequisite (PRD §9).
+- One in-flight pending transaction per subscription. Renewals are tokenized charges; a decline gets a 7-day `past_due` grace with retries on days 0, +2, and +4 before `locked`. Only Visa and Mastercard are eligible, and explicit consent is required before storing the token.
+- After a lapse, data beyond the free window is exportable for 30 days before the trim. The trim job runs by default (D-12) and never deletes the first 3 months; counsel sign-off remains a production prerequisite (PRD §9).
 - The image library is state-based: `active` uploads 5 and renders all; `past_due` uploads 5 but renders 1; `trialing` uploads 1; `locked` uploads none but renders 1; `canceled` uploads none and soft-deletes assets.
-- M4 checkout work is gated on PayPhone confirming in writing that API Sale has no recurring product.
+- v1.1 checkout work is gated on PayPhone authorizing the merchant for tokenization (application + review) and accepting the 10%/6-month balance hold.
 - Same-day API Reverse is automated; later refunds are manual by the Administrator and audited (`payment_transactions.status='reversed'`).
 
 ```mermaid
@@ -364,16 +371,17 @@ sequenceDiagram
     participant S as Server
     participant PP as PayPhone
 
-    ADM->>UI: select plan and payer phone
+    ADM->>UI: select plan, accept token storage
     UI->>S: start checkout
     S->>S: insert pending transaction, id = clientTransactionId
-    S->>PP: POST /api/Sale
-    PP-->>S: transactionId, pending
-    PP-->>S: callback id + clientTransactionID
-    S->>PP: GET /api/Sale transactionId
-    PP-->>S: statusCode 2 or 3
-    S->>S: payment_events insert + subscription transition
+    S-->>UI: redirect to PayPhone payment button/box
+    UI->>PP: pay with Visa/Mastercard
+    PP-->>S: responseUrl with id, clientTransactionID, ctoken
+    S->>PP: confirm charge
+    PP-->>S: statusCode 3 approved + cardholder data
+    S->>S: store payment_method + payment_events + subscription active
     S-->>UI: entitlement active, outbox drains
+    Note over S,PP: Renewals POST /api/transaction/web with the stored ctoken
 ```
 
 ## 13. Jobs and single-node operations
@@ -382,10 +390,10 @@ sequenceDiagram
 |---|---|---|---|---|
 | Asset cleanup | periodic | delete `pending` assets older than one hour and their objects | age + object key | ⬜ |
 | Trial expiry (v1.1) | scheduler | `subscriptions` trialing→locked, audit | compare timestamps | ⬜ v1.1 |
-| Renewal request (v1.1) | `next_charge_at` | pending transaction + PayPhone call | one pending per subscription | ⬜ v1.1 |
-| Payment poll (v1.1) | every 60 s while pending | `payment_events`, activation | event hash + status | ⬜ v1.1 |
+| Renewal request (v1.1) | `next_charge_at` | pending transaction + tokenized charge (`/api/transaction/web`) | one pending per subscription | ⬜ v1.1 |
+| Payment confirmation (v1.1) | 60 s while pending | `payment_events`, activation | event hash + status | ⬜ v1.1 |
 | Dunning (v1.1) | days 0/+2/+4, then lock | `past_due` → `locked` | status transitions | ⬜ v1.1 |
-| Retention trim | after `data_grace_ends_at` | delete beyond the 3-month window | recompute deadline; flag-gated | ⬜ (off until counsel, D-09) |
+| Retention trim | after `data_grace_ends_at` | delete beyond the 3-month window | recompute deadline | ⬜ (on in v1, D-12) |
 | Session purge | periodic | delete expired sessions | by `expires_at` | 🟡 lazy on get-session |
 | Backup | daily | encrypted SQLite copy | date-stamped | ⬜ ops |
 
@@ -401,7 +409,8 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `PORT` | `8080` | server | Compose maps `8080:8080` |
 | `PAYPHONE_TOKEN` | — | server | ⬜ v1.1 secret, never shipped to clients |
 | `PAYPHONE_STORE_ID` | — | server | ⬜ v1.1 |
-| `RETENTION_TRIM_ENABLED` | `false` | server | keep off until counsel sign-off (D-09) |
+| `PAYPHONE_CODING_PASSWORD` | — | server | ⬜ v1.1 AES-256-CBC key for `cardHolder` |
+| `RETENTION_TRIM_ENABLED` | `true` | server | enforced in v1 (D-12); counsel sign-off before production |
 | `UPDATE_MANIFEST_URL` | — | desktop | signed auto-update manifest (D-08) |
 | `ASSETS_BUCKET` | — | server | ⬜ private bucket name |
 | `ASSETS_ENDPOINT` | — | server | ⬜ S3-compatible endpoint |
@@ -424,7 +433,8 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | Authorization | server-side clinic/role checks in the service layer | ⬜ |
 | PHI minimization | no PHI in URLs, QR, logs, or provider payloads | 🟡 design only |
 | PHI at rest | SQLite file and desktop cache; OS disk encryption required (D-07) | ⬜ ops |
-| Secrets | PayPhone credentials in server environment (v1.1) | ⬜ |
+| Secrets | `PAYPHONE_TOKEN`, `PAYPHONE_STORE_ID`, `PAYPHONE_CODING_PASSWORD` (v1.1) | ⬜ |
+| Card token | `ctoken` stored after consent; AES-256-CBC `cardHolder`; no PAN/CVV; revoked on cancel (v1.1) | ⬜ |
 | Audit | sensitive reads; billing transitions are v1.1 | ⬜ |
 | Abuse controls | rate limits on auth and `/verify/:code`; PayPhone polling is v1.1 | ⬜ |
 | Device control and MFA | `devices` modeled; revocation + MFA in M3 | ⬜ |
@@ -433,12 +443,15 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 
 | Invariant | Enforced at |
 |---|---|
-| Images: 1 per clinic in v1 (5 in v1.1, 0 canceled), ≤10 MiB each; logo excluded | service + DB CHECK (⬜) |
+| Images: v1 1 per clinic; v1.1 5 `active`/`past_due`, 1 `trialing`/`locked`, 0 `canceled`; ≤10 MiB each; logo excluded | service + DB CHECK (⬜) |
 | Assets pinned by published versions are never deleted while referenced; the v1.1 cancellation purge soft-deletes and leaves pins | service + `template_version_assets` (⬜) |
 | One node, one SQLite file; the desktop cache is a replica, not an authority | deployment + `db.rs` |
 | The server authorizes; client guards are UX only | service layer (⬜) |
 | Replayed client mutations are no-ops | `client_id` / request keys (⬜) |
 | Signed prescriptions are immutable; only void/supersede transition them | service layer (⬜) |
+| A supersede gets a new `rx_number` and verification code; the replaced row keeps its own and becomes `superseded` | transaction + `uq_prescriptions_rx` (⬜) |
+| The printed/QR verification code is recoverable for reprints (`code` + `code_hash`) | schema (⬜) |
+| A nursing draft may lack a doctor; any non-draft row requires one | table CHECK + service layer (⬜) |
 | `rx_number` is unique and monotonically increasing per clinic, assigned from a server-issued block and validated on sync; burned tails are recorded gaps | transaction + partial unique index + `rx_blocks` (⬜) |
 | Money is integer cents; transactions snapshot the plan amounts (v1.1) | schema + service layer (⬜) |
 | PHI never appears in a URL, QR, log, or provider payload | service/output layer (⬜) |
@@ -455,9 +468,9 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | 3 | SQLite concurrency is unconfigured | no WAL or busy timeout; pool 8 | P1 | connection customizer + write retries |
 | 4 | Sync push transport | ~~undefined~~ resolved | — | SSE + 30 s polling fallback (PRD D-11); no second socket server |
 | 5 | Idempotency exists only for prescriptions | `prescriptions.client_id` | P1 | add keys for patients/templates before sync |
-| 6 | PDF rendering location | ~~undecided~~ resolved | P1 | client print-to-PDF (PRD D-01); spike WKWebView/WebView2 print before M1 |
+| 6 | PDF rendering location | ~~undecided~~ resolved | — | `printpdf` in the server and desktop binaries (PRD D-01); shared `src/pdf.rs`; no `from_html` |
 | 7 | Scheduler and SQLite assume one replica | in-process jobs | P1 | keep one node; document the scale-out prerequisites |
-| 8 | Retention trim conflicts with health-record law | PRD §9 | P1 | `RETENTION_TRIM_ENABLED` off by default; counsel sign-off before production |
+| 8 | Retention trim conflicts with health-record law | PRD §9 | P1 | enforced in v1 (D-12); export before trim; counsel sign-off before production |
 | 9 | Account enumeration and no auth rate limiting | auth handlers | P2 | uniform errors, dummy hash, limits in M3 |
 | 10 | No backups or observability | no job/backup code, no tracing layer | P2 | daily encrypted backup, structured logs, metrics |
 | 11 | Destructive initial migration drops legacy auth tables | `20261111000000_create_auth/up.sql` | P2 | document that pre-existing accounts must sign up again |
@@ -469,8 +482,9 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | 17 | IVA changes misstate historical charges (v1.1) | `tax_rates` effective-dated | P2 | snapshot `tax_rate_bps`, `net_cents`, and `tax_cents` per transaction |
 | 18 | Device revocation not enforceable until `sessions.device_id` lands | `devices` modeled, auth schema unchanged | P1 | add the nullable column in the auth migration before M3 |
 | 19 | Preallocated numbering gaps or block exhaustion | `rx_blocks` not built | P1 | block allocation, server validation on sync, remaining-count UI before signing |
-| 20 | Platform print API absent or unreliable in Dioxus desktop | no JS interop yet | P1 | spike WKWebView/WebView2 print before M1; `window.print()` fallback |
+| 20 | `printpdf` layout fidelity with manual page ops (no CSS engine), and an upstream crate whose HTML layout is experimental | no renderer module yet | P1 | golden A4 fixture diffed per PR; explicit ops only, never `from_html`; pin `printpdf` 0.12 and re-run the fixture on upgrade |
 | 21 | Auto-update key compromise or bad release | no updater yet | P1 | signed manifest, key custody, staged rollout, rollback (PRD D-08) |
+| 22 | PayPhone tokenization gated on merchant authorization; 10% of tokenized balances held 6 months; Visa/Mastercard only; `ctoken` is a bearer secret | `docs.payphone.app/tokenizacion` | P1 | apply before M4; consent + encrypted `cardHolder`; revoke on cancel; dunning on declines |
 
 ## 18. Verification
 
@@ -483,6 +497,7 @@ Repository policy is end-to-end and integration testing; unit tests are not requ
 | Server reachability | `wait-health` |
 | Schema design or migration SQL | `sqlite-schema-check` |
 | Image upload, quota, signed URL | end-to-end probe; promote to a block when implemented |
+| PDF route and A4 output | end-to-end probe on `GET /api/prescriptions/:id/pdf`: `200`, `application/pdf`, `%PDF-` magic, `/MediaBox [0 0 595 842]`, sanitized `Content-Disposition`, QR decodes to `/verify/`; promote to a block when implemented |
 
 ```bash
 python3 .blocks/persona-docker-verify.py --dir . --port 8080
@@ -506,10 +521,8 @@ When documents disagree, use this order:
 
 Known drift to reconcile in implementation:
 
-1. The database-design closing note says `src/db.rs` sets `PRAGMA foreign_keys`; the code does it in `auth_server::with_conn`.
-2. FR-012 names an `LLM_URL_TEMPLATE` environment variable; the DB design stores `clinics.llm_url_template`. Use the column.
-3. The sitemap places `/` and `/login` outside the authenticated shell; the current `Route` enum applies `Navbar` to all routes.
-4. The PRD and sitemap treat `/dashboard` as session-guarded; the implemented guard is client-side only, with no server middleware.
-5. The README documents the session cookie but not the `token` returned in the sign-up/sign-in body.
-6. The database design describes the full app and billing schema; only the auth migration exists, and billing is v1.1.
-7. PRD v0.4 (§14 decision log) supersedes earlier statements in this document and in the DB/sitemap about PDF rendering, billing scope, numbering, roles, image quota, and asset kinds; where they differ, the PRD decision log wins.
+1. The sitemap places `/` and `/login` outside the authenticated shell; the current `Route` enum applies `Navbar` to all routes.
+2. The PRD and sitemap treat `/dashboard` as session-guarded; the implemented guard is client-side only, with no server middleware.
+3. The database design describes the full app and billing schema; only the auth migration exists, and billing is v1.1.
+4. PRD v0.7 (§14 decision log) supersedes earlier statements in this document and in the DB/sitemap about PDF rendering, billing scope, numbering, roles, image quota, verification codes, and asset kinds; where they differ, the PRD decision log wins.
+5. The v1.1 provider is PayPhone **Tokenization** (`ctoken` + `/api/transaction/web`), not API Sale; PRD §5.7/FR-063–072 and DB §1/§5 are authoritative.

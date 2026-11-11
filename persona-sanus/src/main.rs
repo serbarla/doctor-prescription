@@ -1,6 +1,12 @@
 mod auth;
 
 #[cfg(feature = "server")]
+mod auth_server;
+#[cfg(feature = "server")]
+mod db;
+#[cfg(feature = "server")]
+mod schema;
+#[cfg(feature = "server")]
 mod server;
 use auth::SessionUser;
 use dioxus::prelude::*;

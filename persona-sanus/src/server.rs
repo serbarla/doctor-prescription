@@ -1,15 +1,11 @@
-use std::env;
-use std::str::FromStr;
-
 use anyhow::Result;
 use axum::http::header;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use dioxus::server::{DioxusRouterExt, ServeConfig};
-use rustauth::prelude::*;
-use rustauth::sqlx::SqliteAdapter;
-use rustauth_axum::{RustAuthAxumExt, RustAuthAxumOptions};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
+use crate::auth_server::{self, AppState};
+use crate::db;
 
 async fn health() -> ([(header::HeaderName, &'static str); 1], &'static str) {
     (
@@ -19,46 +15,26 @@ async fn health() -> ([(header::HeaderName, &'static str); 1], &'static str) {
 }
 
 pub async fn router() -> Result<Router> {
-    let secret = env::var("RUSTAUTH_SECRET")
-        .unwrap_or_else(|_| "dev-only-secret-at-least-32-chars-long!!".to_owned());
-    let base_url = env::var("RUSTAUTH_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8080/api/auth".to_owned());
-    let base_path = env::var("RUSTAUTH_AUTH_BASE_PATH").unwrap_or_else(|_| "/api/auth".to_owned());
-    let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://app.db".to_owned());
-
-    let connect_options = SqliteConnectOptions::from_str(&database_url)?.create_if_missing(true);
-    let pool = SqlitePoolOptions::new()
-        .connect_with(connect_options)
-        .await?;
-
-    let auth = RustAuth::builder()
-        .options(
-            RustAuthOptions::new().trusted_origins(TrustedOriginOptions::Static(vec![
-                "http://127.0.0.1:8080".to_owned(),
-                "http://localhost:8080".to_owned(),
-            ])),
-        )
-        .secret(secret)
-        .base_url(base_url)
-        .base_path(base_path)
-        .email_password(
-            EmailPasswordOptions::new()
-                .enabled(true)
-                .auto_sign_in(true)
-                .require_email_verification(false),
-        )
-        .rate_limit(RateLimitOptions::memory().enabled(true))
-        .adapter(SqliteAdapter::new(pool))
-        .build()
-        .await?;
-
-    auth.create_schema(None).await?;
+    let cookie_secure = std::env::var("PERSONA_COOKIE_SECURE")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let state = AppState {
+        pool: db::connect()?,
+        cookie_secure,
+    };
 
     let auth_router = Router::new()
+        .route("/api/auth/sign-up/email", post(auth_server::sign_up))
+        .route("/api/auth/sign-in/email", post(auth_server::sign_in))
+        .route("/api/auth/get-session", get(auth_server::get_session))
+        .route("/api/auth/sign-out", post(auth_server::sign_out))
+        .with_state(state);
+
+    let app_router = Router::new()
         .route("/health", get(health))
-        .merge(auth.mount_at_base_path(RustAuthAxumOptions::new())?);
+        .merge(auth_router);
 
     Ok(Router::new()
         .serve_dioxus_application(ServeConfig::new(), crate::App)
-        .merge(auth_router))
+        .merge(app_router))
 }

@@ -10,6 +10,31 @@ BLOCKS. Scripts in this repo are reusable blocks in .blocks/. Rules:
 8. Compose: call existing blocks with caveman-blocks run instead of copying their code.
 <!-- caveman-blocks:end -->
 
+## Coding
+
+Do not leave comments in any code
+
+## Testing
+
+Unit testing is not required, avoid it, only end to end testing and integration testing are priorities
+
+## Take into account first
+
+Whenever you are asked to plan something, please do not assume, ask the user first before implementing.
+
+## Bug Fixing
+
+You may try 15 times to fix a bug, then, add it to a Linear Issue, following the approved format Specs-Issue
+
 ## Language
 - Docs/PRD content in English.
 - Only references to Ecuador Spanish or specific Ecuador names stay in Spanish (e.g. `es-EC`, `receta`, `cédula`, Ley Orgánica de Protección de Datos Personales, MSP/ACESS).
+
+## Subagent Delegation
+When generating subagents you may first plan the task to be completed into separate isolated phases independent from other phases, that you will put together after subagents workflows are complete, use the following omp model presets:
+
+| Model preset | Policy |
+|---|---|
+| `deepflash-medium`, `ember-medium-subagent` | Keep subagent context low; 1 task per agent, then delete. Keep cost under $1 daily. |
+| `qwen-single-agent` | Run only 1 subagent at a time; never more than 1 under any circumstance. May or may not be available; if reachable, it is free its your priority to run it correctly when available. |
+| `muse-wonder-planner` | NEVER use for subagents; not allowed. It orchestrates modular isolated tasks, generating worktrees and subagents. |

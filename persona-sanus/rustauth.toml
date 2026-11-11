@@ -1,0 +1,5 @@
+[database]
+adapter = "sqlx"
+provider = "sqlite"
+url_env = "DATABASE_URL"
+migrations_dir = "migrations/rustauth"

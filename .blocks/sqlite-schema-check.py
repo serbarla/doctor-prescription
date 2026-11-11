@@ -21,7 +21,7 @@
 # source = "promoted: repeated schema validation for context/database-design.md"
 #
 # [stamp]
-# verified = "d5b87f5dfe6f"
+# verified = "f6f2d1d9481e"
 # ///
 """Run a fenced SQL block from Markdown in an in-memory SQLite database and print one small JSON verdict."""
 import argparse

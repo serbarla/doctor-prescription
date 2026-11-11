@@ -1,0 +1,25 @@
+# SpacetimeDB standalone node (https://github.com/clockworklabs/SpacetimeDB).
+# Upstream image: clockworklabs/spacetime (entrypoint `spacetime`, port 3000).
+# Usage: docker compose up -d && curl -s http://127.0.0.1:3000/v1/health
+services:
+  spacetimedb:
+    image: clockworklabs/spacetime:latest
+    command: ["start", "--data-dir=/data"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - spacetimedb-data:/data
+    # The image runs as uid 1000 (`spacetime`), but Docker creates named
+    # volumes as root, so the node gets EACCES on first boot. Run as root
+    # (local dev only) so the volume is writable without a separate init step.
+    user: "0:0"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/v1/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  spacetimedb-data:

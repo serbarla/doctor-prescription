@@ -1,0 +1,18 @@
+PRAGMA foreign_keys = OFF;
+DROP TABLE IF EXISTS audit_log;
+DROP TABLE IF EXISTS verification_codes;
+DROP TABLE IF EXISTS prescription_items;
+DROP TABLE IF EXISTS prescriptions;
+DROP TABLE IF EXISTS rx_blocks;
+DROP TABLE IF EXISTS rx_counters;
+DROP TABLE IF EXISTS template_version_assets;
+DROP TABLE IF EXISTS templates;
+DROP TABLE IF EXISTS template_versions;
+DROP TABLE IF EXISTS patients;
+DROP TABLE IF EXISTS doctors;
+DROP TABLE IF EXISTS devices;
+DROP TABLE IF EXISTS clinic_members;
+DROP TABLE IF EXISTS assets;
+DROP TABLE IF EXISTS clinics;
+DROP TABLE IF EXISTS profiles;
+PRAGMA foreign_keys = ON;

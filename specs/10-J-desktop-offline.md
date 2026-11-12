@@ -66,7 +66,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None.
+1. The desktop binary has no rich-text editor to draft prescriptions with — taino-edit is wasm-only (its DOM bridge compiles only to wasm32), so the `desktop` feature cannot depend on it; objective 5's offline flow (create draft → sign) and objective 1's cache mirrors assume the full editor runs in the desktop build. (Verified 2026-11-12: 0 fix attempts — the dependency is installed target-gated per spec 05-E; candidate fixes — serve the wasm client inside the desktop webview, a native fallback editor, or an upstream native adapter — are fenced until this spec resolves the webview strategy.) → tracking: `specs/divergences/05-E-taino-edit-wasm-only-desktop.md`
 
 ---
 

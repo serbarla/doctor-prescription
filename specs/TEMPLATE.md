@@ -1,6 +1,7 @@
 # Spec NN — Phase X: <short title>
 
-- Source: <where this spec came from — plan file + section, or audit finding>.
+- Source: <which document and section this came from — e.g. a plan file, an
+  issue, or an audit finding — and what triggered it>.
 - Depends on: <spec IDs this builds on, or "nothing">.
 - Repo root: `<path>`. Every path and command below is relative to it.
 - Result carried forward: <one sentence: the observable end state once this spec is done>.
@@ -36,8 +37,9 @@ step is implemented and verified.*
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091` passes (repo root)
-- [ ] objective N: `<command>` → `<expected output>`
+- [ ] `<global smoke / end-to-end command for the whole change>` passes (run
+  from the repo root)
+- [ ] objective N: `<exact command from section 1>` → `<expected output>`
 - [ ] every objective in section 1 is checked
 
 ## 4. Divergences
@@ -59,16 +61,20 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-*Fill in at execution time. Example (from spec 02-B, kept as reference):*
+*Fill in at execution time. Generic example (same slots as the entry format
+above):*
 
-1. `clippy` stays red in `persona-sanus` on the `desktop` feature only: the
-   local-cache modules land with objective 1, but the sync endpoints they call
-   are explicitly excluded (section 2, spec 11-K). … desktop red is deferred
-   to spec 11-K by design, not a defect.)
+1. `<check>` stays failing in `<workspace>` on the `<feature>` feature only:
+   the `<work added by objective N>` lands, but the `<code it calls>` is
+   explicitly excluded (section 2, spec <NN-Y>). (Verified <date>: <N> fix
+   attempts — <attempt 1>, <attempt 2>, <attempt 3> — all fenced by
+   <constraint>; `<what stays failing>` is deferred to spec <NN-Y> by design,
+   not a defect.)
 
 ---
 
 *Housekeeping: once a spec is fully done with no open divergences, move its
-file to `specs/done/` (e.g. `specs/done/01-A-app-schema-and-db-runtime.md`).
+file to `specs/done/` (same file name, e.g.
+`specs/done/NN-X-<short-slug>.md`).
 Specs with open divergences stay in `specs/` next to `TEMPLATE.md` until the
 tracking file is cleared.*

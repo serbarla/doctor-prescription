@@ -21,11 +21,17 @@ sha2 = { version = "0.10", optional = true }
 hex = { version = "0.4", optional = true }
 uuid = { version = "1", features = ["v4", "v7"], optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
+qrcode-generator = { version = "6.1.2", default-features = false, features = ["std", "qr", "image"], optional = true }
 
 [features]
 default = ["web", "server"]
 web = ["dioxus/web", "dep:dioxus-motion", "dioxus-motion/web"]
-desktop = ["dioxus/desktop", "dep:dioxus-motion", "dioxus-motion/desktop"]
+desktop = [
+    "dioxus/desktop",
+    "dep:dioxus-motion",
+    "dioxus-motion/desktop",
+    "dep:qrcode-generator",
+]
 mobile = ["dioxus/mobile"]
 server = [
     "dioxus/server",
@@ -42,4 +48,5 @@ server = [
     "dep:hex",
     "dep:uuid",
     "dep:chrono",
+    "dep:qrcode-generator",
 ]

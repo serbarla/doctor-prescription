@@ -2,9 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Source | `context/PRD.md` (Draft v0.7 — 2026-11-11) §5.4, §5.8, §7–§9, `context/database-design.md`, `context/sitemap.md` |
+| Source | `context/PRD.md` (Draft v0.8 — 2026-11-12) §5.4, §5.8, §7–§9, `context/database-design.md`, `context/sitemap.md` |
 | Baseline | Working tree 2026-11-11 — M0 auth implemented on the Dioxus fullstack base |
-| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `printpdf` 0.12 planned for M1 (not yet a dependency in `Cargo.toml`) |
+| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `qrcode-generator` 6.1.2 (`std`, `qr`, `image`) for QR PNG output · `printpdf` 0.12 planned for M1 (not yet a dependency in `Cargo.toml`) |
 | Topology | One fullstack node: server binary + wasm bundle; one SQLite file on local disk |
 | Datastore | `app.db` locally · `/data/app.db` in Docker (`persona-data` volume) |
 | Public surface | `:8080` — Dioxus pages, `/api/auth/*`, `/health`; `⬜ /verify/:code`, `⬜ /api/prescriptions/:id/pdf` |
@@ -27,6 +27,7 @@ The server process is the unit of deployment. There is no separate API service, 
 | App schema (`profiles`, `devices`, `assets`, clinical tables, `audit_log`; billing is v1.1) | ⬜ | DB §5; no migration yet |
 | Roles, clinic membership, server-side authorization | ⬜ | PRD §3, DB §2 |
 | Patients, templates, prescriptions, items, verification | ⬜ | PRD §5.1–§5.6 |
+| Templates form editor (forms on web + desktop, D-21) | ⬜ | PRD §5.3 |
 | A4 PDF + QR | ⬜ | PRD §5.4 |
 | Desktop cache + outbox + sync | ⬜ | PRD §5.5 |
 | Billing + scheduler (v1.1) | ⬜ | PRD §5.7, D-04 |
@@ -76,8 +77,8 @@ flowchart LR
 |---|---|---|---|
 | `default = ["web", "server"]` | both below | fullstack dev/prod build | `dx serve`, Docker |
 | `web` | `dioxus/web`, `dioxus-motion` (`web`) | wasm client | browser |
-| `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `anyhow`; ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native server binary | node |
-| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`); ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`); ⬜ M2 adds `diesel` (`sqlite`, `r2d2`) + `libsqlite3-sys` (`bundled`) + `reqwest` (`cookies`) for the local cache and sync | native WebView app | macOS/Windows |
+| `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `anyhow`, `qrcode-generator`; ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native server binary | node |
+| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`), `qrcode-generator`; ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`); ⬜ M2 adds `diesel` (`sqlite`, `r2d2`) + `libsqlite3-sys` (`bundled`) + `reqwest` (`cookies`) for the local cache and sync | native WebView app | macOS/Windows |
 | `mobile` | `dioxus/mobile` | declared, not v1 | — |
 
 `reqwest` and `serde_json` are unconditional and compile on both sides.
@@ -85,8 +86,10 @@ flowchart LR
 Rules:
 
 - Server modules are gated in `src/main.rs`: `auth_server`, `db`, `schema`, and `server` compile under `feature = "server"` today. ⬜ M1 adds `pdf` (`server` and `desktop`) and `pdf_server` (`server`). The non-server `main` launches `dioxus::launch(App)`; the server `main` is `#[tokio::main]`.
-- When the renderer lands (⬜ M1), `printpdf` never enters the `web` feature: the wasm bundle must not carry a PDF engine. `default-features = false` drops printpdf's `html` layout (azul CSS/XML stack); `text_layout` is still required because font embedding goes through it, and `jpeg`/`png` add the image decoders used for logos, library images, and the QR bitmap. Never call `PdfDocument::from_html`.
+- When the renderer lands (⬜ M1), `printpdf` never enters the `web` feature: the wasm bundle must not carry a PDF engine. `default-features = false` drops printpdf's `html` layout (azul CSS/XML stack); `text_layout` is still required because font embedding goes through it, and `jpeg`/`png` add the image decoders used for logos, library images, and the QR PNG. Never call `PdfDocument::from_html`.
+- `qrcode-generator` 6.1.2 ([upstream](https://github.com/magiclen/qrcode-generator), MIT) is the only QR encoder. It is optional, enabled by `server` and `desktop`, and uses `default-features = false` plus `std`/`qr`/`image` so the renderer can call `Renderer::to_png_vec()`. It never enters `web`: QR symbols are generated where the PDF is rendered and embedded as PNG; the payload is `{PUBLIC_BASE_URL}/verify/{code}` with no PHI. Do not add a second QR crate or hand-roll the matrix.
 - `dioxus-motion` 0.4 ([upstream](https://github.com/wheregmis/dioxus-motion), MIT) is the typed, interruptible animation crate for Dioxus UI (springs, tweens, keyframes, presence, route transitions). It is an optional dependency that gets exactly one platform feature per build: `web` on wasm, `desktop` on the WebView app, `dioxus` alone for SSR. Its default `web` feature would drag `wasm-bindgen`/`web-sys` into the native server binary, hence `default-features = false`. Use the crates.io release, not the repository `main` branch, which carries unreleased breaking API changes.
+- Editing is plain Dioxus forms (PRD D-21) — no WYSIWYG editor, no rich text, no editor dependency and no target gate: the same form components compile on `web`, `desktop`, and server-side render, so the desktop binary ships the same UI as the web. The forms emit schema-checked structured JSON (`doc_json`) and never produce raw HTML.
 - Diesel, Argon2, and axum types must never appear in shared signatures. `SessionUser` is a plain struct in `src/auth.rs` precisely so the client can hold session state without pulling in the server stack.
 - `libsqlite3-sys` uses `bundled`: SQLite is compiled with the crate, so the runtime image needs no system `libsqlite3`.
 - `uuid` `v7` supplies sortable entity ids; `v4` supplies session-token entropy (DB §1).
@@ -98,9 +101,10 @@ Rules:
 |---|---|---|---|
 | `src/main.rs` | shared | `Route` enum, `App`, `Navbar`, `AuthPage`, `Dashboard`, server entry point | contain SQL, crypto, or HTTP handlers |
 | `src/auth.rs` | client | auth HTTP calls, `SessionUser`, response parsing | import server modules |
+| `src/forms.rs` (⬜ M1) | client (shared) | template and prescription form components, `doc_json` (de)serialization, variable/medication/image fields | contain server code; persist or emit raw HTML |
 | `src/auth_server.rs` | server | handlers, validation, Argon2, tokens, cookies, `with_conn` | build UI or HTML |
 | `src/db.rs` | server | pool, embedded migrations, SQL, models | emit HTTP responses |
-| `src/pdf.rs` (⬜ M1) | server + desktop | `printpdf` renderer: layout model → page ops, fonts, images, QR bitmap, A4 page boxes; pure, deterministic, no I/O | SQL, HTTP, UI, `from_html` |
+| `src/pdf.rs` (⬜ M1) | server + desktop | `printpdf` renderer: layout model → page ops, fonts, images, QR PNG via `qrcode-generator`, A4 page boxes; pure, deterministic, no I/O | SQL, HTTP, UI, `from_html` |
 | `src/pdf_server.rs` (⬜ M1) | server | `GET /api/prescriptions/:id/pdf`, authorization, `Content-Disposition` filename, load pinned version + variables | layout or drawing logic |
 | `src/schema.rs` | server | Diesel `table!` definitions | drift from migrations |
 | `src/server.rs` | server | axum composition, `AppState`, `/health` | query the database directly |
@@ -180,7 +184,7 @@ Security findings in the current implementation:
 | Finding | Evidence | Impact | Action |
 |---|---|---|---|
 | Token returned in the JSON body as well as the cookie | `session_response` | an XSS can read a credential that `HttpOnly` otherwise protects | return it only for a non-cookie transport |
-| Account enumeration | sign-up returns `409`; sign-in skips Argon2 for unknown emails | email discovery and timing signal | uniform errors plus a dummy hash and rate limiting |
+| Account enumeration | sign-up returns `409`; sign-in skips Argon2 for unknown emails | email discovery and timing signal | uniform sign-in errors plus a dummy hash and rate limiting (spec 12-L); sign-up keeps `409` — enumeration is inherent in account creation (accepted residual) |
 | No CSRF token or `Origin` check | cookie auth with JSON `POST` | `SameSite=Lax` mitigates, but lacks defense in depth | validate `Origin` on state-changing routes |
 | No security headers or CORS layer | router composition | no CSP/HSTS surface; a browser-served second origin would fail without CORS | add `tower-http` when a second origin exists |
 
@@ -214,10 +218,10 @@ The foreign-key pragma lives in `auth_server::with_conn`; `database-design.md` m
 Rules and current limits:
 
 - The `#[layout(Navbar)]` on `Home` is never closed with `#[end_layout]`, so `Navbar` wraps every route, including `/` and `/login`. The sitemap separates public routes from the authenticated shell; add `#[end_layout]` and a second layout group when the shell gains nav sections and sync indicators.
-- The redirect is client-side only. SSR still renders the page shell for an unauthenticated request, and any future PHI load must be authorized inside a server function. Never rely on the redirect for data protection (PRD §3).
-- The session fetch is a `use_effect`, so the first SSR paint is signed-out and flips after hydration. Data pages should use `use_server_future` so the server serializes the authorized result into the first render instead of duplicating a client fetch.
+- The redirect is client-side only. SSR still renders the page shell for an unauthenticated request, and any future PHI load must be authorized in the service layer behind the REST handler. Never rely on the redirect for data protection (PRD §3).
+- The session fetch is a `use_effect`, so the first SSR paint is signed-out and flips after hydration. Data pages load through the authorized `/api/*` endpoints (`use_resource` or SSR-side fetch) so the first render carries the authorized result instead of an unauthenticated stub.
 - UI code must copy signal values before awaiting. Holding `WriteLock` or `GenerationalRef` across `.await` is flagged by the `clippy.toml` configuration.
-- No JavaScript interop exists yet. The rich-text editor (Tiptap/ProseMirror, PRD §7) will add it; it must emit sanitized structured JSON, never raw HTML.
+- No JavaScript interop: editing is plain Dioxus forms (PRD D-21) — no WYSIWYG editor, no rich text, no bridge. The forms emit schema-checked structured JSON (`doc_json`) and raw HTML is never persisted or rendered.
 
 Auth transport is the main client-side architectural defect:
 
@@ -225,10 +229,10 @@ Auth transport is the main client-side architectural defect:
 |---|---|---|---|
 | Web on the same host and port | absolute `http://127.0.0.1:8080/api/auth`; `fetch_credentials_include` | works only on the development machine | use a relative `/api/auth` base |
 | Web behind TLS or a domain | absolute `http` loopback URL | mixed content or the wrong host | relative base |
-| Desktop (native) | `reqwest` with the `json` feature; `with_credentials` is a no-op; no cookie store configured | the session cookie is neither stored nor sent, so auth cannot persist | server functions, or configurable origin + cookie jar/bearer |
+| Desktop (native) | `reqwest` with the `json` feature; `with_credentials` is a no-op; no cookie store configured | the session cookie is neither stored nor sent, so auth cannot persist | configurable origin + cookie jar (chosen — spec 04-D) |
 | Remote desktop | loopback constant | calls the user's machine, not the server | configurable server origin |
 
-Decision: use Dioxus server functions for application data and authorization; they are typed, same-origin, work on desktop, and keep the server authoritative. If the REST auth client remains, split the base URL (relative on wasm, configured origin on native), enable a cookie jar, and add credentialed CORS for the desktop origin. This must be resolved before shipping desktop or terminating TLS.
+Decision: application data is exposed as REST under `/api/*` with the session cookie (chosen — specs 02-B/04-D). The client splits the base URL (relative on wasm, configurable origin + cookie jar on native), the session cookie stays `SameSite=Lax`, and the server allows credentialed CORS for the web origins listed in `PERSONA_WEB_ORIGINS` (native `reqwest` is not a browser and needs no CORS). The server stays authoritative: every read and write is authorized in the service layer. This must be in place before shipping desktop or terminating TLS.
 
 ## 8. Target domains and their contracts
 
@@ -335,14 +339,14 @@ Pipeline:
 
 1. `GET /api/prescriptions/:id/pdf`: authorize the session, role, and clinic membership. `draft` is rejected (`422`); signed, superseded, and voided documents render. Provisional (`pending_sync`) documents exist only in the desktop cache (no server row), so the route never serves them; the desktop renders them locally.
 2. Load the pinned `template_versions.doc_json`, the pinned `template_version_assets`, the variable set (patient, doctor, clinic, prescription, medications), and the stored plaintext `verification_codes.code` (reprints reuse it, so the issued QR stays valid). Never the current template (FR-024).
-3. `pdf::render` builds a `PdfDocument` and one `PdfPage` per A4 sheet (210×297 mm) with explicit ops: embedded TTF text runs, rules, image XObjects, and the QR bitmap. Page breaks, repeated header/footer, and margins are computed by the renderer — there is no CSS engine.
-4. The QR encodes `https://<domain>/verify/{code}` and is embedded as a PNG XObject; the payload carries no PHI (FR-033). A provisional document draws a placeholder frame plus `PENDIENTE DE SINCRONIZACIÓN` and no scannable code.
+3. `pdf::render` builds a `PdfDocument` and one `PdfPage` per A4 sheet (210×297 mm) with explicit ops: embedded TTF text runs, rules, image XObjects, and the QR PNG. Page breaks, repeated header/footer, and margins are computed by the renderer — there is no CSS engine.
+4. The QR encodes `https://<domain>/verify/{code}`, generated by `qrcode-generator` (`qr::Encoder` → `Renderer::to_png_vec()`), and is embedded as a PNG XObject; the payload carries no PHI (FR-033). A provisional document draws a placeholder frame plus `PENDIENTE DE SINCRONIZACIÓN` and no scannable code.
 5. `save(&PdfSaveOptions::default(), &mut warnings)` returns the bytes. Web: the handler sends `application/pdf` with `Content-Disposition: attachment; filename="{Patient}-receta-{DD-MM-AAAA}-{Doctor}.pdf"` (FR-032). Desktop: the same `pdf::render` call runs in-process and writes the file locally — the route is not needed offline.
 6. Regeneration uses the pinned version and the same renderer build, so a reprint reproduces the issued content (not guaranteed byte-identical across renderer upgrades).
 
 Constraints:
 
-- One layout model (`doc_json`) for editor, preview, and PDF. The preview is the browser projection; the PDF render is authoritative. Fix fidelity in `src/pdf.rs`, never with a second template.
+- One layout model (`doc_json`) for the forms, the preview, and the PDF. The preview is the browser projection; the PDF render is authoritative. Fix fidelity in `src/pdf.rs`, never with a second template.
 - `src/pdf.rs` is pure: no SQL, no filesystem, no clock beyond the passed issue timestamp. Input is the layout model + pinned asset bytes + variables, so desktop and server produce the same document and the golden fixture stays stable.
 - The runtime image (`debian:bookworm-slim`) gets no Chromium and no host fonts: the renderer embeds TTF bytes (`include_bytes!` or bundled assets), so output does not depend on the host's font set.
 - PDFs are never stored. There is no `pdf_blob` column; the route streams a fresh render from immutable data.
@@ -357,7 +361,7 @@ Constraints:
 - Plan amounts are seeded tax-inclusive; the IVA rate is effective-dated in `tax_rates`, and each transaction snapshots `tax_rate_bps`, `net_cents`, and `tax_cents` (DB §8). Later price or IVA changes never rewrite history.
 - Checkout (first charge) inserts a `payment_transactions` row whose UUID v7 is the PayPhone `clientTransactionId`, then redirects to the PayPhone payment button/box (Visa/Mastercard) with the plan amount, reference, and an HTTPS `responseUrl`. PayPhone returns `id`, `clientTransactionID`, and `ctoken`; the server confirms the charge and stores the token after consent (`payment_methods`). Renewals POST `/api/transaction/web` with the stored `ctoken` and an AES-256-CBC `cardHolder`. PayPhone states tokenization is not automatic recurring — the app schedules charges.
 - `can_sync` is derived from status plus time, not a mutable flag. It allows `trialing` before `trial_ends_at` and `active`/`past_due` before the grace deadline. `locked` and `canceled` deny writes with `402 sync_locked`.
-- Payment state never gates clinical work: patients, templates, editor, PDF/print, local history, already-issued QR verification, auth, and public verification remain available.
+- Payment state never gates clinical work: patients, templates, editing forms, PDF/print, local history, already-issued QR verification, auth, and public verification remain available.
 - One in-flight pending transaction per subscription. Renewals are tokenized charges; a decline gets a 7-day `past_due` grace with retries on days 0, +2, and +4 before `locked`. Only Visa and Mastercard are eligible, and explicit consent is required before storing the token.
 - After a lapse, data beyond the free window is exportable for 30 days before the trim. The trim job runs by default (D-12) and never deletes the first 3 months; counsel sign-off remains a production prerequisite (PRD §9).
 - The image library is state-based: `active` uploads 5 and renders all; `past_due` uploads 5 but renders 1; `trialing` uploads 1; `locked` uploads none but renders 1; `canceled` uploads none and soft-deletes assets.
@@ -425,7 +429,7 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ⬜ auth-endpoint per-IP limit (spec 12-L) |
 | `AUTH_BASE` in `src/auth.rs` | `http://127.0.0.1:8080/api/auth` | client | ⚠️ hardcoded, not deployment-safe |
 
-MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket stays private. The LLM URL is per clinic in `clinics.llm_url_template` (DB §5), not a process environment variable. PRD FR-012 names `LLM_URL_TEMPLATE`; treat the column as the source of truth and seed it from configuration if an environment default is wanted.
+MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket stays private. The LLM URL is per clinic in `clinics.llm_url_template` (DB §5), not a process environment variable. PRD FR-012 agrees (`clinics.llm_url_template`); seed it from configuration if an environment default is wanted.
 
 ## 15. Security boundaries
 
@@ -468,7 +472,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 
 | # | Risk | Evidence | Severity | Action |
 |---|---|---|---|---|
-| 1 | Auth client targets loopback and does not carry cookies on desktop | `src/auth.rs`, `with_credentials` | P0 | relative base + server functions before desktop/TLS |
+| 1 | Auth client targets loopback and does not carry cookies on desktop | `src/auth.rs`, `with_credentials` | P0 | relative base + configurable origin + cookie jar + credentialed CORS (specs 02-B/04-D) before desktop/TLS |
 | 2 | No server-side authorization; only a client redirect | `Dashboard` | P0 | authorize every read/write in the service layer before PHI pages |
 | 3 | SQLite concurrency is unconfigured | no WAL or busy timeout; pool 8 | P1 | connection customizer + write retries |
 | 4 | Sync push transport | ~~undefined~~ resolved | — | SSE + 30 s polling fallback (PRD D-11); no second socket server |
@@ -497,6 +501,7 @@ Repository policy is end-to-end and integration testing; unit tests are not requ
 
 | Change | Gate |
 |---|---|
+| Any Rust or UI change | `persona-smoke` |
 | Compose build, boot, health, auth persistence | `persona-docker-verify` |
 | Auth endpoints and public pages | `persona-probe --flow full` |
 | Server reachability | `wait-health` |
@@ -505,6 +510,7 @@ Repository policy is end-to-end and integration testing; unit tests are not requ
 | PDF route and A4 output | end-to-end probe on `GET /api/prescriptions/:id/pdf`: `200`, `application/pdf`, `%PDF-` magic, `MediaBox` floats within ±1 pt of 595.28×841.89 (A4 in points), sanitized `Content-Disposition`, QR decodes to `/verify/`; promote to a block when implemented |
 
 ```bash
+python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091
 python3 .blocks/persona-docker-verify.py --dir . --port 8080
 python3 .blocks/persona-probe.py --base http://127.0.0.1:8080 --flow full
 python3 .blocks/wait-health.py --url http://127.0.0.1:8080/health --expect 200 --timeout 60
@@ -527,7 +533,7 @@ When documents disagree, use this order:
 Known drift to reconcile in implementation:
 
 1. The sitemap places `/` and `/login` outside the authenticated shell; the current `Route` enum applies `Navbar` to all routes.
-2. The PRD and sitemap treat `/dashboard` as session-guarded; the implemented guard is client-side only, with no server middleware.
+2. The `/dashboard` guard is client-side only, with no server middleware; server-side authorization is the service layer's job (spec 02-B).
 3. The database design describes the full app and billing schema; only the auth migration exists, and billing is v1.1.
-4. PRD v0.7 (§14 decision log) supersedes earlier statements in this document and in the DB/sitemap about PDF rendering, billing scope, numbering, roles, image quota, verification codes, and asset kinds; where they differ, the PRD decision log wins.
+4. The PRD decision log (§14) supersedes earlier statements in this document and in the DB/sitemap about PDF rendering, billing scope, numbering, roles, image quota, verification codes, asset kinds, and the editing model (D-21); where they differ, the PRD decision log wins.
 5. The v1.1 provider is PayPhone **Tokenization** (`ctoken` + `/api/transaction/web`), not API Sale; PRD §5.7/FR-063–072 and DB §1/§5 are authoritative.

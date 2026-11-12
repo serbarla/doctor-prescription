@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Product | PersonaSanus — prescription generator for doctors |
-| Status | Draft v0.7 — 2026-11-11 (§14 decision log; §15 remaining open questions) |
+| Status | Draft v0.8 — 2026-11-12 (§14 decision log; §15 remaining open questions) |
 | Platforms | Desktop (macOS, Windows) offline-first + universal Web (Chromium) — same experience |
 | Current stack | Dioxus 0.7.1 (`router`, `fullstack`) + axum 0.8 + Diesel 2.3 (`sqlite`, `r2d2`) + Argon2 0.6 — `persona-sanus/Cargo.toml`; v1 adds `printpdf` 0.12 (PDF renderer, planned M1, not yet a dependency) |
 | Backend | Single-node SQLite + app-owned identity (Argon2 passwords, hashed opaque sessions), self-hosted with Docker Compose on our own infrastructure (`docker-compose.yml`) |
@@ -12,13 +12,13 @@
 | Billing | **Deferred to v1.1.** v1 is a free beta with no payment provider and no entitlement gate; the v1.1 subscription uses **PayPhone Tokenization** (card-on-file, Visa/Mastercard) — §5.7, `https://docs.payphone.app/tokenizacion` |
 | Storage | Image library: 1 image per clinic in v1 (free beta), 10 MB (10,485,760 bytes) each; the clinic logo is a separate branding asset and does not consume the slot. v1.1 raises the library to 5 with billing |
 | Output | A4 PDF rendered in Rust by `printpdf` 0.12 — linked into the server binary (web) and the desktop binary (offline); QR verification. No Chromium, no headless browser, no print-to-PDF dialog |
-| Editor | Rich-text editor over an A4 template, variables, per-doctor/per-clinic branding |
+| Editor | Form-based editing over an A4 template (no rich text — D-21), variables, per-doctor/per-clinic branding |
 
 ## 1. Problem and solution
 
 Small/medium clinics in Ecuador produce prescriptions on paper, in Word, or from loose templates: inconsistent format, no synced history between consultation and front desk, no way to verify authenticity, and no simple way to keep a verified history available across devices.
 
-**Solution:** a desktop+web application where each doctor works with their own templates (logo, letterhead, layout) and dynamic variables, edits the prescription in a rich-text editor with a true A4 preview, issues a PDF ready to print (the doctor signs the printed paper) with a verifiable QR code, and keeps everything in a single SQLite backend — with the desktop continuing to work offline (local cache + outbox) and syncing on reconnect. Server sync is free in v1; the $5/month or $50/year subscription (3-month trial) is designed for v1.1 on PayPhone Tokenization and never blocks clinical work. v1 includes a private image library of one 10 MB image per clinic for template branding; v1.1 raises it to five.
+**Solution:** a desktop+web application where each doctor works with their own templates (logo, letterhead, layout) and dynamic variables, edits the prescription in a form with a true A4 preview, issues a PDF ready to print (the doctor signs the printed paper) with a verifiable QR code, and keeps everything in a single SQLite backend — with the desktop continuing to work offline (local cache + outbox) and syncing on reconnect. Server sync is free in v1; the $5/month or $50/year subscription (3-month trial) is designed for v1.1 on PayPhone Tokenization and never blocks clinical work. v1 includes a private image library of one 10 MB image per clinic for template branding; v1.1 raises it to five.
 
 ## 2. Goals / non-goals
 
@@ -40,7 +40,7 @@ Small/medium clinics in Ecuador produce prescriptions on paper, in Word, or from
 |---|---|
 | **Administrator** | Users, roles, clinic settings, master templates, image library, access revocation, audit, read-only clinic-wide patient/prescription history. |
 | **Doctor** | Create/edit own prescriptions and patients, create and version own templates, upload images for own templates, print/save PDFs, view own history. |
-| **Nursing** | Create prescription drafts, edit medication fields, cannot sign or publish. |
+| **Nursing** | Create/edit patients, create prescription drafts, edit medication fields, cannot sign or publish. |
 | **Secretary** | Manage patients, reprint/save issued prescriptions, cannot edit signed clinical content. |
 | **Public verifier** | No account: scans the QR → `/verify/:code` page confirming authenticity plus minimal data (doctor, date, prescription number). |
 
@@ -48,9 +48,9 @@ Permissions are enforced server-side in the authorized service layer (never clie
 
 ## 4. Main flows
 
-1. **Issue prescription (online):** Login → search/create patient → choose template → rich-text editor (variables pre-loaded) → complete medications → A4 preview → *Sign and issue* → the number is assigned from the device's preallocated block and a verification code is created → PDF rendered by `printpdf` (download or *Print*) → sign the printed paper.
-2. **Issue prescription (offline, desktop):** same flow against the local cache; signing consumes the next number in the device's preallocated block (FR-014) and the prescription queues in an outbox with `pending_sync` status; the PDF is provisional (`PENDIENTE DE SINCRONIZACIÓN`, inactive QR). On reconnect, server functions upload it with an idempotent `client_id`, reconcile the block, and the final numbered PDF with an active QR is regenerated. If the block is exhausted, signing is blocked until the device reconnects. Conflicts: server wins for signed data; only an in-progress draft warns of a conflict and requires a choice.
-3. **Personal template:** Doctor uploads a logo → defines letterhead/footer (rich-text) → saves template → insertable variables (`{{patient.name}}`, `{{doctor.name}}`, `{{date}}`, `{{prescription.number}}`) → A4 preview → publish (new immutable version). No signature or stamp images (D-06).
+1. **Issue prescription (online):** Login → search/create patient → choose template → fill the prescription form (variables pre-loaded) → complete medications → A4 preview → *Sign and issue* → the number is assigned from the device's preallocated block and a verification code is created → PDF rendered by `printpdf` (download or *Print*) → sign the printed paper.
+2. **Issue prescription (offline, desktop):** same flow against the local cache; signing consumes the next number in the device's preallocated block (FR-014) and the prescription queues in an outbox with `pending_sync` status; the PDF is provisional (`PENDIENTE DE SINCRONIZACIÓN`, inactive QR). On reconnect, the sync API uploads it with an idempotent `client_id`, reconcile the block, and the final numbered PDF with an active QR is regenerated. If the block is exhausted, signing is blocked until the device reconnects. Conflicts: server wins for signed data; only an in-progress draft warns of a conflict and requires a choice.
+3. **Personal template:** Doctor uploads a logo → fills in the letterhead/footer fields → saves template → insertable variables (`{{patient.name}}`, `{{doctor.name}}`, `{{date}}`, `{{prescription.number}}`) → A4 preview → publish (new immutable version). No signature or stamp images (D-06).
 4. **Verification:** patient/printer scans the QR → web opens the verification page → sees "Receta auténtica — issued by Dr. …, date …, No. …" plus the status. No PHI.
 5. **Re-issue / download history:** search history → *Download PDF* / *Print* (regenerated from the final versioned document by the same `printpdf` renderer, same content as issued; not guaranteed byte-identical if the renderer version changed). Only ≤ 30 days of server-backed rows live in the desktop local cache; the rest downloads on demand (current product decision). Unsynced rows are never evicted.
 6. **Explain medication:** next to each medication line, an *"Explain with LLM"* link opens an LLM page in a new tab with the medication name pre-filled (medication only, never patient data) + disclaimer.
@@ -65,29 +65,29 @@ Permissions are enforced server-side in the authorized service layer (never clie
 - FR-003: A patient's prescription history is visible only to authorized roles in the clinic.
 
 ### 5.2 Prescription
-- FR-010: Create a prescription from patient + template; fields: date/time, diagnosis (text), general instructions (rich-text), medications (draggable/reorderable), validity/recommendations.
+- FR-010: Create a prescription from patient + template; fields: date/time, diagnosis (text), general instructions (text), medications (draggable/reorderable), validity/recommendations.
 - FR-011: Each medication: name (free text), dose, route, frequency, duration, quantity, notes (all free text, no validation against an official database).
 - FR-012: Per-medication "Explain with LLM" link (per clinic via `clinics.llm_url_template`; default: generic chat). Opens with the drug name only; never with PHI. The app never sends data to any LLM by itself.
 - FR-013: States: `draft → signed(published) → superseded/voided`. Signing locks editing and is allowed offline against a preallocated number (FR-014); an offline-signed document is provisional (no server copy, inactive QR) until sync reconciles it. Voiding requires a reason and leaves an audit trail. A correction creates a new prescription row with its own number from a block and its own verification code; the replaced row keeps its number and becomes `superseded`.
 - FR-014: Prescription number per clinic, unique and monotonically increasing across the network, assigned from preallocated per-device blocks. A device reserves a block (default 50 numbers; configurable) in a `BEGIN IMMEDIATE` transaction that advances `rx_counters.last_rx_number`, and signs offline by consuming the next number in its active block. A web client registers a `devices` row with `platform='web'` before its first allocation and uses the same block flow. Numbers are **not contiguous**: the unused tail of a block is burned and recorded in `rx_blocks`, never reused, so gaps are expected and legitimate (D-02). On sync the server validates that the number belongs to a block issued to that device and is unused, rejects duplicates via the unique index, and records the consumption. A device with an exhausted block cannot sign until it reconnects and refills; the UI shows the remaining count and warns below 10.
 
-### 5.3 Templates and rich-text editor
+### 5.3 Templates and form-based editing
 - FR-020: Per-doctor templates (and clinic master templates): letterhead (logo, doctor/clinic details, colors) + body + footer (printed doctor name/license, a blank space where the doctor signs on paper, QR, contact). Images uploaded to asset storage referenced by `asset_id`. Clinics can insert the library image(s) up to their v1 quota (FR-080); publishing pins every referenced asset to the version. No signature or stamp images are stored (D-06).
-- FR-021: WYSIWYG rich-text editor: bold, italic, underline, lists, tables, alignment, headings, variable insertion, image blocks, and medication blocks. Documents stored as versioned structured JSON (never unsanitized raw HTML).
+- FR-021: Form-based editing (plain Dioxus forms shared by web, macOS, and Windows — no WYSIWYG editor, no rich text, D-21): letterhead fields (logo, doctor/clinic details, colors), body text, footer fields, variable insertion, image slots, and medication rows. The form emits schema-checked structured JSON persisted as `doc_json` (never raw HTML).
 - FR-022: True-scale A4 preview: 210×297 mm, configurable margins, page breaks, repeated header/footer, embedded typography. The preview is a browser projection of the same structured document; the `printpdf` render (FR-030) is authoritative for the issued PDF.
 - FR-023: Supported v1 variables: `patient.{name,national_id,age}`, `doctor.{name,specialty,national_id,contact}`, `clinic.{name,address,phone}`, `prescription.{number,date,diagnosis}`, `medications[]`. Unknown variables → pre-signing warning, never a literal `{{key}}` in the PDF.
 - FR-024: Publishing a template creates an immutable version; already-issued prescriptions keep the version they used.
 
 ### 5.4 A4 PDF, download, print, QR
-- FR-030: Single pipeline: `printpdf` 0.12 renders the PDF in Rust from the pinned structured document (`template_versions.doc_json`) plus the variable set, page by page at A4 (210×297 mm) with explicit placement ops — text, shapes, embedded TTF fonts, JPEG/PNG images, and the QR as an embedded image. The renderer is one shared module linked into both the `server` build (web: `GET /api/prescriptions/:id/pdf`) and the `desktop` build (local rendering, so PDF generation works offline — D-01). No Chromium, no headless browser, no print-to-PDF dialog, and never printpdf's experimental HTML layout (`from_html`) for issued output.
+- FR-030: Single pipeline: `printpdf` 0.12 renders the PDF in Rust from the pinned structured document (`template_versions.doc_json`) plus the variable set, page by page at A4 (210×297 mm) with explicit placement ops — text, shapes, embedded TTF fonts, JPEG/PNG images, and the QR generated by `qrcode-generator` 6.1.2 as an embedded PNG. The renderer is one shared module linked into both the `server` build (web: `GET /api/prescriptions/:id/pdf`) and the `desktop` build (local rendering, so PDF generation works offline — D-01). No Chromium, no headless browser, no print-to-PDF dialog, and never printpdf's experimental HTML layout (`from_html`) for issued output.
 - FR-031: Output: *Save as PDF* downloads the rendered bytes with `Content-Disposition: attachment`; *Print* hands the same bytes to the system viewer/print dialog; *Share* uses the Web Share API on web. Generation runs only on an explicit user action — never as a silent background download or write.
 - FR-032: **File name:** `{PatientName}-{receta}-{localized_date}-{DoctorName}.pdf`. Example: `Juan Perez-receta-10-11-2026-Dr Ana Ruiz.pdf`. Sanitize `/ \ : * ? " < > |`, collapse whitespace, cap at 120 characters without truncating key fields; applied to the `Content-Disposition` filename (and to the title of the opened PDF document).
-- FR-033: Every **final** PDF carries a QR encoding `https://<domain>/verify/{code}` + an opaque per-version `code`; the QR contains no PHI (name, cédula, diagnosis, or medications). A provisional offline PDF shows a placeholder QR area plus `PENDIENTE DE SINCRONIZACIÓN` and no scannable code; the active QR appears only after sync assigns the number and verification code (FR-014, FR-043).
+- FR-033: Every **final** PDF carries a QR encoding `https://<domain>/verify/{code}` + an opaque per-version `code`; the QR contains no PHI (name, cédula, diagnosis, or medications). A provisional offline PDF shows a placeholder QR area plus `PENDIENTE DE SINCRONIZACIÓN` and no scannable code; the active QR appears only after sync reconciles the number and assigns the verification code (FR-014, FR-043).
 - FR-034: PDF header/footer: prescription number, QR, verification code printed as readable text (for re-typing), issue date/time, and a printed signature line for the doctor to sign on paper.
 
 ### 5.5 Sync, offline and local retention (desktop)
 - FR-040: Offline-first desktop: patients, published templates, and prescriptions (drafts + signed) are accessible offline after first login. Outbound operation queue with retries and visible status. The desktop cache relies on OS disk encryption (FileVault/BitLocker) as a deployment prerequisite; no app-level database encryption in v1 (D-07).
-- FR-041: Real-time sync via SSE served by the existing axum router, with a 30-second polling fallback when SSE is unavailable (no second socket server). On reconnect, drain the outbox oldest-first with idempotent server functions (`client_id`), reconcile preallocated `rx_blocks` (FR-014), and refresh the cached number block and metadata.
+- FR-041: Real-time sync via SSE served by the existing axum router, with a 30-second polling fallback when SSE is unavailable (no second socket server). On reconnect, drain the outbox oldest-first with idempotent REST mutations (`client_id`), reconcile preallocated `rx_blocks` (FR-014), and refresh the cached number block and metadata.
 - FR-042: **Local retention:** only server-backed prescriptions from the last **30 days** are kept locally (configurable in days via `clinics.retention_days`). On expiry they are evicted from the local cache (not deleted from the server); on-demand regeneration with a *Download PDF* / *Print* button. Rows with **no server copy** (created offline, still in the outbox, or never synced) are never evicted — they are the only copy.
 - FR-043: UX indicators: online / offline / syncing / pending uploads (count) / provisional documents. Never hide data loss: an offline-signed prescription is provisional — its PDF carries `PENDIENTE DE SINCRONIZACIÓN`, no active QR, and no final number until sync reconciles it; after sync the final PDF is regenerated. Billing-driven states (`sync_locked`, `SINCRONIZACIÓN BLOQUEADA`) are v1.1 behavior (§5.7) and are not implemented in v1.
 
@@ -109,7 +109,7 @@ Permissions are enforced server-side in the authorized service layer (never clie
 
 - **Billing unit is the clinic (tenant).** One subscription per clinic; the Administrator is the payer, their card becomes the stored payment method, and all members inherit the entitlement. Prices are tax-inclusive and the IVA rate lives in `tax_rates` (15% seeded): at 15%, $5.00 = $4.35 net + $0.65 IVA; $50.00 = $43.48 net + $6.52 IVA. The split is computed at checkout and snapshotted per transaction.
 - **Trial:** starts when the clinic is created and ends after 3 calendar months. During the trial all online features work and the clinic can upload one library image (FR-080); branding assets remain available. On expiry without an active plan the clinic enters `locked` (online sync disabled, one image retained for rendering).
-- **Payment status never gates clinical work.** Patients, prescriptions, templates, rich-text editor, A4 PDF/print, local history, QR codes of already-issued prescriptions, and public verification remain available regardless of billing state. Only online sync, new server writes, and library uploads beyond the free image are gated; branding renders until cancellation, and from `past_due` only one library image renders.
+- **Payment status never gates clinical work.** Patients, prescriptions, templates, editing forms, A4 PDF/print, local history, QR codes of already-issued prescriptions, and public verification remain available regardless of billing state. Only online sync, new server writes, and library uploads beyond the free image are gated; branding renders until cancellation, and from `past_due` only one library image renders.
 - **Web is online-only:** after the trial without a plan, the web app is read-only over retained data. Desktop continues to work fully offline with local data; new prescriptions stay local and their QR activates only after sync.
 - **Free-tier server retention:** the first 3 months of the clinic's data (`clinics.server_retention_until`) stay on the server. Data created afterwards survives the 30-day export grace and becomes eligible for trimming (FR-069, only when the job is enabled). Local rows with no server copy are never evicted by the 30-day cache rule (FR-042).
 - **Renewal and dunning:** a renewal is a server-initiated tokenized charge (`POST /api/transaction/web`) using the stored `ctoken`. A declined charge gets a 7-day `past_due` grace with sync, retries on days 0, +2, and +4, then `locked`. After a lapse, server data beyond the free window is kept for a 30-day export grace (`data_grace_ends_at`) before trimming; the first 3 months are never deleted and legal sign-off remains a production prerequisite (§9).
@@ -155,9 +155,9 @@ Tables follow the standard `id`, `created_at`, `updated_at`, `created_by` shape 
 | `clinic_members` | `clinic_id`, `profile_id`, `role` |
 | `patients` | `clinic_id`, `full_name`, `national_id`, `birth_date`, `sex`, `phone`, `notes` |
 | `templates` | `owner_type(doctor, clinic)`, `owner_id`, `name`, `current_version_id`, `status` |
-| `template_versions` | `template_id`, `version_no`, `doc_json` (editor), `variables_spec`, `theme`, `status` |
+| `template_versions` | `template_id`, `version_no`, `doc_json` (form), `variables_spec`, `theme`, `status` |
 | `template_version_assets` | `template_version_id`, `asset_id` (pins images to published versions) |
-| `prescriptions` | `patient_id`, `doctor_id` (NULL on a nursing draft; `created_by` is the author; required before signing), `clinic_id`, `template_version_id`, `status`, `rx_number` (from the device's block, at signing), `rx_block_id`, `validity`, `diagnosis`, `instructions_json`, `signed_at`, `voided_at`, `void_reason`, `client_id` (idempotency), `supersedes_id`, `synced_at` (server sets on sync; the local cache uses NULL = not yet uploaded) |
+| `prescriptions` | `patient_id`, `doctor_id` (NULL on a nursing draft; `created_by` is the author; required before signing), `clinic_id`, `template_version_id`, `status`, `rx_number` (from the device's block, at signing), `rx_block_id`, `validity`, `diagnosis`, `instructions`, `signed_at`, `voided_at`, `void_reason`, `client_id` (idempotency), `supersedes_id`, `synced_at` (server sets on sync; the local cache uses NULL = not yet uploaded) |
 | `prescription_items` | `prescription_id`, `position`, `med_name`, `dose`, `route`, `frequency`, `duration`, `quantity`, `notes` |
 | `verification_codes` | `prescription_id`, `code` (printed on the PDF; reprints reuse it), `code_hash`, `status`, `created_at` |
 | `rx_counters` | `clinic_id`, `last_rx_number` (highest allocated, not consumed) |
@@ -175,7 +175,7 @@ Tables follow the standard `id`, `created_at`, `updated_at`, `created_by` shape 
 
 v1 creates every table above except the seven marked (v1.1). Retention dates stay on `clinics` so the 3-month server rule exists without a subscription row (D-09).
 
-**Mutations (authorized service functions):** `register_user`, `register_device`, `revoke_device`, `create_patient`, `update_patient`, `create_template`, `publish_template_version`, `create_prescription(draft)`, `upsert_prescription_item`, `sign_prescription`, `void_prescription`, `supersede_prescription`, `create_verification_code`, `request_pdf_regeneration`, `upload_asset`, `delete_asset`, `evict_local_cache_row` (client-only), plus the transactional number-block functions `allocate_rx_block` (server, `BEGIN IMMEDIATE`), `consume_rx_number` (client, offline, within an allocated block), and `reconcile_rx_block` (server, on sync). Billing mutations (`start_trial`, `create_checkout`, `resolve_payment`, `store_payment_method`, `revoke_payment_method`, `charge_subscription`, `schedule_renewal`, `lock_subscription`, `cancel_subscription`, `reverse_payment`, `trim_beyond_free_window`, `can_sync`, `can_upload_images`) are v1.1.
+**Mutations (authorized service functions):** `register_user`, `create_clinic`, `set_member_role`, `remove_member`, `update_profile`, `update_doctor`, `register_device`, `revoke_device`, `create_patient`, `update_patient`, `soft_delete_patient`, `create_template`, `create_template_version`, `publish_template_version`, `archive_template`, `create_prescription(draft)`, `update_prescription`, `upsert_prescription_item`, `sign_prescription`, `void_prescription`, `supersede_prescription`, `create_verification_code`, `request_pdf_regeneration`, `upload_asset`, `delete_asset`, `evict_local_cache_row` (client-only), plus the transactional number-block functions `allocate_rx_block` (server, `BEGIN IMMEDIATE`), `consume_rx_number` (client, offline, within an allocated block), and `reconcile_rx_block` (server, on sync). Billing mutations (`start_trial`, `create_checkout`, `resolve_payment`, `store_payment_method`, `revoke_payment_method`, `charge_subscription`, `schedule_renewal`, `lock_subscription`, `cancel_subscription`, `reverse_payment`, `trim_beyond_free_window`, `can_sync`, `can_upload_images`) are v1.1.
 
 **Reads:** queries scoped by `clinic_id`/`doctor_id`/`patient_id` with role filters; PHI only flows to authorized roles. Sensitive-read audit: log access to patients/prescriptions (who/when/what) — a healthcare traceability requirement. Billing reads (v1.1) expose plan/status/transaction metadata only, never PHI. Image reads expose asset metadata and short-lived signed URLs only; object keys carry no PHI.
 
@@ -183,10 +183,10 @@ v1 creates every table above except the seven marked (v1.1). Retention dates sta
 
 | Layer | Decision |
 |---|---|
-| Client | Dioxus 0.7.1, single codebase for web + desktop (features `web` / `desktop`). Implemented routes: `/`, `/login`, `/dashboard` (session-guarded). Target v1 routes: `/patients*`, `/prescriptions*` (incl. `:id/preview`), `/templates*`, `/settings*`, `/audit`, `/verify/:code`. |
-| State | Signals/context for session, role, sync status; `use_resource`/`use_server_future` for initial loads. Identical UI on desktop/web. |
-| Editor | Content-editable component (embedded Tiptap/ProseMirror via JS interop) emitting JSON; imported HTML is sanitized; persisted as `doc_json`. |
-| PDF | `printpdf` 0.12 renders the PDF in Rust from the pinned `doc_json` layout model: A4 page ops, embedded TTF fonts, JPEG/PNG images, QR as an image. One shared renderer module in the server binary (`GET /api/prescriptions/:id/pdf`) and the desktop binary (local, offline). The A4 preview is the browser projection of the same model; no Chromium and no `from_html` (D-01). |
+| Client | Dioxus 0.7.1, single codebase for web + desktop (features `web` / `desktop`). Implemented routes: `/`, `/login`, `/dashboard` (client-side session check). Target v1 routes: `/patients*`, `/prescriptions*` (incl. `:id/preview`), `/templates*`, `/settings*`, `/audit`, `/verify/:code`. |
+| State | Signals/context for session, role, sync status; `use_resource`/fetch over `/api/*` for initial loads. Identical UI on desktop/web. |
+| Editor | Form-based editing (plain Dioxus forms shared by web, macOS, and Windows — no WYSIWYG, no rich text, D-21): letterhead/body/footer fields, variable insertion, image slots, medication rows; the form emits schema-checked structured JSON persisted as `doc_json`; raw HTML is never persisted or rendered. |
+| PDF | `printpdf` 0.12 renders the PDF in Rust from the pinned `doc_json` layout model: A4 page ops, embedded TTF fonts, JPEG/PNG images, and the QR generated by `qrcode-generator` 6.1.2 and embedded as PNG. One shared renderer module in the server binary (`GET /api/prescriptions/:id/pdf`) and the desktop binary (local, offline). The A4 preview is the browser projection of the same model; no Chromium and no `from_html` (D-01). |
 | Backend | Single fullstack process (axum + Dioxus serve) with embedded SQLite via Diesel (`app.db` locally; `/data/app.db` in the `persona-data` volume under Docker). App-owned identity (Argon2 passwords, hashed opaque sessions) mounted same-origin at `/api/auth/*` with `users`/`sessions` tables. Planned ops: Caddy/Nginx with TLS + encrypted daily backups of the SQLite file. |
 | Billing (v1.1) | Not implemented in v1. Provider: **PayPhone Tokenization** (`https://docs.payphone.app/tokenizacion`). First charge via the PayPhone payment button/box (Visa/Mastercard) returns `ctoken`; renewals `POST https://pay.payphonetodoesposible.com/api/transaction/web` with Bearer `PAYPHONE_TOKEN`, `storeId`, `cardToken`, AES-256-CBC `cardHolder` (`PAYPHONE_CODING_PASSWORD`), and the required `order`. Amounts in integer cents from `plans`; IVA split from `tax_rates`, snapshotted per transaction. No PAN/CVV; tokenization requires PayPhone authorization and a 10%/6-month balance hold. |
 | Jobs | In-process scheduler in the single fullstack node: expired-session purge, stale/pending asset cleanup, and retention trimming after `data_grace_ends_at` (on in v1, D-12). v1.1 adds trial expiry, renewal requests, payment polling, and dunning. Jobs are idempotent and restart-safe (state lives in SQLite). |
@@ -235,18 +235,20 @@ v1 creates every table above except the seven marked (v1.1). Retention dates sta
 ## 11. v1 roadmap
 
 - **M0 (foundation):** auth + roles, patient CRUD, SQLite service layer, Docker Compose deployment.
-- **M1 (editor + PDF):** templates + JSON editor + variables + A4 preview + `printpdf` A4 renderer + filename + QR + logo/one-image upload.
+- **M1 (forms + PDF):** templates + form editor + variables + A4 preview + `printpdf` A4 renderer + filename + QR + logo/one-image upload.
 - **M2 (offline):** desktop cache/outbox (OS disk encryption prerequisite), preallocated number blocks, provisional PDFs, SSE + polling sync, 30-day cache retention, on-demand regeneration, sync indicators.
-- **M3 (hardening):** audit, device registration/revocation (`devices` table), MFA, encrypted backups, verification rate limiting, signed installers + auto-update channel (D-08), QA with real A4 printers.
+- **M3 (hardening):** audit, MFA, encrypted backups, signed installers + auto-update channel (D-08), QA with real A4 printers. Device registration/revocation and verification rate limiting land earlier (specs 04-D and 09-I).
 - **M4 (beta release):** retention/export job (on in v1, D-12), session purge, orphan cleanup, runbook, beta telemetry.
+
+Spec phases (`specs/01`–`13`) are the execution order and may deliver roadmap items earlier than their milestone label.
 
 **v1.1 (billing, deferred):** `plans`/`tax_rates`/`subscriptions`/`payment_methods`/`payment_transactions`, trial, PayPhone Tokenization (payment-button first charge, `ctoken` storage/consent, `/api/transaction/web` renewals, gated on PayPhone authorization), renewal/dunning scheduler, `can_sync` gate, image library (5/1 tiers), `/settings/billing`, state-based rendering rules.
 
-M0 progress (2026-11-11): Diesel-backed sign-up/sign-in/sign-out with `POST /api/auth/*`, the `/login` page and session-guarded `/dashboard`, and the Docker Compose deployment (app container, `persona-data` volume, `/health` healthcheck) are implemented. Roles and patient CRUD remain.
+M0 progress (2026-11-11): Diesel-backed sign-up/sign-in/sign-out with `POST /api/auth/*`, the `/login` page and the client-checked `/dashboard`, and the Docker Compose deployment (app container, `persona-data` volume, `/health` healthcheck) are implemented. Roles and patient CRUD remain.
 
 ## 12. Acceptance criteria (v1)
 
-- [ ] Doctor creates a patient, picks their template, edits with rich-text, signs, and prints an A4 PDF with the clinic logo and an active QR.
+- [ ] Doctor creates a patient, picks their template, fills the form, signs, and prints an A4 PDF with the clinic logo and an active QR.
 - [ ] The same flow works offline on desktop using a preallocated number; on reconnect it syncs, is reconciled without duplication, and the final numbered PDF with an active QR is regenerated.
 - [ ] Exhausting the device's number block offline blocks further signing with a visible warning and remaining count.
 - [ ] Numbers are unique and monotonically increasing per clinic across devices; gaps from burned block tails are recorded in `rx_blocks` and never reused.
@@ -268,8 +270,7 @@ M0 progress (2026-11-11): Diesel-backed sign-up/sign-in/sign-out with `POST /api
 | `printpdf` HTML layout is experimental and the API moves | template-driven layout that silently changes after a dependency bump | never call `from_html`; explicit ops only; pin `printpdf` 0.12 and re-run the golden fixture on upgrade |
 | PDF delivery UX | wrong or missing filename; a download that looks like a silent background write | generation only on user action; `Content-Disposition` filename (FR-032); *Print* opens the system viewer; measure first-attempt success ≥ 98% |
 | Preallocated numbering | gaps from burned blocks; exhaustion blocks signing; replayed duplicates | `BEGIN IMMEDIATE` allocation, server validation on reconcile, unique index, remaining-count UI, configurable block size, unused tails recorded in `rx_blocks` |
-| Desktop auth transport | the client posts to absolute `http://127.0.0.1:8080` and `reqwest` has no cookie jar, so desktop sessions do not persist | move application data to Dioxus server functions (preferred) or add a configurable origin + cookie jar + credentialed CORS; blocking for M2 |
-| Dioxus 0.7 rich-text interop | Tiptap/ProseMirror bridge and CSS isolation are non-trivial | editor spike before M1; sanitized structured JSON only, never raw HTML |
+| Desktop auth transport | the client posts to absolute `http://127.0.0.1:8080` and `reqwest` has no cookie jar, so desktop sessions do not persist | REST under `/api/*` with a configurable origin + cookie jar + credentialed CORS (chosen — specs 02-B/04-D); blocking for M2 |
 | Single-node SQLite concurrency | `SQLITE_BUSY` under the pool plus jobs | WAL, `busy_timeout`, retry policy for write transactions before M2 |
 | Free-text medications | spelling/dose errors carry clinical risk | visible disclaimer + mandatory doctor verification; Phase 2 catalog |
 | Self-hosted operations | backups, TLS, updates are our responsibility | runbook, encrypted daily file backup, RPO ≤ 24 h, RTO ≤ 4 h |
@@ -294,7 +295,7 @@ M0 progress (2026-11-11): Diesel-backed sign-up/sign-in/sign-out with `POST /api
 | D-08 | 2026-11-11 | Auto-update ships in v1 | a desktop app without updates strands beta users on fixed bugs | signed manifest, staged rollout, rollback; part of M3 |
 | D-09 | 2026-11-11 | Keep the 3-month server window + 30-day export grace | user decision, reconciled with the counsel prerequisite in §9 | retention dates live on `clinics`; enforcement decided in D-12 |
 | D-10 | 2026-11-11 | One library image per clinic in v1 | free beta; the 5-image library arrives with billing | logo is excluded; v1.1 restores the state-based quota |
-| D-11 | 2026-11-11 | Sync uses SSE from the existing axum router with a 30-second polling fallback | Dioxus server functions are request/response and a second socket server is unwanted | one server process; polling covers proxies that break SSE |
+| D-11 | 2026-11-11 | Sync uses SSE from the existing axum router with a 30-second polling fallback | request/response HTTP cannot push and a second socket server is unwanted | one server process; polling covers proxies that break SSE |
 | D-12 | 2026-11-11 | Free-beta retention is enforced: 3-month window + 30-day export grace, then trim | user decision (resolves O-09) | the trim job runs by default in v1; export is offered first; counsel sign-off still required before production |
 | D-13 | 2026-11-11 | Public verification is opaque-code only; no second factor | user decision (resolves O-02) | FR-050 unchanged; the QR/typed code reveal the minimal record (doctor, date, number) |
 | D-14 | 2026-11-11 | Subscription provider is PayPhone Tokenization (`ctoken` + `POST /api/transaction/web`), replacing API Sale's one-off-per-period model | card-on-file removes the per-period approval; PayPhone still requires authorization | requires merchant authorization + 10%/6-month balance hold; Visa/Mastercard only; the app schedules renewals |
@@ -304,6 +305,7 @@ M0 progress (2026-11-11): Diesel-backed sign-up/sign-in/sign-out with `POST /api
 | D-18 | 2026-11-11 | The Administrator has read-only clinic-wide patient/prescription access | matches the sitemap and lets the clinic owner audit clinical activity without granting edit rights | Administrator never signs or edits clinical content; every read is audited |
 | D-19 | 2026-11-11 | `clinics` is the only retention authority in v1 and v1.1 | removes the duplicated `subscriptions` deadlines that left the v1 trim job undefined | v1 sets `data_grace_ends_at` at clinic creation; v1.1 sets it at lock and clears it while active; subscriptions keeps billing dates only |
 | D-20 | 2026-11-11 | Web clients register a `devices` row (`platform='web'`) and allocate number blocks like desktop | `rx_blocks` requires a device, and web signing must follow the same uniqueness rules | `sessions.device_id` stays nullable until the first block allocation |
+| D-21 | 2026-11-12 | No rich-text editor: prescriptions and templates are edited with plain forms on web, macOS, and Windows | the planned WYSIWYG editor (taino-edit) compiles only to wasm32 and cannot run in the native desktop binary; a native fallback would fork the UX the PRD promises to keep identical | taino-edit is removed from the stack; editing is form fields shared by all three targets; the form emits `doc_json`; no rich text in v1 |
 
 ## 15. Open questions
 
@@ -317,4 +319,4 @@ M0 progress (2026-11-11): Diesel-backed sign-up/sign-in/sign-out with `POST /api
 | O-08 | Auto-update signing-key custody, rotation, and rollback drill | Security | M3 |
 
 ---
-*Note: the repository already contains the Dioxus + router + fullstack base with working Diesel-backed authentication (sign-up/sign-in, `/login`, session-guarded `/dashboard`) and a Docker Compose deployment — this PRD is implemented on top of it, not as a new project.*
+*Note: the repository already contains the Dioxus + router + fullstack base with working Diesel-backed authentication (sign-up/sign-in, `/login`, client-checked `/dashboard`) and a Docker Compose deployment — this PRD is implemented on top of it, not as a new project.*

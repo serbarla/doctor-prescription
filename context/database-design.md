@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Source | `context/PRD.md` (Draft v0.7 — 2026-11-11) §5.7/§5.8/§6, `context/sitemap.md` |
+| Source | `context/PRD.md` (Draft v0.8 — 2026-11-12) §5.7/§5.8/§6, `context/sitemap.md` |
 | Engine | SQLite (single node), accessed via Diesel 2.3 (`sqlite`, `r2d2`) |
 | Server DB | `app.db` (local) / `/data/app.db` under Docker (`persona-data` volume) |
 | Desktop DB | separate local cache SQLite + outbox queue |
@@ -51,7 +51,7 @@ App-owned tables (this design):
 | `doctors` | Doctor medical details (license, specialty) | §6 `doctors` |
 | `patients` | Patient demographics | §6 `patients` |
 | `templates` | Template head record (per-doctor or clinic master) | §6 `templates` |
-| `template_versions` | Immutable template versions + editor `doc_json` | §6 `template_versions` |
+| `template_versions` | Immutable template versions + form-built `doc_json` | §6 `template_versions` |
 | `template_version_assets` | Pins referenced assets to immutable template versions | FR-024, §5.8 FR-080–085 |
 | `prescriptions` | Prescription head + state machine | §6 `prescriptions` |
 | `prescription_items` | Ordered medication lines | §6 `prescription_items` |
@@ -269,7 +269,7 @@ CREATE TABLE template_versions (
   id             TEXT PRIMARY KEY,
   template_id    TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
   version_no     INTEGER NOT NULL,
-  doc_json       TEXT NOT NULL,                                       -- editor JSON, sanitized (never raw HTML)
+  doc_json       TEXT NOT NULL,                                       -- structured JSON built from form fields (never raw HTML)
   variables_spec TEXT NOT NULL,                                       -- JSON: known variables
   theme          TEXT,                                                -- JSON: colors/fonts/margins
   status         TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
@@ -297,7 +297,7 @@ CREATE TABLE prescriptions (
   rx_block_id         TEXT REFERENCES rx_blocks(id),
   diagnosis           TEXT,
   validity            TEXT,                                           -- validity/recommendations (FR-010)
-  instructions_json   TEXT,                                           -- general instructions (rich-text JSON)
+  instructions        TEXT,                                           -- general instructions (text, D-21)
   signed_at           TEXT,
   synced_at           TEXT,                                           -- server: set when accepted from the outbox; cache: NULL = not yet uploaded
   voided_at           TEXT,
@@ -612,7 +612,7 @@ CREATE TABLE asset_cache (
 - **Image packaging and lapse behavior (v1.1):** `active` and `past_due` get 5 library images; `trialing` and `locked` get 1; `canceled` gets 0; v1 is flat 1. The logo is excluded. From `past_due`, only the logo and one library image render and the rest show a placeholder; `locked` keeps that image; `canceled` soft-deletes assets, removes objects (including the logo), and renders placeholders while keeping published-version pins intact (D-05).
 - **Devices and MFA:** `devices` is modeled now and revocation is enforced through `sessions.device_id`; MFA remains an M3 item in the auth module.
 - **Audit retention:** 5 years, append-only, no purge before the window.
-- **Verification rate limiting:** per-IP limit at the HTTP layer in M3; verification attempts are audited without storing raw IPs. No schema change.
+- **Verification rate limiting:** per-IP limit at the HTTP layer (spec 09-I; roadmap M3); verification attempts are audited without storing raw IPs. No schema change.
 - **PayPhone Tokenization (v1.1):** the first charge goes through the PayPhone payment button/box and returns `ctoken`; renewals POST `/api/transaction/web` with the stored token. PayPhone states tokenization is not automatic recurring, so the scheduler owns the cadence. Requires merchant authorization and a 10%/6-month balance hold; Visa/Mastercard only; explicit consent before token storage. None of it ships in v1.
 - **IVA:** `tax_rates` is the source of truth (15% seeded, effective-dated); `plans` stores only the tax-inclusive `amount_cents`; the split is computed at checkout and snapshotted per transaction with `tax_rate_bps`. SRI invoicing stays out of scope.
 - **Trial start for existing clinics (v1.1):** migration time + 3 calendar months (grandfathering). In v1, `clinics.server_retention_until` uses `created_at + 3 calendar months`.

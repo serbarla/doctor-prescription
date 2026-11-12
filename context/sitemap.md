@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Source | `context/PRD.md` (Draft v0.7 — 2026-11-11) |
+| Source | `context/PRD.md` (Draft v0.8 — 2026-11-12) |
 | Product | PersonaSanus — prescription generator for doctors (Ecuador, `es-EC`) |
 | Platforms | Desktop (macOS, Windows) offline-first + Web (Chromium) — same routes, same UX |
 | Router | Dioxus 0.7.1 `router` — single `Route` enum, `#[layout(Navbar)]` for authenticated shell |
@@ -86,11 +86,11 @@ All routes below sit under `#[layout(Navbar)]`: persistent nav (Dashboard, Patie
 | `/patients/:id/edit` | Patient edit | Doctor, Nursing, Secretary | FR-001 | ⬜ | Update patient fields. Audited (§6 sensitive-read audit). |
 | `/prescriptions` | Prescriptions — history | Doctor (own), Nursing, Secretary (reprint), Administrator | §4 flow 5, FR-042 | ⬜ | Search/filter history by patient, date, status (`draft → signed → superseded/voided`, FR-013). *Download PDF* / *Print* regenerates the same content from the final versioned document with `printpdf` (same content, not byte-identical across renderer versions). Desktop: only ≤ 30 days in local cache; older rows show on-demand regeneration. |
 | `/prescriptions/new` | Issue prescription | Doctor, Nursing (draft only) | §4 flows 1–2, FR-010 | ⬜ | Create from `?patient_id=` + `?template_id=`. Prefills variables, medications, diagnosis. Query params optional — patient/template pickers shown when absent. |
-| `/prescriptions/:id` | Prescription editor / detail | Doctor (own; sign), Nursing (draft fields only), Secretary (read + reprint only) | FR-010–014, §5.3 | ⬜ | Rich-text editor over A4 template (§2). `draft`: editable. `signed`: locked, read-only with *Download PDF*, *Print*, *Share*, *Void* (reason required), *Supersede* (new version referencing previous). Per-medication *Explain with LLM* (FR-012, external — §3 below). |
+| `/prescriptions/:id` | Prescription editor / detail | Doctor (own; sign), Nursing (draft fields only), Secretary (read + reprint only) | FR-010–014, §5.3 | ⬜ | Form-based editing over the A4 template (no rich text — D-21). `draft`: editable. `signed`: locked, read-only with *Download PDF*, *Print*, *Share*, *Void* (reason required), *Supersede* (new version referencing previous). Per-medication *Explain with LLM* (FR-012, external — §3 below). |
 | `/prescriptions/:id/preview` | A4 preview | Same as `/prescriptions/:id` | FR-022, FR-030–034 | ⬜ | True-scale A4 (210×297 mm) 1:1 preview; the browser projection of the same layout model `printpdf` renders. Actions: *Sign and issue* (from draft), *Download PDF* (`GET /api/prescriptions/:id/pdf`), *Print* (opens the rendered PDF in the system viewer; desktop renders locally), *Share* (web). Filename `{PatientName}-receta-{DD-MM-AAAA}-{DoctorName}.pdf` via `Content-Disposition` (FR-032, `es-EC`). QR + readable verification code in header/footer (FR-033/034). A provisional offline PDF shows `PENDIENTE DE SINCRONIZACIÓN` and a placeholder QR; the active QR appears only after sync (FR-043). |
 | `/templates` | Templates — list | Doctor (own + clinic master), Administrator (master) | FR-020/024 | ⬜ | List per-doctor templates and clinic master templates; status and current version. Actions: *New template*, *Use for prescription*. |
 | `/templates/new` | Template create | Doctor, Administrator | §4 flow 3, FR-020 | ⬜ | Create template: letterhead (clinic logo via `asset_id`, doctor/clinic details, colors) + body + footer (printed signature line, QR, contact). Clinics can insert the 1 library image (v1 quota; 5 in v1.1). No signature or stamp images (D-06). |
-| `/templates/:id/edit` | Template editor | Owner doctor; Administrator for master | FR-020/021/023, FR-080–085 | ⬜ | WYSIWYG editor (bold/italic/underline, lists, tables, alignment, headings, variable insertion, image blocks, medication blocks). Insert images from the clinic library; the upload prompt appears when the v1 quota (1 image) blocks an upload. Variables: `patient.{name,national_id,age}`, `doctor.{name,specialty,national_id,contact}`, `clinic.{name,address,phone}`, `prescription.{number,date,diagnosis}`, `medications[]`. Unknown variables warn pre-signing. Stored as versioned `doc_json`, never unsanitized HTML. *Publish* pins every referenced `asset_id` and creates an immutable version (FR-024). |
+| `/templates/:id/edit` | Template editor | Owner doctor; Administrator for master | FR-020/021/023, FR-080–085 | ⬜ | Form-based template editor (no rich text — D-21): letterhead fields, body text, footer fields, variable insertion, image slots, medication blocks. Insert images from the clinic library; the upload prompt appears when the v1 quota (1 image) blocks an upload. Variables: `patient.{name,national_id,age}`, `doctor.{name,specialty,national_id,contact}`, `clinic.{name,address,phone}`, `prescription.{number,date,diagnosis}`, `medications[]`. Unknown variables warn pre-signing. Stored as versioned `doc_json` built from form fields, never HTML. *Publish* pins every referenced `asset_id` and creates an immutable version (FR-024). |
 | `/templates/:id/preview` | Template A4 preview | Owner doctor, Administrator | FR-022 | ⬜ | True-scale A4 preview with sample variable values, repeated header/footer, margins/page breaks, and the pinned images before publishing. |
 | `/settings` | Settings — index | All authenticated | §3, §5.5 | ⬜ | Hub linking clinic, users, profile, and (Administrator, v1.1) billing. Redirects to `/settings/profile` for non-admin roles. |
 | `/settings/clinic` | Clinic settings | Administrator | §6 `clinics`, FR-042, FR-080–085 | ⬜ | Clinic name/address/phone/logo, timezone, `llm_url_template`, local retention days (default 30). Image library: upload/delete 1 image (10 MB; 5 only in v1.1), quota/usage, clinic logo (does not consume the slot). |
@@ -143,7 +143,7 @@ flowchart LR
     D --> P["/patients<br/>search / create"]
     P --> N["/prescriptions/new<br/>patient + template"]
     T["/templates"] --> N
-    N --> E["/prescriptions/:id<br/>rich-text editor"]
+    N --> E["/prescriptions/:id<br/>form-based editing"]
     E --> V["/prescriptions/:id/preview<br/>A4 · Sign and issue"]
     V --> PDF["Download PDF / Print<br/>QR → /verify/:code"]
     PDF --> PUB["/verify/:code<br/>public, no PHI"]
@@ -153,7 +153,7 @@ flowchart LR
 ```
 
 1. **Issue (online)** — `/login` → `/patients` (search/create) → `/prescriptions/new` → `/prescriptions/:id` → `/prescriptions/:id/preview` → *Sign and issue* → *Download PDF* / *Print*. Target < 60 s (§2).
-2. **Issue (offline, desktop)** — same routes against local cache; signing consumes a preallocated number and the prescription queues with `pending_sync`; its PDF is provisional (no active QR). On reconnect server functions upload with idempotent `client_id`, reconcile the number block, and the final PDF with an active QR is regenerated. Server wins for signed data; only in-progress drafts prompt on conflict.
+2. **Issue (offline, desktop)** — same routes against local cache; signing consumes a preallocated number and the prescription queues with `pending_sync`; its PDF is provisional (no active QR). On reconnect the sync API uploads with idempotent `client_id`, reconcile the number block, and the final PDF with an active QR is regenerated. Server wins for signed data; only in-progress drafts prompt on conflict.
 3. **Personal template** — `/templates/new` → `/templates/:id/edit` (logo, letterhead/footer, variables) → `/templates/:id/preview` → *Publish* (immutable version).
 4. **Verification** — QR on PDF → `/verify/:code` → "Receta auténtica" + doctor/date/number + status.
 5. **Re-issue history** — `/prescriptions` → *Download PDF* / *Print* (same content from the pinned version, same `printpdf` renderer); desktop rows older than 30 days regenerate on demand.
@@ -166,12 +166,14 @@ flowchart LR
 
 Current Dioxus `Route` enum (`src/main.rs`): `/`, `/login`, `/dashboard`, matching the PRD's M0 progress (Diesel-backed auth + Docker Compose deployment implemented; roles, authorized service layer, and patient CRUD remain). Everything else is the PRD target IA, sequenced by roadmap (§11):
 
+Spec phases (`specs/01`–`13`) are the execution order and may deliver roadmap items earlier than their milestone label.
+
 | Milestone | Sitemap delivered |
 |---|---|
 | M0 — foundation | `/login` ✅, `/dashboard` ✅ (auth check only; role-aware content ⬜), Docker Compose deployment ✅; roles, authorized service layer, `/patients*`, `/settings/users` ⬜ |
-| M1 — editor + PDF | `/templates*`, `/prescriptions/new`, `/prescriptions/:id`, `/prescriptions/:id/preview`, `/verify/:code`, `printpdf` A4 renderer + QR, logo/one-image upload |
+| M1 — forms + PDF | `/templates*`, `/prescriptions/new`, `/prescriptions/:id`, `/prescriptions/:id/preview`, `/verify/:code`, `printpdf` A4 renderer + QR, logo/one-image upload |
 | M2 — offline | Same routes on desktop cache/outbox, preallocated number blocks + provisional PDFs, SSE/polling sync indicators, 30-day retention states in `/prescriptions` |
-| M3 — hardening | `/audit`, `/settings/clinic`, MFA on `/login`, device registration/revocation, verification rate limiting on `/verify/:code`, signed installers + auto-update |
+| M3 — hardening | `/audit`, MFA on `/login`, signed installers + auto-update; device registration/revocation ships with spec 04-D, `/settings/clinic` with spec 06-F, and verification rate limiting on `/verify/:code` with spec 09-I |
 | M4 — beta release | Retention/export job (on in v1, D-12), session purge, orphan cleanup, runbook, beta telemetry |
 | v1.1 — billing (deferred) | `/settings/billing`, trial + `sync_locked` state in the shell, PayPhone Tokenization (payment button, `ctoken`, renewals), renewal/dunning jobs, image library (5/1 tiers × 10 MB), `tax_rates`-based IVA snapshot, quota + signed URLs |
 

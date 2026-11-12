@@ -22,7 +22,8 @@ PersonaSanus reads as a clinical prescription generator brought to life on scree
 | Bright Teal | `#0b978e` | `--color-bright-teal` | Mid-tone teal for hover states, link fills, and accent strokes — sits between the deep brand teal and the mint surface |
 | Plum | `#4d0037` | `--color-plum` | Decorative accent for illustration, icon fills, and tinted card washes — provides a warm counterpoint to the cool teal system |
 | Blossom | `#ffc3e6` | `--color-blossom` | Soft pink surface wash on A4 preview cards and decorative blocks — the third color in the tri-tone accent system (mint / cream / pink) |
-| Ember Ring | `conic-gradient(rgb(255, 176, 164) 0deg, rgb(255, 73, 44) 0deg, rgb(255, 73, 44) 360deg)` | `--color-ember-ring` | Orange decorative accent for verification marks, icons, and small graphic details |
+| Ember Ring | `#ff492c` | `--color-ember-ring` | Orange accent for verification marks, icons, and small graphic details |
+| Ember Ring Gradient | `conic-gradient(rgb(255, 176, 164) 0deg, rgb(255, 73, 44) 0deg, rgb(255, 73, 44) 360deg)` | `--gradient-ember-ring` | Decorative conic ring around verification marks and A4 preview cards |
 
 ## Tokens — Typography
 
@@ -165,7 +166,7 @@ Shield/security icon + 'Datos protegidos · Ley Orgánica de Protección de Dato
 - Use #006e75 filled buttons for the single primary action on each page — the teal button is the design's only pulse point.
 - Use #b9ffe8 as a section or card accent surface — the mint wash is the brand's signature and should appear at least once per page.
 - Separate elements with 1px #e5e7eb hairline borders and color contrast, never with drop shadows.
-- Use 8px radius for buttons, inputs, and small UI; 24px radius for cards, images, and large A4 preview surfaces.
+- Use 8px radius for buttons, inputs, and images; 24px radius for cards and large A4 preview surfaces.
 - Center all hero and section content — PersonaSanus's layout is symmetric and column-based, not asymmetric.
 - Use the tri-tone accent system (mint #b9ffe8, cream #fffded, pink #ffc3e6) for A4 preview card backgrounds, rotating through the three colors.
 
@@ -235,7 +236,7 @@ Example Component Prompts:
 ### CSS Custom Properties
 
 ```css
-::root {
+:root {
   /* Colors */
   --color-deep-teal: #006e75;
   --color-ink: #061d29;

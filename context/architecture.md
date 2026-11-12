@@ -77,7 +77,7 @@ flowchart LR
 | `default = ["web", "server"]` | both below | fullstack dev/prod build | `dx serve`, Docker |
 | `web` | `dioxus/web`, `dioxus-motion` (`web`) | wasm client | browser |
 | `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `anyhow`; ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native server binary | node |
-| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`); ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native WebView app | macOS/Windows |
+| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`); ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`); ⬜ M2 adds `diesel` (`sqlite`, `r2d2`) + `libsqlite3-sys` (`bundled`) + `reqwest` (`cookies`) for the local cache and sync | native WebView app | macOS/Windows |
 | `mobile` | `dioxus/mobile` | declared, not v1 | — |
 
 `reqwest` and `serde_json` are unconditional and compile on both sides.
@@ -325,7 +325,7 @@ Rules:
 - Reserve a `pending` row in a `BEGIN IMMEDIATE` transaction before the PUT, so the state quota cannot be raced. A failed upload deletes the row and object; a cleanup job removes `pending` rows older than one hour.
 - The MinIO bucket is private, served only through 15-minute signed GET URLs. Object keys and URLs carry no PHI.
 - Publishing a template writes `template_version_assets`. Deleting an image is blocked while any published version or retained prescription references it; delete the object last. The `canceled` soft-delete and object purge are v1.1 and leave pins intact with placeholder rendering (D-05).
-- Offline rendering caches images pinned by published templates, verifies SHA-256, and caps the cache at 10 MiB in v1 (50 MiB once the v1.1 quota reaches 5). Never evict an image still referenced by a cached template.
+- Offline rendering caches images pinned by published templates, verifies SHA-256, and caps each cached asset at its 10 MiB upload cap (logo + library ≤ 20 MiB in v1; 60 MiB at the v1.1 five-image quota). Never evict an image still referenced by a cached template.
 - Uploads are online-only in v1: the desktop caches existing images but does not queue image files in the outbox.
 - Upload and delete (including the cancellation purge) write `audit_log` rows (`asset_upload`, `asset_delete`) with metadata only.
 
@@ -407,6 +407,7 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `PERSONA_COOKIE_SECURE` | `false` | server | `1` or `true`; enable behind TLS |
 | `IP` | `127.0.0.1` | server | Compose sets `0.0.0.0` |
 | `PORT` | `8080` | server | Compose maps `8080:8080` |
+| `PUBLIC_BASE_URL` | — | server | ⬜ absolute base for QR/verification links, e.g. `https://rx.example.com` (specs 08-H, 09-I) |
 | `PAYPHONE_TOKEN` | — | server | ⬜ v1.1 secret, never shipped to clients |
 | `PAYPHONE_STORE_ID` | — | server | ⬜ v1.1 |
 | `PAYPHONE_CODING_PASSWORD` | — | server | ⬜ v1.1 AES-256-CBC key for `cardHolder` |
@@ -418,6 +419,10 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `ASSETS_ACCESS_KEY_ID` | — | server | ⬜ secret, never shipped |
 | `ASSETS_SECRET_ACCESS_KEY` | — | server | ⬜ secret, never shipped |
 | `ASSETS_SIGNED_URL_TTL_SECONDS` | `900` | server | ⬜ 15-minute GET URLs |
+| `ASSETS_PUBLIC_ENDPOINT` | `ASSETS_ENDPOINT` | server | ⬜ browser-reachable base for signed URLs (Compose: host-published MinIO port, not `http://minio:9000`) |
+| `PERSONA_WEB_ORIGINS` | `` (same-origin only) | server | ⬜ comma-separated web origins allowed by credentialed CORS (specs 04-D, 12-L) |
+| `VERIFY_RATE_LIMIT_PER_MINUTE` | `10` | server | ⬜ public verification per-IP limit (spec 09-I) |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ⬜ auth-endpoint per-IP limit (spec 12-L) |
 | `AUTH_BASE` in `src/auth.rs` | `http://127.0.0.1:8080/api/auth` | client | ⚠️ hardcoded, not deployment-safe |
 
 MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket stays private. The LLM URL is per clinic in `clinics.llm_url_template` (DB §5), not a process environment variable. PRD FR-012 names `LLM_URL_TEMPLATE`; treat the column as the source of truth and seed it from configuration if an environment default is wanted.
@@ -497,7 +502,7 @@ Repository policy is end-to-end and integration testing; unit tests are not requ
 | Server reachability | `wait-health` |
 | Schema design or migration SQL | `sqlite-schema-check` |
 | Image upload, quota, signed URL | end-to-end probe; promote to a block when implemented |
-| PDF route and A4 output | end-to-end probe on `GET /api/prescriptions/:id/pdf`: `200`, `application/pdf`, `%PDF-` magic, `/MediaBox [0 0 595 842]`, sanitized `Content-Disposition`, QR decodes to `/verify/`; promote to a block when implemented |
+| PDF route and A4 output | end-to-end probe on `GET /api/prescriptions/:id/pdf`: `200`, `application/pdf`, `%PDF-` magic, `MediaBox` floats within ±1 pt of 595.28×841.89 (A4 in points), sanitized `Content-Disposition`, QR decodes to `/verify/`; promote to a block when implemented |
 
 ```bash
 python3 .blocks/persona-docker-verify.py --dir . --port 8080

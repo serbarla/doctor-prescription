@@ -36,7 +36,7 @@ step is implemented and verified.*
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `bun run build && bun run test` passes (repo root)
+- [ ] `python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091` passes (repo root)
 - [ ] objective N: `<command>` → `<expected output>`
 - [ ] every objective in section 1 is checked
 
@@ -61,14 +61,14 @@ file in `specs/divergences/`.*
 
 *Fill in at execution time. Example (from spec 02-B, kept as reference):*
 
-1. Workspace `typecheck`/`lint` stay red in `@acme/api` only: its
-   `@acme/db/client`, `@acme/db/schema`, and `desc`/`eq` imports are removed by
-   objectives 1 and 7, but rewriting them is explicitly excluded (section 2,
-   spec 04). … api red is deferred to spec 04 by design, not a defect.)
+1. `clippy` stays red in `persona-sanus` on the `desktop` feature only: the
+   local-cache modules land with objective 1, but the sync endpoints they call
+   are explicitly excluded (section 2, spec 11-K). … desktop red is deferred
+   to spec 11-K by design, not a defect.)
 
 ---
 
 *Housekeeping: once a spec is fully done with no open divergences, move its
-file to `specs/done/` (e.g. `specs/done/01-A-nx-in-turborepo-nextjs-tanstack-out.md`).
+file to `specs/done/` (e.g. `specs/done/01-A-app-schema-and-db-runtime.md`).
 Specs with open divergences stay in `specs/` next to `TEMPLATE.md` until the
 tracking file is cleared.*

@@ -29,7 +29,7 @@
 | Payment token (v1.1) | `payment_methods.card_token` (`ctoken`) + `card_holder_enc` | The token is a bearer secret; the name is AES-256-CBC encrypted without IV; one active token per clinic, revoked on cancellation. |
 | Trial (v1.1) | one per clinic, not resettable | `trial_ends_at` is set at clinic creation (+3 calendar months). v1 has no subscription row; retention dates live only on `clinics` (PRD D-09). |
 | Image library | 1 in v1 (free beta); v1.1: 5 while `active` or `past_due`, 1 while `trialing` or `locked`, 0 while `canceled`; ≤10 MiB each | Billing is per clinic. The v1 free beta caps the library at one image; the state tiers arrive with v1.1 (PRD D-04/D-10). |
-| Branding assets | `kind='logo'` only, excluded from the library quota | No signature or stamp images exist: the doctor signs the printed prescription (PRD D-06). Logos render until the clinic is `canceled` (v1.1). |
+| Branding assets | `kind='logo'` only, excluded from the library quota; at most one non-deleted logo per clinic (replacement soft-deletes the previous row and object) | No signature or stamp images exist: the doctor signs the printed prescription (PRD D-06). Logos render until the clinic is `canceled` (v1.1). |
 | Image rendering (v1.1) | from `past_due` only the logo and one library image render; the rest show a placeholder | A lapsed clinic keeps its single free image and logo but cannot present the full library. `canceled` soft-deletes assets and renders placeholders. Not applicable in v1 (no billing states). |
 | Asset storage | MinIO (Compose stack), private bucket, 15-minute signed URLs | No public objects; object keys carry no PHI; tenant-scoped counting requires `assets.clinic_id`. |
 | Tax (v1.1) | `tax_rates` table, basis points, effective-dated | IVA is 15% today and may change; the rate is data, never a constant, and each transaction snapshots the rate it used. |
@@ -185,6 +185,7 @@ CREATE TABLE clinics (
   timezone         TEXT NOT NULL DEFAULT 'America/Guayaquil',
   llm_url_template TEXT,                                              -- e.g. https://chat.openai.com/?q={med}
   retention_days   INTEGER NOT NULL DEFAULT 30,
+  rx_block_size    INTEGER NOT NULL DEFAULT 50,                       -- FR-014: numbers per allocated block
   server_retention_until TEXT NOT NULL,                               -- creation + 3 calendar months (D-09)
   data_grace_ends_at     TEXT,                                        -- v1: server_retention_until + 30 days; v1.1: set at lock
   created_at       TEXT NOT NULL,
@@ -239,6 +240,7 @@ CREATE TABLE patients (
   sex         TEXT CHECK (sex IN ('male','female','other','unspecified')),
   phone       TEXT,
   notes       TEXT,
+  client_id   TEXT UNIQUE,                                            -- outbox replay idempotency (spec 11-K)
   deleted_at  TEXT,                                                   -- logical delete (ARCO)
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL,
@@ -256,6 +258,7 @@ CREATE TABLE templates (
   name              TEXT NOT NULL,
   current_version_id TEXT REFERENCES template_versions(id),           -- set on publish
   status            TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
+  client_id         TEXT UNIQUE,                                      -- outbox replay idempotency (spec 11-K)
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
   created_by        TEXT REFERENCES profiles(id)
@@ -512,10 +515,10 @@ CREATE INDEX idx_payment_events_tx ON payment_events (transaction_id, created_at
 
 ## 6. Constraints & invariants
 
-- **Block-allocated `rx_number` (FR-014, D-02):** a device requests a block inside `BEGIN IMMEDIATE`: insert the `rx_counters` row if absent, `UPDATE rx_counters SET last_rx_number = last_rx_number + N`, then insert `rx_blocks(start_number, end_number)`. A web client registers a `devices` row with `platform='web'` before its first allocation; desktop installs use their own row. Offline signing increments `consumed` locally; on sync the server accepts the number only when it lies inside a block issued to that device and is unused. Unused tails stay burned (recorded in `rx_blocks`), so numbering is unique and monotonic per clinic but not contiguous; `uq_prescriptions_rx` makes a duplicate fail loudly.
+- **Block-allocated `rx_number` (FR-014, D-02):** a device requests a block inside `BEGIN IMMEDIATE`: insert the `rx_counters` row if absent, `UPDATE rx_counters SET last_rx_number = last_rx_number + N`, then insert `rx_blocks(start_number, end_number)`. A web client registers a `devices` row with `platform='web'` before its first allocation; desktop installs use their own row. Offline signing increments `consumed` locally; on sync the server accepts the number only when it lies inside a block issued to that device and is unused. Unused tails stay burned (recorded in `rx_blocks`), so numbering is unique and monotonic per clinic but not contiguous; `uq_prescriptions_rx` makes a duplicate fail loudly. Block size comes from `clinics.rx_block_size` (default 50, configurable per clinic).
 - **Corrections (FR-013, FR-024):** a supersede creates a new `prescriptions` row with its own `rx_number` from a block and its own `verification_codes` row; the replaced row keeps its number and becomes `superseded`. The old code stays resolvable and reports `superseded`.
 - **Draft attribution (FR-010):** `prescriptions.doctor_id` is NULL on a nursing draft and `created_by` records the author; the table CHECK blocks any non-draft row without a doctor. Signing sets `doctor_id` and `signed_at`.
-- **Idempotency (FR-041):** `prescriptions.client_id` is client-generated and `UNIQUE`. A replayed upload matches on `client_id` and is a no-op/return of the existing row — never a duplicate.
+- **Idempotency (FR-041):** `prescriptions.client_id` is client-generated and `UNIQUE`; `patients.client_id` and `templates.client_id` follow the same rule (nullable UNIQUE columns added by spec 11-K). A replayed upload matches on `client_id` and is a no-op/return of the existing row — never a duplicate. `template_versions.id` is client-minted, so a publish replay conflicts on the primary key and returns the existing version; updates carry full state and are naturally idempotent.
 - **Image quota (FR-080–082):** v1 allows 1 non-deleted `assets` row with `kind='image'` per clinic; the v1.1 tiers are `active`/`past_due` = 5, `trialing`/`locked` = 1, `canceled` = 0. Each `size_bytes <= 10485760`. The service counts and inserts in one `BEGIN IMMEDIATE` transaction; a `pending` row reserves the slot, and a failed upload deletes it. Exceeding the quota returns `409 image_quota_exceeded`.
 - **Image upload entitlement (v1.1, FR-080):** uploads require `trialing`, `active`, or `past_due` before `grace_ends_at`; `locked` and `canceled` return `402 image_upload_requires_plan`. Reads of retained images stay allowed. v1 has no gate: uploads are limited only by the 1-image quota and the Administrator/Doctor role. The logo never counts against the library quota.
 - **Image rendering on lapse (v1.1):** from `past_due`, only the logo and the single free `kind='image'` asset render; additional library images render a built-in placeholder. `locked` behaves the same. On `canceled`, every asset is soft-deleted (`deleted_at`), objects are removed, and all references render placeholders — including the logo (D-05); `template_version_assets` rows are kept so published versions stay structurally intact.
@@ -578,7 +581,7 @@ CREATE TABLE asset_cache (
 );
 ```
 
-- **Images offline (FR-040):** cache every image pinned by a cached published template; verify `sha256` before rendering; never evict an image still referenced by a cached template; local filenames use the asset id only; the cache cap is 10 MiB in v1 (50 MiB at the v1.1 five-image quota). New image uploads are online-only; the outbox carries no image bytes.
+- **Images offline (FR-040):** cache every image pinned by a cached published template; verify `sha256` before rendering; never evict an image still referenced by a cached template; local filenames use the asset id only; the cache cap is per asset at the 10 MiB upload cap (logo + one library image ≤ 20 MiB in v1; 60 MiB at the v1.1 five-image quota plus logo). New image uploads are online-only; the outbox carries no image bytes.
 - **Retention (FR-042):** cache evicts **server-backed** prescriptions older than `clinics.retention_days` (default 30). Eviction removes only local rows, never server data; re-download on demand. Rows with no server copy (local `synced_at IS NULL` or still in `outbox`) are never evicted — they are the only copy.
 - **Entitlement cache (v1.1):** `sync_meta` stores `entitlement_status`, `entitlement_checked_at`, `trial_ends_at`, `server_retention_until`, `image_quota`, `image_render_limit`, and `sync_locked_reason` for offline UI. v1 caches only `last_synced_at`, the active `rx_block`, and `image_quota=1`; there is no entitlement to cache.
 - **`pending_sync` is client-derived**, not a server column: a prescription whose sign/upload still sits in `outbox` renders as `pending_sync` (FR-043, `/prescriptions?status=pending_sync`). Its PDF carries `PENDIENTE DE SINCRONIZACIÓN` and the QR is inactive until the upload succeeds.
@@ -591,7 +594,7 @@ CREATE TABLE asset_cache (
 - Diesel migrations live under `persona-sanus/migrations/` and are embedded in the server binary with `embed_migrations!`.
 - `src/db.rs` runs `run_pending_migrations` on startup, before the pool serves requests.
 - The initial migration (`20261111000000_create_auth`) replaces the previous RustAuth schema with the app-owned `users` and `sessions` tables.
-- A later auth migration adds `sessions.device_id` (nullable) after `devices` exists.
+- A later auth migration adds `sessions.device_id` (nullable) after `devices` exists; the sync migration (spec 11-K) adds nullable UNIQUE `client_id` columns to `patients` and `templates`.
 - The app-schema migration creates every non-billing table from §2 in FK-safe order: `profiles`, `clinics` (created with `logo_asset_id = NULL`), `assets`, `clinic_members`, `devices`, `doctors`, `patients`, `templates`, `template_versions`, `template_version_assets`, `rx_counters`, `rx_blocks`, `prescriptions`, `prescription_items`, `verification_codes`, and `audit_log`. The circular `clinics` ↔ `assets` logo reference follows the §6 insertion order. MinIO runs as a Compose service and the bucket is created at server startup, holding no SQLite data.
 - **v1.1:** a dedicated `*_create_billing` migration runs after the app-schema migration: `tax_rates` (with the 15% seed), `plans` (tax-inclusive amounts only), `billing_accounts`, `payment_methods`, `subscriptions`, `payment_transactions`, `payment_events`, and the partial indexes. It also backfills one `trialing` subscription per existing clinic. v1 does not create these tables.
 - **Backfill policy (v1.1):** existing clinics get `trial_ends_at = migration_time + 3 calendar months` (grandfathering) so the migration never locks a live clinic. New clinics use `created_at + 3 calendar months`. Retention boundaries remain on `clinics` (`server_retention_until`, `data_grace_ends_at`); the migration clears `clinics.data_grace_ends_at` for backfilled `trialing` clinics so no trim runs while they are active.

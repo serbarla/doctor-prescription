@@ -80,10 +80,10 @@ All routes below sit under `#[layout(Navbar)]`: persistent nav (Dashboard, Patie
 | Route | Name | Roles | PRD | Status | Purpose |
 |---|---|---|---|---|---|
 | `/dashboard` | Dashboard | Administrator, Doctor, Nursing, Secretary | §7 (base) | 🟡 | Implemented: auth-checked page that redirects signed-out users to `/login` and shows the session identity. ⬜ Role-aware content: recent prescriptions, drafts, pending sync (desktop), quick actions (New prescription, New patient, New template). |
-| `/patients` | Patients — list | Doctor, Nursing, Secretary, Administrator | §5.1 FR-001/003 | ⬜ | Search by name and cédula; list scoped by `clinic_id`. Entry to create/detail. |
-| `/patients/new` | Patients — create | Doctor, Nursing, Secretary | FR-001/002 | ⬜ | Create patient (names, cédula, age/birth date, sex, phone, notes). Deduplication warning on cédula / likely duplicate. |
-| `/patients/:id` | Patient detail | Doctor, Nursing, Secretary (role-filtered); Administrator (read-only) | FR-001/003, §4 flow 5 | ⬜ | Patient demographics + prescription history (authorized roles only). Actions: *New prescription*, *Edit* (not for the read-only Administrator). |
-| `/patients/:id/edit` | Patient edit | Doctor, Nursing, Secretary | FR-001 | ⬜ | Update patient fields. Audited (§6 sensitive-read audit). |
+| `/patients` | Patients — list | Doctor, Nursing, Secretary, Administrator | §5.1 FR-001/003 | ✅ | Search by name and cédula; list scoped by `clinic_id`. Entry to create/detail. |
+| `/patients/new` | Patients — create | Doctor, Nursing, Secretary | FR-001/002 | ✅ | Create patient (names, cédula, age/birth date, sex, phone, notes). Deduplication warning on cédula / likely duplicate. |
+| `/patients/:id` | Patient detail | Doctor, Nursing, Secretary (role-filtered); Administrator (read-only) | FR-001/003, §4 flow 5 | 🟡 | Demographics, edit/delete actions, and the inert *New prescription* entry are implemented; prescription history arrives with spec 07. Actions: *New prescription*, *Edit* (not for the read-only Administrator). |
+| `/patients/:id/edit` | Patient edit | Doctor, Nursing, Secretary | FR-001 | ✅ | Update patient fields. Audited (§6 sensitive-read audit). |
 | `/prescriptions` | Prescriptions — history | Doctor (own), Nursing, Secretary (reprint), Administrator | §4 flow 5, FR-042 | ⬜ | Search/filter history by patient, date, status (`draft → signed → superseded/voided`, FR-013). *Download PDF* / *Print* regenerates the same content from the final versioned document with `printpdf` (same content, not byte-identical across renderer versions). Desktop: only ≤ 30 days in local cache; older rows show on-demand regeneration. |
 | `/prescriptions/new` | Issue prescription | Doctor, Nursing (draft only) | §4 flows 1–2, FR-010 | ⬜ | Create from `?patient_id=` + `?template_id=`. Prefills variables, medications, diagnosis. Query params optional — patient/template pickers shown when absent. |
 | `/prescriptions/:id` | Prescription editor / detail | Doctor (own; sign), Nursing (draft fields only), Secretary (read + reprint only) | FR-010–014, §5.3 | ⬜ | Form-based editing over the A4 template (no rich text — D-21). `draft`: editable. `signed`: locked, read-only with *Download PDF*, *Print*, *Share*, *Void* (reason required), *Supersede* (new version referencing previous). Per-medication *Explain with LLM* (FR-012, external — §3 below). |
@@ -164,13 +164,13 @@ flowchart LR
 
 ## 4. Current vs. target
 
-Current Dioxus `Route` enum (`src/main.rs`): `/`, `/login`, `/dashboard`, matching the PRD's M0 progress (Diesel-backed auth + Docker Compose deployment implemented; roles, authorized service layer, and patient CRUD remain). Everything else is the PRD target IA, sequenced by roadmap (§11):
+Current Dioxus `Route` enum (`src/main.rs`): `/`, `/login`, `/dashboard`, `/patients`, `/patients/new`, `/patients/:id`, `/patients/:id/edit`, `/settings*`, matching the PRD's M0 progress (Diesel-backed auth, roles, authorized service layer, patient CRUD, and Docker Compose deployment implemented). Everything else is the PRD target IA, sequenced by roadmap (§11):
 
 Spec phases (`specs/01`–`13`) are the execution order and may deliver roadmap items earlier than their milestone label.
 
 | Milestone | Sitemap delivered |
 |---|---|
-| M0 — foundation | `/login` ✅, `/dashboard` ✅ (auth check only; role-aware content ⬜), Docker Compose deployment ✅; roles, authorized service layer, `/patients*`, `/settings/users` ⬜ |
+| M0 — foundation | `/login` ✅, `/dashboard` ✅ (auth check only; role-aware content ⬜), `/patients*` ✅ (Rx history spec 07), `/settings/users` ✅, roles + authorized service layer ✅, Docker Compose deployment ✅ |
 | M1 — forms + PDF | `/templates*`, `/prescriptions/new`, `/prescriptions/:id`, `/prescriptions/:id/preview`, `/verify/:code`, `printpdf` A4 renderer + QR, logo/one-image upload |
 | M2 — offline | Same routes on desktop cache/outbox, preallocated number blocks + provisional PDFs, SSE/polling sync indicators, 30-day retention states in `/prescriptions` |
 | M3 — hardening | `/audit`, MFA on `/login`, signed installers + auto-update; device registration/revocation ships with spec 04-D, `/settings/clinic` with spec 06-F, and verification rate limiting on `/verify/:code` with spec 09-I |

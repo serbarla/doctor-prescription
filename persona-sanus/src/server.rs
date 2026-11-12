@@ -1,16 +1,79 @@
 use anyhow::Result;
-use axum::http::header;
+use axum::extract::State;
+use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{Json, Router};
+use diesel::prelude::*;
+use diesel::sql_types::{Integer, Text};
 use dioxus::server::{DioxusRouterExt, ServeConfig};
+use serde_json::json;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
+use crate::api_server;
 use crate::auth_server::{self, AppState};
 use crate::db;
 
-async fn health() -> ([(header::HeaderName, &'static str); 1], &'static str) {
-    (
-        [(header::CONTENT_TYPE, "application/json")],
-        "{\"ok\":true}",
+#[derive(QueryableByName)]
+struct ForeignKeysPragma {
+    #[diesel(sql_type = Integer)]
+    foreign_keys: i32,
+}
+
+#[derive(QueryableByName)]
+struct JournalModePragma {
+    #[diesel(sql_type = Text)]
+    journal_mode: String,
+}
+
+async fn health(State(state): State<AppState>) -> Response {
+    let Ok(mut connection) = state.pool.get() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "ok": false })),
+        )
+            .into_response();
+    };
+    let foreign_keys =
+        diesel::sql_query("PRAGMA foreign_keys").get_result::<ForeignKeysPragma>(&mut connection);
+    let journal_mode =
+        diesel::sql_query("PRAGMA journal_mode").get_result::<JournalModePragma>(&mut connection);
+    match (foreign_keys, journal_mode) {
+        (Ok(foreign_keys), Ok(journal_mode)) => Json(json!({
+            "ok": true,
+            "foreign_keys": foreign_keys.foreign_keys == 1,
+            "journal_mode": journal_mode.journal_mode,
+        }))
+        .into_response(),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false })),
+        )
+            .into_response(),
+    }
+}
+
+fn cors_layer() -> Option<CorsLayer> {
+    let origins: Vec<HeaderValue> = std::env::var("PERSONA_WEB_ORIGINS")
+        .ok()?
+        .split(',')
+        .filter_map(|origin| HeaderValue::from_str(origin.trim()).ok())
+        .collect();
+    if origins.is_empty() {
+        return None;
+    }
+    Some(
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(origins))
+            .allow_credentials(true)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::COOKIE]),
     )
 }
 
@@ -28,11 +91,17 @@ pub async fn router() -> Result<Router> {
         .route("/api/auth/sign-in/email", post(auth_server::sign_in))
         .route("/api/auth/get-session", get(auth_server::get_session))
         .route("/api/auth/sign-out", post(auth_server::sign_out))
-        .with_state(state);
+        .with_state(state.clone());
 
     let app_router = Router::new()
         .route("/health", get(health))
-        .merge(auth_router);
+        .with_state(state.clone())
+        .merge(auth_router)
+        .merge(api_server::router(state));
+    let app_router = match cors_layer() {
+        Some(cors) => app_router.layer(cors),
+        None => app_router,
+    };
 
     Ok(Router::new()
         .serve_dioxus_application(ServeConfig::new(), crate::App)

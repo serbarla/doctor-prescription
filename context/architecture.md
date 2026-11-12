@@ -129,15 +129,15 @@ Boot order:
 
 1. `dioxus::cli_config::fullstack_address_or_localhost()` resolves the bind address. Defaults are `127.0.0.1:8080`; `IP` and `PORT` override them (Compose sets `IP=0.0.0.0`).
 2. `server::router` reads `PERSONA_COOKIE_SECURE` (`1` or case-insensitive `true`).
-3. `db::connect` reads `DATABASE_URL` (default `sqlite://app.db`), creates the parent directory, and builds an r2d2 pool with `max_size = 8`.
+3. `db::connect` reads `DATABASE_URL` (default `sqlite://app.db`), creates the parent directory, and builds an r2d2 pool with `max_size = 8` and a connection customizer that sets the SQLite pragmas on every acquire.
 4. Embedded migrations run on a pooled connection before any request is served; a migration failure aborts startup.
-5. `AppState { pool, cookie_secure }` is built; auth routes take the state; `/health` returns `{"ok":true}`; the Dioxus app is mounted with `ServeConfig::new()`.
+5. `AppState { pool, cookie_secure }` is built; auth routes take the state; `/health` reads `PRAGMA foreign_keys` and `PRAGMA journal_mode` from a pooled connection and returns `{"ok":true,"foreign_keys":true,"journal_mode":"wal"}`; the Dioxus app is mounted with `ServeConfig::new()`.
 6. `axum::serve` uses `into_make_service_with_connect_info::<SocketAddr>()`, preserving the peer address for future rate limiting and audit.
 
 Per request:
 
 - axum extracts the payload; the handler validates it.
-- All request database work goes through `with_conn`: `spawn_blocking` → `pool.get()` → `PRAGMA foreign_keys = ON` → closure. This is the only current path that enforces foreign keys. Password hashing and verification use separate `spawn_blocking` tasks because they do not need a connection.
+- All request database work goes through `with_conn`: `spawn_blocking` → `pool.get()` → closure. The pool customizer has already applied the pragmas on acquire, so every path gets foreign keys, WAL, the busy timeout, and `synchronous = NORMAL`. Password hashing and verification use separate `spawn_blocking` tasks because they do not need a connection.
 - `AuthError` maps validation to `400`, duplicate email to `409`, bad credentials to `401`, and everything else to `500` with `{"message": …}`.
 - `get_session` is a read that writes: it deletes expired sessions before looking up the token. Under sustained traffic that serializes a write per session check; move purging to the scheduler once sync traffic lands.
 
@@ -149,7 +149,7 @@ Per request:
 | `POST` | `/api/auth/sign-in/email` | none | `email`, `password` | `200 {token, user}` + `Set-Cookie`; `401` |
 | `GET` | `/api/auth/get-session` | `persona_session` cookie | — | `200 {session, user}` or `null` |
 | `POST` | `/api/auth/sign-out` | `persona_session` cookie | — | `200 {success:true}` + expired cookie |
-| `GET` | `/health` | none | — | `200 {"ok":true}` |
+| `GET` | `/health` | none | — | `200 {"ok":true,"foreign_keys":true,"journal_mode":"wal"}` |
 
 ```mermaid
 sequenceDiagram
@@ -194,15 +194,15 @@ Storage conventions follow DB §1: UUID v7 `TEXT` ids, RFC3339 UTC timestamps, `
 
 Connection rules:
 
-1. **Foreign keys.** SQLite requires `PRAGMA foreign_keys = ON` per connection. It is currently executed inside `auth_server::with_conn` on every checkout. Centralize it in an r2d2 connection customizer so no future query path can silently bypass it; the pool reuses connections, so a missed checkout is invisible until orphan rows appear.
-2. **Concurrency.** No `journal_mode`, `busy_timeout`, or `synchronous` pragma is set. With a pool of 8 plus scheduled jobs, SQLite's default rollback journal can return `SQLITE_BUSY` and block readers during writes. Set WAL, a busy timeout, and a retry policy for write transactions before M2.
+1. **Foreign keys.** SQLite requires `PRAGMA foreign_keys = ON` per connection. `db::ConnectionPragmas`, an r2d2 `CustomizeConnection`, sets it on every acquire, so no query path can bypass it; `/health` exposes the effective value through the pool.
+2. **Concurrency.** The customizer sets `journal_mode = WAL`, `busy_timeout = 5000`, and `synchronous = NORMAL`. `db::write_transaction` (deferred `BEGIN`) and `db::immediate_transaction` (raw `BEGIN IMMEDIATE`) retry `database is locked` with bounded attempts; allocation and quota paths must use `immediate_transaction`, never their own `BEGIN IMMEDIATE` or retry loop.
 3. **Blocking work.** Diesel calls and Argon2 run in `spawn_blocking`. Never hold a pooled connection or a Dioxus signal lock across `.await`; `clippy.toml` already rejects the signal-lock case.
-4. **Transactions.** Multi-row invariants belong in one transaction: sign-up (user + session), signing (rx block, prescription, items, verification code, audit), payment resolution (event + transaction + subscription, v1.1), and retention trim. Only sign-up is implemented today.
-5. **Migrations.** Append-only and embedded. Planned order: `create_auth` ✅ → app schema ⬜ → billing ⬜ v1.1 (DB §8). Update `src/schema.rs` in the same change as each migration; startup applies pending migrations before serving.
+4. **Transactions.** Multi-row invariants belong in one transaction: sign-up (user + session), signing (rx block, prescription, items, verification code, audit), payment resolution (event + transaction + subscription, v1.1), and retention trim. Only sign-up is implemented today. Use the `db` helpers instead of Diesel `transaction()` when the transaction must take the write lock up front.
+5. **Migrations.** Append-only and embedded. Planned order: `create_auth` ✅ → app schema ✅ → billing ⬜ v1.1 (DB §8). Update `src/schema.rs` in the same change as each migration; startup applies pending migrations before serving.
 6. **Scoping.** Clinic and role filters belong in the service layer, never in client-supplied query parameters. The dashboard and route guards are not an authorization boundary.
 7. **Assets.** Uploads reserve a `pending` row and count it against the v1 quota (1 library image per clinic) in a `BEGIN IMMEDIATE` transaction, then upload and mark it `ready`; failures delete the row and object. Deletion checks `template_version_assets` and retained prescriptions before touching the object. The 5/1/0 state quota and the cancellation purge are v1.1 (PRD §5.8, D-05).
 
-The foreign-key pragma lives in `auth_server::with_conn`; `database-design.md` matches that. Centralize it in an r2d2 connection customizer before app-table queries land, so no future path can bypass it.
+The connection pragmas live in the r2d2 customizer in `db.rs`; `database-design.md` matches that.
 
 ## 7. Client and route shell
 
@@ -213,7 +213,8 @@ The foreign-key pragma lives in `auth_server::with_conn`; `database-design.md` m
 | `/` | `Navbar` | none | ✅ |
 | `/login` | `Navbar` | none; signed-in users see their session | ✅ |
 | `/dashboard` | `Navbar` | client-side redirect when signed out | ✅ |
-| `/patients*`, `/prescriptions*`, `/templates*`, `/settings*`, `/audit`, `/verify/:code` | target shell | role- and session-dependent (sitemap §1.2) | ⬜ |
+| `/patients*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (CRUD; prescription history spec 07) |
+| `/prescriptions*`, `/templates*`, `/settings*`, `/audit`, `/verify/:code` | target shell | role- and session-dependent (sitemap §1.2) | ⬜ |
 
 Rules and current limits:
 
@@ -239,7 +240,7 @@ Decision: application data is exposed as REST under `/api/*` with the session co
 | Domain | Server contract | Stores | Gate | Status | PRD |
 |---|---|---|---|---|---|
 | Profile and membership | session → profile, role, clinic membership, doctor details | `users`, `sessions`, `profiles`, `clinic_members`, `doctors` | session | 🟡 identity only | §3, DB §2 |
-| Patients | CRUD, cédula dedupe, soft delete | `patients` | role + clinic | ⬜ | FR-001–003 |
+| Patients | CRUD, cédula dedupe, soft delete | `patients` | role + clinic | ✅ | FR-001–003 |
 | Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | ⬜ | FR-020–024 |
 | Images | upload/delete, v1 quota (1), 15-min signed URLs, template pinning, placeholder rendering (v1.1) | `assets`, `template_version_assets` | role + quota | ⬜ | FR-080–085 |
 | Prescriptions | draft→signed→superseded/voided, ordered items, block-allocated number | `prescriptions`, `prescription_items`, `rx_counters`, `rx_blocks` | doctor signs; nursing drafts; secretary reads/reprints; administrator reads clinic-wide | ⬜ | FR-010–014 |
@@ -465,7 +466,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | Money is integer cents; transactions snapshot the plan amounts (v1.1) | schema + service layer (⬜) |
 | PHI never appears in a URL, QR, log, or provider payload | service/output layer (⬜) |
 | The outbox is never discarded; only server-backed cache rows expire | desktop cache (⬜) |
-| Foreign keys are enabled per connection; blocking work stays off the reactor | `with_conn` ✅, pool customizer ⬜ |
+| Foreign keys are enabled per connection; blocking work stays off the reactor | pool customizer ✅ |
 | Migrations are append-only, embedded, and applied before serving | `db.rs` ✅ |
 
 ## 17. Risks and open decisions
@@ -474,7 +475,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 |---|---|---|---|---|
 | 1 | Auth client targets loopback and does not carry cookies on desktop | `src/auth.rs`, `with_credentials` | P0 | relative base + configurable origin + cookie jar + credentialed CORS (specs 02-B/04-D) before desktop/TLS |
 | 2 | No server-side authorization; only a client redirect | `Dashboard` | P0 | authorize every read/write in the service layer before PHI pages |
-| 3 | SQLite concurrency is unconfigured | no WAL or busy timeout; pool 8 | P1 | connection customizer + write retries |
+| 3 | SQLite concurrency was unconfigured | ~~no WAL or busy timeout~~ resolved | — | pool customizer sets WAL/busy timeout/synchronous; `db` write helpers retry `database is locked` |
 | 4 | Sync push transport | ~~undefined~~ resolved | — | SSE + 30 s polling fallback (PRD D-11); no second socket server |
 | 5 | Idempotency exists only for prescriptions | `prescriptions.client_id` | P1 | add keys for patients/templates before sync |
 | 6 | PDF rendering location | ~~undecided~~ resolved | — | `printpdf` in the server and desktop binaries (PRD D-01); shared `src/pdf.rs`; no `from_html` |

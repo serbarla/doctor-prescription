@@ -18,7 +18,7 @@
 | Dates only | `TEXT` `YYYY-MM-DD` | `patients.birth_date`. |
 | Enums | `TEXT` + `CHECK` | SQLite has no enum type. |
 | Booleans | `INTEGER 0/1` (`plans.active`, `subscriptions.cancel_at_period_end`; v1.1 only) | SQLite has no boolean type. |
-| Foreign keys | enabled via `PRAGMA foreign_keys = ON` | **Required per connection** — the Diesel pool executes it before every auth query through `with_conn` in `src/auth_server.rs`. |
+| Foreign keys | enabled via `PRAGMA foreign_keys = ON` | **Required per connection** — the r2d2 connection customizer in `src/db.rs` sets it on every acquire. |
 | Immutability | enforced in the authorized service layer | Signed/published prescriptions immutable; no DB triggers (PRD §3). The `canceled` asset purge never updates prescription rows. |
 | PHI | never in URLs, QR, or `code` | `code` is an opaque random value printed on the PDF; store it plus `code_hash` for lookup. Neither carries PHI. |
 | Money (v1.1) | `INTEGER` cents, USD only | PayPhone expects integer cents (`$5 = 500`, `$50 = 5000`). No floats. Prices are tax-inclusive; the IVA rate lives in `tax_rates` (seeded 15%) and the net/tax split is computed at checkout, then snapshotted into `payment_transactions`. |
@@ -628,4 +628,4 @@ CREATE TABLE asset_cache (
 - PayPhone tokenization authorization (application + review) and acceptance of the 10%/6-month balance hold before v1.1.
 - Accountant sign-off on the 15% IVA and the tax-inclusive split.
 
-*Note: `auth_server::with_conn` enables `PRAGMA foreign_keys = ON` on every pooled connection before auth queries; app-table service code must do the same (or use an r2d2 connection customizer) when it lands.*
+*Note: the r2d2 connection customizer in `src/db.rs` enables `PRAGMA foreign_keys = ON`, WAL, a 5000 ms busy timeout, and `synchronous = NORMAL` on every pooled connection before any query runs.*

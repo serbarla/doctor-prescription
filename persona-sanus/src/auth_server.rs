@@ -11,9 +11,10 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::db::{self, DbPool, NewSession, NewUser};
+use crate::db::{self, DbPool, NewSession};
+use crate::service::{self, RegisterUser};
 
-const SESSION_COOKIE: &str = "persona_session";
+pub(crate) const SESSION_COOKIE: &str = "persona_session";
 const SESSION_DAYS: i64 = 30;
 
 #[derive(Debug, Clone)]
@@ -40,21 +41,35 @@ pub enum AuthError {
     BadRequest(String),
     Conflict(String),
     Unauthorized(String),
+    Forbidden(String),
+    NotFound(String),
+    DuplicateNationalId,
     Internal,
 }
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
-            Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
-            Self::Conflict(message) => (StatusCode::CONFLICT, message),
-            Self::Unauthorized(message) => (StatusCode::UNAUTHORIZED, message),
+        let (status, body) = match self {
+            Self::BadRequest(message) => (StatusCode::BAD_REQUEST, json!({ "message": message })),
+            Self::Conflict(message) => (StatusCode::CONFLICT, json!({ "message": message })),
+            Self::Unauthorized(message) => {
+                (StatusCode::UNAUTHORIZED, json!({ "message": message }))
+            }
+            Self::Forbidden(message) => (StatusCode::FORBIDDEN, json!({ "message": message })),
+            Self::NotFound(message) => (StatusCode::NOT_FOUND, json!({ "message": message })),
+            Self::DuplicateNationalId => (
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "duplicate_national_id",
+                    "message": "Ya existe un paciente con esta cédula.",
+                }),
+            ),
             Self::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_owned(),
+                json!({ "message": "Internal server error" }),
             ),
         };
-        (status, Json(json!({ "message": message }))).into_response()
+        (status, Json(body)).into_response()
     }
 }
 
@@ -105,44 +120,20 @@ pub async fn sign_up(
     let created_at = now();
     let expires_at = session_expiry();
 
-    let created_user = with_conn(&state.pool, move |connection| {
-        connection.transaction::<db::User, AuthError, _>(|connection| {
-            if db::find_user_by_email(connection, &email)?.is_some() {
-                return Err(AuthError::Conflict(
-                    "An account with this email already exists.".to_owned(),
-                ));
-            }
-            db::insert_user(
-                connection,
-                &NewUser {
-                    id: &user_id,
-                    email: &email,
-                    password_hash: &password_hash,
-                    display_name: &name,
-                    created_at: &created_at,
-                    updated_at: &created_at,
-                },
-            )?;
-            db::insert_session(
-                connection,
-                &NewSession {
-                    id: &session_id,
-                    token_hash: &token_hash,
-                    user_id: &user_id,
-                    expires_at: &expires_at,
-                    created_at: &created_at,
-                },
-            )?;
-            Ok(db::User {
-                id: user_id,
-                email,
-                password_hash,
-                display_name: name,
-                created_at: created_at.clone(),
-                updated_at: created_at,
-            })
-        })
-    })
+    let created_user = service::register_user(
+        &state.pool,
+        RegisterUser {
+            user_id,
+            profile_id: Uuid::now_v7().to_string(),
+            session_id,
+            email,
+            display_name: name,
+            password_hash,
+            token_hash,
+            created_at,
+            expires_at,
+        },
+    )
     .await?;
 
     Ok(session_response(&token, &created_user, &state))
@@ -264,16 +255,14 @@ pub async fn sign_out(
     Ok(response)
 }
 
-async fn with_conn<T, F>(pool: &DbPool, operation: F) -> Result<T, AuthError>
+pub(crate) async fn with_conn<T, F>(pool: &DbPool, operation: F) -> Result<T, AuthError>
 where
     T: Send + 'static,
     F: FnOnce(&mut SqliteConnection) -> Result<T, AuthError> + Send + 'static,
 {
     let pool = pool.clone();
     tokio::task::spawn_blocking(move || {
-        use diesel::connection::SimpleConnection;
         let mut connection = pool.get()?;
-        connection.batch_execute("PRAGMA foreign_keys = ON")?;
         operation(&mut connection)
     })
     .await
@@ -306,11 +295,11 @@ fn new_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
-fn hash_token(token: &str) -> String {
+pub(crate) fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
-fn now() -> String {
+pub(crate) fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
@@ -355,7 +344,7 @@ fn expired_cookie(secure: bool) -> String {
     format!("{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure}")
 }
 
-fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+pub(crate) fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(header::COOKIE)?
         .to_str()

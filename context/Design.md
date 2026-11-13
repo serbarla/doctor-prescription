@@ -114,6 +114,11 @@ Transparent background, border 1px #425d6d, text #425d6d, font mint 500 at 16px,
 
 Transparent background, no border, text #061d29 at 16px mint 400, padding 8px 16px. The lightest interaction in the nav strip.
 
+### Form Input and Textarea
+**Role:** The only text entry in the product (PRD D-21) — prescriptions, templates, patients, and settings
+
+Plain Dioxus form controls only: single-line inputs for short values (names, cédula, dose, route), multi-line textareas for body text, diagnosis, and instructions, selects and check controls for enumerated values. Background #ffffff, 1px #e5e7eb border, 8px radius, mint 400 at 16px in #061d29, padding 8px 12px; labels mint 500 at 14px in #061d29 above the field; focus is a 1px #006e75 outline with visible focus ring. No formatting toolbar, no bold/italic/underline controls, no contenteditable surface: values are plain text only. The same component renders on web and desktop, online and offline (desktop queues the plain-text value in the outbox), so entry looks and behaves identically in both states. Never place a rich-text toolbar or editor chrome on any form.
+
 ### Green Pill Badge
 **Role:** Pill-shaped highlight badge next to the logo
 
@@ -178,6 +183,7 @@ Shield/security icon + 'Datos protegidos · Ley Orgánica de Protección de Dato
 - Never use grenette for body copy, captions, or UI chrome — it is a display face only, reserved for 46px+ headlines.
 - Never left-align hero or section headlines — PersonaSanus is a centered, editorial layout throughout.
 - Never use pure black (#000000) — the design's darkest tone is #061d29, a cool near-black that softens the contrast.
+- Never add a rich-text editor, WYSIWYG surface, formatting toolbar, or contenteditable area — all text entry is plain inputs and textareas (PRD D-21), online and offline.
 
 ## Surfaces
 

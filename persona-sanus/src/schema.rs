@@ -17,6 +17,7 @@ diesel::table! {
         expires_at -> Text,
         created_at -> Text,
         device_id -> Nullable<Text>,
+        mfa_pending -> Integer,
     }
 }
 
@@ -260,6 +261,16 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    user_mfa (user_id) {
+        user_id -> Text,
+        secret -> Text,
+        enabled -> Integer,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
 diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(clinic_members -> clinics (clinic_id));
 diesel::joinable!(clinic_members -> profiles (profile_id));
@@ -286,4 +297,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     prescription_items,
     verification_codes,
     audit_log,
+    user_mfa,
 );

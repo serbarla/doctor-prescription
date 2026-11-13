@@ -23,11 +23,11 @@ step is implemented and verified.*
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] 1. Build the in-process scheduler — requirements: one scheduler in the server process with idempotent, restart-safe jobs whose eligibility derives from row state (no job-state table): expired-session purge (replacing the lazy delete in `get_session`, which still rejects `expires_at < now` on every read), stale `pending` asset cleanup (rows older than one hour, row and object deleted), and retention trim; each completed run writes one `audit_log` row so re-running is provably idempotent; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
-- [ ] 2. Implement the retention trim with export-first — requirements: runs by default in v1 (`RETENTION_TRIM_ENABLED=true`, D-12) only when `now >= clinics.data_grace_ends_at`, deleting rows created after `clinics.server_retention_until` only (never the first 3 months), children before parents, never a row referenced by a retained record; eligible tables (in order): `prescription_items`, `prescriptions`, `verification_codes`, `patients` (only `deleted_at` set and no referenced prescriptions), `templates`/`template_versions` (only versions no retained prescription pins), `template_version_assets`, `assets` (only `deleted_at` set and unreferenced); `profiles`, `clinics`, `clinic_members`, `doctors`, `devices`, `rx_counters`, `rx_blocks`, `users`, `sessions`, and `audit_log` are never trimmed; an export of the clinic's data (JSON: patients, prescriptions, items; no assets) is offered before trimming (ARCO, PRD §9) and an audited export action exists under `/settings/clinic`; no encrypted archive is kept; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
-- [ ] 3. Add operational backups — requirements: an encrypted daily backup of the SQLite file via `VACUUM INTO` (WAL-consistent snapshot, never a raw file copy) date-stamped to a host bind mount outside the `persona-data` volume (`docker-compose.yml` adds the mount), encrypted with a server-held key (`age` or equivalent, custody documented in the runbook) meeting RPO ≤ 24 h and RTO ≤ 4 h; the daily job also backs up the MinIO bucket (same cadence, via the S3 client or `mc mirror`) because `template_version_assets` pins objects — a DB-only backup breaks reprints; `docker-compose.yml` healthchecks and restart policy verified; TLS termination and secret handling documented as external prerequisites; commands: `python3 .blocks/persona-docker-verify.py --dir . --port 8080`
+- [x] 1. Build the in-process scheduler — requirements: one scheduler in the server process with idempotent, restart-safe jobs whose eligibility derives from row state (no job-state table): expired-session purge (replacing the lazy delete in `get_session`, which still rejects `expires_at < now` on every read), stale `pending` asset cleanup (rows older than one hour, row and object deleted), and retention trim; each completed run writes one `audit_log` row so re-running is provably idempotent; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
+- [x] 2. Implement the retention trim with export-first — requirements: runs by default in v1 (`RETENTION_TRIM_ENABLED=true`, D-12) only when `now >= clinics.data_grace_ends_at`, deleting rows created after `clinics.server_retention_until` only (never the first 3 months), children before parents, never a row referenced by a retained record; eligible tables (in order): `prescription_items`, `prescriptions`, `verification_codes`, `patients` (only `deleted_at` set and no referenced prescriptions), `templates`/`template_versions` (only versions no retained prescription pins), `template_version_assets`, `assets` (only `deleted_at` set and unreferenced); `profiles`, `clinics`, `clinic_members`, `doctors`, `devices`, `rx_counters`, `rx_blocks`, `users`, `sessions`, and `audit_log` are never trimmed; an export of the clinic's data (JSON: patients, prescriptions, items; no assets) is offered before trimming (ARCO, PRD §9) and an audited export action exists under `/settings/clinic`; no encrypted archive is kept; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
+- [x] 3. Add operational backups — requirements: an encrypted daily backup of the SQLite file via `VACUUM INTO` (WAL-consistent snapshot, never a raw file copy) date-stamped to a host bind mount outside the `persona-data` volume (`docker-compose.yml` adds the mount), encrypted with a server-held key (`age` or equivalent, custody documented in the runbook) meeting RPO ≤ 24 h and RTO ≤ 4 h; the daily job also backs up the MinIO bucket (same cadence, via the S3 client or `mc mirror`) because `template_version_assets` pins objects — a DB-only backup breaks reprints; `docker-compose.yml` healthchecks and restart policy verified; TLS termination and secret handling documented as external prerequisites; commands: `python3 .blocks/persona-docker-verify.py --dir . --port 8080`
 - [ ] 4. Ship signed desktop installers with auto-update — requirements: signed, notarized macOS DMG and signed Windows MSI — the signing/notarization credentials (Apple Developer ID, Windows code-signing certificate) are external prerequisites; if they are unavailable, record an OPEN divergence in section 4 instead of faking this gate; in-app auto-update: name the mechanism in the implementation (e.g. a `self_update`-style downloader with an ed25519/minisign-signed manifest — no updater ships in Dioxus today) consuming the signed manifest at `UPDATE_MANIFEST_URL` over HTTPS with staged rollout; the client verifies signature and version before applying and retains the previous version for rollback (D-08); a bad signature or failed launch rolls back automatically; updates never carry clinical data; commands: `cd persona-sanus && cargo check --no-default-features --features desktop`
-- [ ] 5. Write the runbook and verify acceptance — requirements: `context/runbook.md` covering deploy, backup/restore, key custody, retention/legal prerequisites (counsel sign-off), and incident steps; then walk the `context/PRD.md` §12 acceptance checklist and record each item's evidence; commands: `python3 .blocks/persona-docker-verify.py --dir . --port 8080`
+- [x] 5. Write the runbook and verify acceptance — requirements: `context/runbook.md` covering deploy, backup/restore, key custody, retention/legal prerequisites (counsel sign-off), and incident steps; then walk the `context/PRD.md` §12 acceptance checklist and record each item's evidence; commands: `python3 .blocks/persona-docker-verify.py --dir . --port 8080`
 
 ## 2. No-go
 
@@ -37,17 +37,18 @@ step is implemented and verified.*
 - No Linux desktop target; no horizontal scaling or external database.
 - Do not delete audit rows before the 5-year window; no trim of the first 3 months of clinic data.
 - No unit tests; no comments in any code.
+- No rich-text, WYSIWYG, or contenteditable editor (PRD D-21): all text entry stays plain forms and inputs (`src/forms.rs`), online and offline; no editor dependency, no HTML anywhere.
 
 ## 3. Testing criteria
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091` passes (fmt, check, clippy, release build, auth probe)
-- [ ] `python3 .blocks/persona-docker-verify.py --dir . --port 8080` passes (compose build, boot, health, auth persistence)
-- [ ] objective 2: with fixture rows past `data_grace_ends_at`, running the trim deletes only rows created after `server_retention_until` (`python3 .blocks/sqlite-schema-check.py --db <booted-db> --query "select min(created_at) from prescriptions"` → ≥ `server_retention_until`) and writes an audit row; the export action produces the clinic's data before deletion
-- [ ] objective 1: jobs are idempotent — running each twice changes nothing beyond one audit row per run; stale `pending` assets are removed after one hour
+- [x] `python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091` passes (fmt, check, clippy, release build, auth probe)
+- [x] `python3 .blocks/persona-docker-verify.py --dir . --port 8080` passes (compose build, boot, health, auth persistence)
+- [x] objective 2: with fixture rows past `data_grace_ends_at`, running the trim deletes only rows created after `server_retention_until` (`python3 .blocks/sqlite-schema-check.py --db <booted-db> --query "select min(created_at) from prescriptions"` → ≥ `server_retention_until`) and writes an audit row; the export action produces the clinic's data before deletion
+- [x] objective 1: jobs are idempotent — running each twice changes nothing beyond one audit row per run; stale `pending` assets are removed after one hour
 - [ ] objective 4: an update manifest with a bad signature is refused and the previous version still runs; a valid staged manifest applies and can roll back
-- [ ] objective 5: every `context/PRD.md` §12 acceptance criterion has recorded evidence (checked box + where it was proven)
+- [x] objective 5: every `context/PRD.md` §12 acceptance criterion has recorded evidence (checked box + where it was proven)
 - [ ] every objective in section 1 is checked
 
 ## 4. Divergences
@@ -58,7 +59,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -66,7 +67,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None.
+1. Signed desktop installers (macOS DMG, Windows MSI) and end-to-end staged-apply/rollback proof stay OPEN — this environment has no Apple Developer ID or Windows code-signing certificate, and the spec forbids faking this gate (section 2). The in-app mechanism IS implemented (`src/update.rs`: ed25519-signed manifest from `GET /api/updates/manifest`, signature + version verification before staging, staged rollout, `.prev` rollback) and `cargo check --no-default-features --features desktop` passes, but no real installer is signed/applied. Tracking: `specs/divergences/13-M-signed-installers.md`. (Verified 2026-11-13: 0 fix attempts — no credentials in this environment, all fenced by the §2 No-go; installer signing is deferred to the release process that holds the certificates, by design, not a defect.)
 
 ---
 

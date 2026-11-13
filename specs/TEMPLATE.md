@@ -32,6 +32,7 @@ step is implemented and verified.*
 *What this spec MUST NOT do, even if convenient. Never touch anything listed here.*
 
 - <forbidden action / file / package>
+- No rich-text, WYSIWYG, or contenteditable editor (PRD D-21): all text entry is plain forms and inputs (`src/forms.rs` — single-line inputs, multi-line textareas, selects, check controls; plain-text values only), identical online and offline. No editor dependency, no HTML payloads, unless the spec's Source explicitly supersedes D-21.
 
 ## 3. Testing criteria
 

@@ -1,10 +1,9 @@
-use serde::Deserialize;
-use serde_json::{json, Value};
-
 use crate::device;
 use crate::http::{delete_json, encode_query, get_json, post_file, post_json, put_json};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileSummary {
     pub id: String,
@@ -12,7 +11,7 @@ pub struct ProfileSummary {
     pub status: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClinicSummary {
     pub id: String,
@@ -22,9 +21,11 @@ pub struct ClinicSummary {
     pub llm_url_template: Option<String>,
     #[serde(default)]
     pub rx_block_size: Option<i64>,
+    #[serde(default)]
+    pub retention_days: Option<i64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DoctorSummary {
     pub id: String,
@@ -35,7 +36,7 @@ pub struct DoctorSummary {
     pub email: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Me {
     pub profile: ProfileSummary,
@@ -366,6 +367,20 @@ pub async fn sign_prescription(
     serde_json::from_value(value).map_err(|_| "No se pudo leer la receta firmada.".to_owned())
 }
 
+#[cfg(feature = "desktop")]
+pub async fn reconcile_sign_prescription(
+    id: &str,
+    rx_number: i64,
+    rx_block_id: &str,
+) -> Result<Prescription, String> {
+    let value = post_json(
+        &format!("/api/prescriptions/{id}/sign"),
+        json!({ "acknowledgeWarnings": true, "rxNumber": rx_number, "rxBlockId": rx_block_id }),
+    )
+    .await?;
+    serde_json::from_value(value).map_err(|_| "No se pudo leer la receta firmada.".to_owned())
+}
+
 pub async fn void_prescription(id: &str, reason: &str) -> Result<Prescription, String> {
     let value = post_json(
         &format!("/api/prescriptions/{id}/void"),
@@ -379,6 +394,28 @@ pub async fn supersede_prescription(id: &str) -> Result<Prescription, String> {
     let value = post_json(
         &format!("/api/prescriptions/{id}/supersede"),
         json!({ "clientId": uuid_like() }),
+    )
+    .await?;
+    serde_json::from_value(value).map_err(|_| "No se pudo leer la corrección.".to_owned())
+}
+
+#[cfg(feature = "desktop")]
+pub async fn reconcile_supersede_prescription(
+    id: &str,
+    client_id: &str,
+    new_prescription_id: &str,
+    rx_number: i64,
+    rx_block_id: &str,
+) -> Result<Prescription, String> {
+    let value = post_json(
+        &format!("/api/prescriptions/{id}/supersede"),
+        json!({
+            "clientId": client_id,
+            "newPrescriptionId": new_prescription_id,
+            "acknowledgeWarnings": true,
+            "rxNumber": rx_number,
+            "rxBlockId": rx_block_id,
+        }),
     )
     .await?;
     serde_json::from_value(value).map_err(|_| "No se pudo leer la corrección.".to_owned())
@@ -438,6 +475,35 @@ pub async fn allocate_rx_block() -> Result<RxBlockInfo, String> {
 pub async fn fetch_rx_block_status() -> Result<RxBlockStatus, String> {
     let value = get_json("/api/rx/block-status").await?;
     serde_json::from_value(value).map_err(|_| "No se pudo leer el bloque de números.".to_owned())
+}
+#[cfg(feature = "desktop")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncEvent {
+    pub cursor: i64,
+    pub action: String,
+    pub entity: String,
+    pub entity_id: String,
+    #[serde(default)]
+    pub at: String,
+}
+
+#[cfg(feature = "desktop")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncState {
+    pub cursor: i64,
+    #[serde(default)]
+    pub events: Vec<SyncEvent>,
+    #[serde(default)]
+    pub rx_block: Option<RxBlockStatus>,
+}
+
+#[cfg(feature = "desktop")]
+pub async fn fetch_sync_state(since: i64) -> Result<SyncState, String> {
+    let value = get_json(&format!("/api/sync/state?since={since}")).await?;
+    serde_json::from_value(value)
+        .map_err(|_| "No se pudo leer el estado de sincronización.".to_owned())
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -506,6 +572,46 @@ pub async fn revoke_device(device_id: &str) -> Result<(), String> {
 pub async fn fetch_me() -> Result<Me, String> {
     let value = get_json("/api/me").await?;
     serde_json::from_value(value).map_err(|_| "Could not read the profile.".to_owned())
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditRow {
+    pub id: String,
+    pub actor_id: Option<String>,
+    pub actor_name: Option<String>,
+    pub action: String,
+    pub entity: String,
+    pub entity_id: String,
+    pub metadata: Value,
+    pub at: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuditResponse {
+    audit: Vec<AuditRow>,
+}
+
+pub async fn fetch_audit(action: &str, entity: &str, q: &str) -> Result<Vec<AuditRow>, String> {
+    let mut params = Vec::new();
+    if !action.trim().is_empty() {
+        params.push(format!("action={}", encode_query(action)));
+    }
+    if !entity.trim().is_empty() {
+        params.push(format!("entity={}", encode_query(entity)));
+    }
+    if !q.trim().is_empty() {
+        params.push(format!("q={}", encode_query(q)));
+    }
+    let path = if params.is_empty() {
+        "/api/audit".to_owned()
+    } else {
+        format!("/api/audit?{}", params.join("&"))
+    };
+    let value = get_json(&path).await?;
+    let response: AuditResponse = serde_json::from_value(value)
+        .map_err(|_| "No se pudo leer el registro de auditoría.".to_owned())?;
+    Ok(response.audit)
 }
 
 pub async fn fetch_users() -> Result<Vec<UserRow>, String> {
@@ -620,6 +726,32 @@ pub async fn create_patient(
         .map_err(|_| "Could not read the patient.".to_owned())
 }
 
+#[cfg(feature = "desktop")]
+pub async fn create_patient_with_client_id(
+    form: &PatientForm,
+    client_id: &str,
+) -> Result<PatientCreateOutcome, String> {
+    let mut body = patient_body(form);
+    body["clientId"] = json!(client_id);
+    body["confirmDuplicate"] = json!(true);
+    let value = post_json("/api/patients", body).await?;
+    if value.get("warning").and_then(|warning| warning.as_str()) == Some("likely_duplicate") {
+        let ids = value
+            .get("patientIds")
+            .and_then(|ids| ids.as_array())
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| id.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        return Ok(PatientCreateOutcome::LikelyDuplicate(ids));
+    }
+    serde_json::from_value(value)
+        .map(PatientCreateOutcome::Created)
+        .map_err(|_| "Could not read the patient.".to_owned())
+}
+
 pub async fn update_patient(id: &str, form: &PatientForm) -> Result<Patient, String> {
     let value = put_json(&format!("/api/patients/{id}"), patient_body(form)).await?;
     serde_json::from_value(value).map_err(|_| "Could not read the patient.".to_owned())
@@ -682,6 +814,19 @@ pub async fn create_template(name: &str, owner_type: &str) -> Result<Template, S
     let value = post_json(
         "/api/templates",
         json!({ "name": name, "ownerType": owner_type }),
+    )
+    .await?;
+    serde_json::from_value(value).map_err(|_| "No se pudo leer la plantilla.".to_owned())
+}
+#[cfg(feature = "desktop")]
+pub async fn create_template_with_client_id(
+    name: &str,
+    owner_type: &str,
+    client_id: &str,
+) -> Result<Template, String> {
+    let value = post_json(
+        "/api/templates",
+        json!({ "name": name, "ownerType": owner_type, "clientId": client_id }),
     )
     .await?;
     serde_json::from_value(value).map_err(|_| "No se pudo leer la plantilla.".to_owned())
@@ -821,4 +966,19 @@ pub async fn update_clinic_settings(
     .await?;
     serde_json::from_value(value)
         .map_err(|_| "No se pudo leer la configuración de la clínica.".to_owned())
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationResult {
+    pub status: String,
+    pub doctor_name: Option<String>,
+    pub issued_at: Option<String>,
+    pub rx_number: Option<i32>,
+}
+
+pub async fn fetch_verification(code: &str) -> Result<VerificationResult, String> {
+    let path = format!("/api/verify/{}", encode_query(code));
+    let value = get_json(&path).await?;
+    serde_json::from_value(value).map_err(|_| "No se pudo verificar la receta.".to_owned())
 }

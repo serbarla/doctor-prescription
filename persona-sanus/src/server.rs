@@ -14,6 +14,7 @@ use crate::api_server;
 use crate::assets;
 use crate::auth_server::{self, AppState};
 use crate::db;
+use crate::jobs;
 use crate::pdf_server;
 
 #[derive(QueryableByName)]
@@ -92,6 +93,7 @@ pub async fn router() -> Result<Router> {
         cookie_secure,
         assets: storage.map(std::sync::Arc::new),
     };
+    jobs::spawn(state.clone());
 
     let auth_router = Router::new()
         .route("/api/auth/sign-up/email", post(auth_server::sign_up))
@@ -105,6 +107,7 @@ pub async fn router() -> Result<Router> {
         .with_state(state.clone())
         .merge(auth_router)
         .merge(api_server::router(state.clone()))
+        .merge(jobs::router(state.clone()))
         .merge(pdf_server::router(state));
     let app_router = match cors_layer() {
         Some(cors) => app_router.layer(cors),

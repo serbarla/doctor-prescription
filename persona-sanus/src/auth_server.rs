@@ -252,8 +252,10 @@ pub async fn get_session(
     let token_hash = hash_token(&token);
     let now = now();
     let session = with_conn(&state.pool, move |connection| {
-        db::delete_expired_sessions(connection, &now)?;
         let Some(session) = db::find_session_by_token_hash(connection, &token_hash)? else {
+            return Ok(None);
+        };
+        if session.expires_at < now {
             return Ok(None);
         };
         if let Some(device_id) = session.device_id.as_deref() {

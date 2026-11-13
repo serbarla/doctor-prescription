@@ -418,8 +418,21 @@ fn random_part() -> String {
     })
 }
 
-pub async fn allocate_rx_block() -> Result<(), String> {
-    post_json("/api/rx/blocks", json!({})).await.map(|_| ())
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RxBlockInfo {
+    pub id: String,
+    pub device_id: String,
+    pub start_number: i64,
+    pub end_number: i64,
+    pub consumed: i64,
+    pub status: String,
+    pub allocated_at: String,
+}
+
+pub async fn allocate_rx_block() -> Result<RxBlockInfo, String> {
+    let value = post_json("/api/rx/blocks", json!({})).await?;
+    serde_json::from_value(value).map_err(|_| "No se pudo leer el bloque de números.".to_owned())
 }
 
 pub async fn fetch_rx_block_status() -> Result<RxBlockStatus, String> {
@@ -755,6 +768,10 @@ pub struct ClinicSettings {
     pub timezone: String,
     #[serde(default)]
     pub llm_url_template: Option<String>,
+    #[serde(default)]
+    pub server_retention_until: Option<String>,
+    #[serde(default)]
+    pub data_grace_ends_at: Option<String>,
     pub logo: Option<AssetRow>,
 }
 

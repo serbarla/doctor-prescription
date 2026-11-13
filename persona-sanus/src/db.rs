@@ -558,6 +558,166 @@ pub fn delete_session_by_token_hash(
 pub fn delete_expired_sessions(connection: &mut SqliteConnection, now: &str) -> QueryResult<usize> {
     diesel::delete(sessions::table.filter(sessions::expires_at.lt(now))).execute(connection)
 }
+pub fn list_stale_pending_assets(
+    connection: &mut SqliteConnection,
+    cutoff: &str,
+) -> QueryResult<Vec<Asset>> {
+    assets::table
+        .filter(assets::status.eq("pending"))
+        .filter(assets::created_at.lt(cutoff))
+        .select(Asset::as_select())
+        .load(connection)
+}
+
+pub fn list_clinics_past_grace(
+    connection: &mut SqliteConnection,
+    now: &str,
+) -> QueryResult<Vec<Clinic>> {
+    clinics::table
+        .filter(clinics::data_grace_ends_at.is_not_null())
+        .filter(clinics::data_grace_ends_at.le(now))
+        .select(Clinic::as_select())
+        .load(connection)
+}
+
+pub fn patients_by_clinic(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+) -> QueryResult<Vec<Patient>> {
+    patients::table
+        .filter(patients::clinic_id.eq(clinic_id))
+        .select(Patient::as_select())
+        .order(patients::created_at.asc())
+        .load(connection)
+}
+
+pub fn prescriptions_by_clinic(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+) -> QueryResult<Vec<Prescription>> {
+    prescriptions::table
+        .filter(prescriptions::clinic_id.eq(clinic_id))
+        .select(Prescription::as_select())
+        .order(prescriptions::created_at.asc())
+        .load(connection)
+}
+
+pub fn items_by_prescription_ids(
+    connection: &mut SqliteConnection,
+    ids: &[String],
+) -> QueryResult<Vec<PrescriptionItem>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    prescription_items::table
+        .filter(prescription_items::prescription_id.eq_any(ids))
+        .select(PrescriptionItem::as_select())
+        .order((
+            prescription_items::prescription_id.asc(),
+            prescription_items::position.asc(),
+        ))
+        .load(connection)
+}
+
+#[derive(Debug, Default)]
+pub struct TrimCounts {
+    pub prescription_items: usize,
+    pub verification_codes: usize,
+    pub prescriptions: usize,
+    pub patients: usize,
+    pub template_version_assets: usize,
+    pub template_versions: usize,
+    pub templates: usize,
+    pub assets: usize,
+}
+
+fn trim_exec(connection: &mut SqliteConnection, sql: &str, binds: &[&str]) -> QueryResult<usize> {
+    match binds {
+        [one] => diesel::sql_query(sql)
+            .bind::<Text, _>(one)
+            .execute(connection),
+        [one, two] => diesel::sql_query(sql)
+            .bind::<Text, _>(one)
+            .bind::<Text, _>(two)
+            .execute(connection),
+        [one, two, three, four] => diesel::sql_query(sql)
+            .bind::<Text, _>(one)
+            .bind::<Text, _>(two)
+            .bind::<Text, _>(three)
+            .bind::<Text, _>(four)
+            .execute(connection),
+        _ => Err(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UnableToSendCommand,
+            Box::new("unsupported trim bind count".to_owned()),
+        )),
+    }
+}
+
+#[allow(clippy::field_reassign_with_default)]
+pub fn trim_clinic(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    until: &str,
+) -> QueryResult<TrimCounts> {
+    let prescription_items = trim_exec(
+        connection,
+        "DELETE FROM prescription_items WHERE prescription_id IN (SELECT id FROM prescriptions WHERE clinic_id = ? AND created_at > ?)",
+        &[clinic_id, until],
+    )?;
+    let verification_codes = trim_exec(
+        connection,
+        "DELETE FROM verification_codes WHERE prescription_id IN (SELECT id FROM prescriptions WHERE clinic_id = ? AND created_at > ?)",
+        &[clinic_id, until],
+    )?;
+    diesel::sql_query(
+        "UPDATE prescriptions SET supersedes_id = NULL WHERE clinic_id = ? AND created_at > ? AND supersedes_id IN (SELECT id FROM prescriptions WHERE clinic_id = ? AND created_at > ?)",
+    )
+    .bind::<Text, _>(clinic_id)
+    .bind::<Text, _>(until)
+    .bind::<Text, _>(clinic_id)
+    .bind::<Text, _>(until)
+    .execute(connection)?;
+    let prescriptions = trim_exec(
+        connection,
+        "DELETE FROM prescriptions WHERE clinic_id = ? AND created_at > ? AND id NOT IN (SELECT supersedes_id FROM prescriptions WHERE supersedes_id IS NOT NULL AND clinic_id = ? AND created_at <= ?)",
+        &[clinic_id, until, clinic_id, until],
+    )?;
+    let patients = trim_exec(
+        connection,
+        "DELETE FROM patients WHERE clinic_id = ? AND created_at > ? AND deleted_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM prescriptions WHERE patient_id = patients.id)",
+        &[clinic_id, until],
+    )?;
+    let template_version_assets = trim_exec(
+        connection,
+        "DELETE FROM template_version_assets WHERE template_version_id IN (SELECT id FROM template_versions WHERE created_at > ? AND id NOT IN (SELECT template_version_id FROM prescriptions WHERE template_version_id IS NOT NULL))",
+        &[until],
+    )?;
+    let template_versions = trim_exec(
+        connection,
+        "DELETE FROM template_versions WHERE created_at > ? AND id NOT IN (SELECT template_version_id FROM prescriptions WHERE template_version_id IS NOT NULL)",
+        &[until],
+    )?;
+    let templates = trim_exec(
+        connection,
+        "DELETE FROM templates WHERE created_at > ? AND NOT EXISTS (SELECT 1 FROM template_versions WHERE template_id = templates.id)",
+        &[until],
+    )?;
+    let assets = trim_exec(
+        connection,
+        "DELETE FROM assets WHERE clinic_id = ? AND created_at > ? AND deleted_at IS NOT NULL AND id NOT IN (SELECT asset_id FROM template_version_assets) AND id NOT IN (SELECT logo_asset_id FROM clinics WHERE logo_asset_id IS NOT NULL)",
+        &[clinic_id, until],
+    )?;
+    Ok(TrimCounts {
+        prescription_items,
+        verification_codes,
+        prescriptions,
+        patients,
+        template_version_assets,
+        template_versions,
+        templates,
+        assets,
+    })
+}
 
 pub fn count_clinics(connection: &mut SqliteConnection) -> QueryResult<i64> {
     clinics::table.count().get_result(connection)

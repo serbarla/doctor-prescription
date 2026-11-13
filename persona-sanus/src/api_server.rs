@@ -474,6 +474,8 @@ fn clinic_settings_json(settings: &ClinicSettings, state: &AppState) -> Value {
         "phone": settings.clinic.phone,
         "timezone": settings.clinic.timezone,
         "llmUrlTemplate": settings.clinic.llm_url_template,
+        "serverRetentionUntil": settings.clinic.server_retention_until,
+        "dataGraceEndsAt": settings.clinic.data_grace_ends_at,
         "logo": logo,
     })
 }
@@ -1172,6 +1174,15 @@ pub async fn get_clinic(
     Ok(Json(clinic_settings_json(&settings, &state)).into_response())
 }
 
+pub async fn export_clinic(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, AuthError> {
+    let actor = require_actor(&state, &headers).await?;
+    let data = service::export_clinic_data(&state.pool, &actor).await?;
+    Ok(Json(data).into_response())
+}
+
 pub async fn update_clinic(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1196,6 +1207,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/assets/{id}", delete(delete_asset))
         .route("/api/assets/{id}/url", get(asset_url))
         .route("/api/clinic", get(get_clinic).put(update_clinic))
+        .route("/api/clinic/export", get(export_clinic))
         .route("/api/clinic/logo", post(upload_logo))
         .layer(DefaultBodyLimit::max(crate::assets::body_limit()));
     Router::new()

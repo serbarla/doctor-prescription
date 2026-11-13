@@ -15,8 +15,13 @@ services:
       ASSETS_ACCESS_KEY_ID: persona
       ASSETS_SECRET_ACCESS_KEY: persona-secret
       ASSETS_SIGNED_URL_TTL_SECONDS: "900"
+      BACKUP_DIR: /backups
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      RETENTION_TRIM_ENABLED: ${RETENTION_TRIM_ENABLED:-true}
+      JOBS_INTERVAL_SECONDS: ${JOBS_INTERVAL_SECONDS:-3600}
     volumes:
       - persona-data:/data
+      - ./backups:/backups
     depends_on:
       minio:
         condition: service_healthy

@@ -2041,6 +2041,55 @@ pub async fn update_clinic_settings(
     .await
 }
 
+pub async fn export_clinic_data(
+    pool: &DbPool,
+    actor: &ActorContext,
+) -> Result<serde_json::Value, AuthError> {
+    actor.require_administrator()?;
+    let clinic_id = actor.clinic_id()?.to_owned();
+    let actor_id = actor.profile.id.clone();
+    auth_server::with_conn(pool, move |connection| {
+        let at = auth_server::now();
+        let patients = db::patients_by_clinic(connection, &clinic_id)?;
+        let prescriptions = db::prescriptions_by_clinic(connection, &clinic_id)?;
+        let ids: Vec<String> = prescriptions.iter().map(|item| item.id.clone()).collect();
+        let items = db::items_by_prescription_ids(connection, &ids)?;
+        record_audit(
+            connection,
+            Some(&actor_id),
+            "clinic_export",
+            "clinic",
+            &clinic_id,
+            Some(serde_json::json!({
+                "patients": patients.len(),
+                "prescriptions": prescriptions.len(),
+                "items": items.len(),
+            })),
+            &at,
+        )?;
+        Ok(serde_json::json!({
+            "patients": patients.iter().map(|item| serde_json::json!({
+                "id": item.id, "fullName": item.full_name, "nationalId": item.national_id,
+                "birthDate": item.birth_date, "sex": item.sex, "phone": item.phone,
+                "notes": item.notes, "createdAt": item.created_at,
+            })).collect::<Vec<_>>(),
+            "prescriptions": prescriptions.iter().map(|item| serde_json::json!({
+                "id": item.id, "patientId": item.patient_id, "status": item.status,
+                "rxNumber": item.rx_number, "diagnosis": item.diagnosis,
+                "validity": item.validity, "instructions": item.instructions,
+                "signedAt": item.signed_at, "createdAt": item.created_at,
+            })).collect::<Vec<_>>(),
+            "items": items.iter().map(|item| serde_json::json!({
+                "id": item.id, "prescriptionId": item.prescription_id, "position": item.position,
+                "medName": item.med_name, "dose": item.dose, "route": item.route,
+                "frequency": item.frequency, "duration": item.duration,
+                "quantity": item.quantity, "notes": item.notes,
+            })).collect::<Vec<_>>(),
+        }))
+    })
+    .await
+}
+
 pub struct PrescriptionInput {
     pub patient_id: String,
     pub template_version_id: String,

@@ -2954,6 +2954,113 @@ fn display_datetime(value: &str) -> String {
         .unwrap_or_else(|_| value.to_owned())
 }
 
+pub struct VerificationResult {
+    pub status: String,
+    pub doctor_name: Option<String>,
+    pub issued_at: Option<String>,
+    pub rx_number: Option<i32>,
+}
+
+fn canonical_verification_code(value: &str) -> String {
+    let compact: String = value
+        .trim()
+        .chars()
+        .filter(|character| !character.is_whitespace() && *character != '-')
+        .collect::<String>()
+        .to_uppercase();
+    if compact.len() == 16
+        && compact
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
+    {
+        format!(
+            "{}-{}-{}-{}",
+            &compact[..4],
+            &compact[4..8],
+            &compact[8..12],
+            &compact[12..16]
+        )
+    } else {
+        compact
+    }
+}
+
+pub async fn verify_code(pool: &DbPool, code: &str) -> Result<VerificationResult, AuthError> {
+    let canonical = canonical_verification_code(code);
+    let code_hash = auth_server::hash_token(&canonical);
+    auth_server::with_conn(pool, move |connection| {
+        let at = auth_server::now();
+        let found = db::find_verification_code_by_hash(connection, &code_hash)?;
+        let Some(verification) = found else {
+            record_audit(
+                connection,
+                None,
+                "verification_attempt",
+                "verification",
+                "not_found",
+                Some(json!({ "status": "not found" })),
+                &at,
+            )?;
+            return Ok(VerificationResult {
+                status: "not found".to_owned(),
+                doctor_name: None,
+                issued_at: None,
+                rx_number: None,
+            });
+        };
+        let prescription = db::find_prescription_any(connection, &verification.prescription_id)?;
+        let (doctor_name, issued_at, rx_number) = match prescription.as_ref() {
+            Some(prescription) => {
+                let doctor_name = prescription
+                    .doctor_id
+                    .as_deref()
+                    .and_then(|doctor_id| {
+                        db::find_doctor_by_id(connection, doctor_id).ok().flatten()
+                    })
+                    .and_then(|doctor| {
+                        db::find_profile_by_id(connection, &doctor.profile_id)
+                            .ok()
+                            .flatten()
+                    })
+                    .map(|profile| profile.display_name)
+                    .or_else(|| {
+                        prescription
+                            .created_by
+                            .as_deref()
+                            .and_then(|profile_id| {
+                                db::find_profile_by_id(connection, profile_id)
+                                    .ok()
+                                    .flatten()
+                            })
+                            .map(|profile| profile.display_name)
+                    });
+                let issued_at = prescription
+                    .signed_at
+                    .clone()
+                    .unwrap_or_else(|| prescription.created_at.clone());
+                (doctor_name, Some(issued_at), prescription.rx_number)
+            }
+            None => (None, None, None),
+        };
+        record_audit(
+            connection,
+            None,
+            "verification_attempt",
+            "verification",
+            &verification.id,
+            Some(json!({ "status": verification.status })),
+            &at,
+        )?;
+        Ok(VerificationResult {
+            status: verification.status.clone(),
+            doctor_name,
+            issued_at,
+            rx_number,
+        })
+    })
+    .await
+}
+
 pub async fn prescription_document(
     pool: &DbPool,
     actor: &ActorContext,

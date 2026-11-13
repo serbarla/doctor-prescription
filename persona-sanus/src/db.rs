@@ -1748,6 +1748,28 @@ pub fn find_verification_code_by_prescription(
         .optional()
 }
 
+pub fn find_verification_code_by_hash(
+    connection: &mut SqliteConnection,
+    code_hash: &str,
+) -> QueryResult<Option<VerificationCode>> {
+    verification_codes::table
+        .filter(verification_codes::code_hash.eq(code_hash))
+        .select(VerificationCode::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_prescription_any(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> QueryResult<Option<Prescription>> {
+    prescriptions::table
+        .filter(prescriptions::id.eq(id))
+        .select(Prescription::as_select())
+        .first(connection)
+        .optional()
+}
+
 pub fn insert_verification_code(
     connection: &mut SqliteConnection,
     code: &NewVerificationCode<'_>,

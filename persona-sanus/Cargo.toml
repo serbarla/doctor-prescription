@@ -42,6 +42,10 @@ desktop = [
     "dep:printpdf",
     "dep:chrono",
     "dep:uuid",
+    "dep:diesel",
+    "dep:libsqlite3-sys",
+    "dep:sha2",
+    "dep:hex",
 ]
 mobile = ["dioxus/mobile"]
 server = [

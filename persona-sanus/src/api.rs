@@ -418,8 +418,21 @@ fn random_part() -> String {
     })
 }
 
-pub async fn allocate_rx_block() -> Result<(), String> {
-    post_json("/api/rx/blocks", json!({})).await.map(|_| ())
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RxBlockInfo {
+    pub id: String,
+    pub device_id: String,
+    pub start_number: i64,
+    pub end_number: i64,
+    pub consumed: i64,
+    pub status: String,
+    pub allocated_at: String,
+}
+
+pub async fn allocate_rx_block() -> Result<RxBlockInfo, String> {
+    let value = post_json("/api/rx/blocks", json!({})).await?;
+    serde_json::from_value(value).map_err(|_| "No se pudo leer el bloque de números.".to_owned())
 }
 
 pub async fn fetch_rx_block_status() -> Result<RxBlockStatus, String> {
@@ -804,4 +817,19 @@ pub async fn update_clinic_settings(
     .await?;
     serde_json::from_value(value)
         .map_err(|_| "No se pudo leer la configuración de la clínica.".to_owned())
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationResult {
+    pub status: String,
+    pub doctor_name: Option<String>,
+    pub issued_at: Option<String>,
+    pub rx_number: Option<i32>,
+}
+
+pub async fn fetch_verification(code: &str) -> Result<VerificationResult, String> {
+    let path = format!("/api/verify/{}", encode_query(code));
+    let value = get_json(&path).await?;
+    serde_json::from_value(value).map_err(|_| "No se pudo verificar la receta.".to_owned())
 }

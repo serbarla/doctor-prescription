@@ -4,18 +4,18 @@
 # summary = "Probe persona-sanus: auth, roles, patients, devices, template versions, and prescriptions."
 # effects = "network"
 # example = ["--base", "http://127.0.0.1:8080", "--email", "probe@example.com", "--password", "ProbePass123!"]
-# matches = ['/api/auth/sign-up/email', '/api/auth/(sign-in|sign-out|get-session)', '/api/me', '/api/settings/users', '/api/patients', '/api/devices', '/api/templates', '/api/prescriptions', '/api/rx']
+# matches = ['/api/auth/sign-up/email', '/api/auth/(sign-in|sign-out|get-session)', '/api/me', '/api/settings/users', '/api/patients', '/api/devices', '/api/templates', '/api/prescriptions', '/api/rx', '/api/verify']
 #
 # [returns]
 # keys = ["ok", "checks", "base", "patient_id", "template_id", "prescription_id", "rx_number", "code"]
-# doc = "checks maps probe names to booleans; flow=signin checks signin plus session; flow=roles checks bootstrap signup, unaffiliated second signup, role assignment, server-side refusal, and the assigned role; flow=patients checks clinic-scoped CRUD, search, dedupe, administrator read-only, and soft delete; flow=devices checks registration, session linking, listing, revocation, revoked-session rejection, and re-linking on a fresh sign-in; flow=templates checks clinic-master create, doctor ownership, draft edit, publish, current version, immutable published version, canonical variables, and archive refusal; flow=rx checks number-block allocation and refusal, draft creation with ordered items, signing with a block number and verification code, idempotent replay, supersede, and void"
+# doc = "checks maps probe names to booleans; flow=signin checks signin plus session; flow=roles checks bootstrap signup, unaffiliated second signup, role assignment, server-side refusal, and the assigned role; flow=patients checks clinic-scoped CRUD, search, dedupe, administrator read-only, and soft delete; flow=devices checks registration, session linking, listing, revocation, revoked-session rejection, and re-linking on a fresh sign-in; flow=templates checks clinic-master create, doctor ownership, draft edit, publish, current version, immutable published version, canonical variables, and archive refusal; flow=rx checks number-block allocation and refusal, draft creation with ordered items, signing with a block number and verification code, idempotent replay, supersede, and void; flow=verify runs the rx fixtures and checks the public verification endpoint unauthenticated for each status, not found, absence of PHI keys, and a 429 rate limit under repetition (last)"
 #
 # [params]
 # base = { type = "str", required = true, help = "server origin, e.g. http://127.0.0.1:8080" }
 # email = { type = "str", default = "probe@example.com", help = "account email for the probe flow" }
 # password = { type = "str", default = "ProbePass123!", help = "account password for the probe flow" }
 # name = { type = "str", default = "Probe Tester", help = "display name used by signup (full flow only)" }
-# flow = { type = "enum", values = ["full", "signin", "roles", "patients", "devices", "templates", "rx"], default = "full", help = "full runs signup then signout then signin; signin only signs in (needs an existing account); roles exercises bootstrap, membership, role assignment, and server-side refusal; patients exercises CRUD, search, dedupe, scoping, and soft delete; devices exercises registration, session linking, listing, revocation, and re-linking; templates exercises creation, draft editing, publishing, immutability, and archiving; rx exercises blocks, drafts, items, signing, replay, supersede, and void" }
+# flow = { type = "enum", values = ["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify"], default = "full", help = "full runs signup then signout then signin; signin only signs in (needs an existing account); roles exercises bootstrap, membership, role assignment, and server-side refusal; patients exercises CRUD, search, dedupe, scoping, and soft delete; devices exercises registration, session linking, listing, revocation, and re-linking; templates exercises creation, draft editing, publishing, immutability, and archiving; rx exercises blocks, drafts, items, signing, replay, supersede, and void; verify runs the rx fixtures then checks the public verification endpoint unauthenticated (statuses, not found, no PHI, rate limit last)" }
 # db = { type = "path", default = "", help = "SQLite file used by the server for the second-clinic fixture; defaults to DATABASE_URL or persona-sanus/app.db" }
 #
 # [provenance]
@@ -67,6 +67,10 @@ RX = [
     "superseded_code", "old_superseded", "old_code_superseded",
     "create_third", "sign_third", "void_third", "void_status",
     "old_code_voided",
+]
+VERIFY = [
+    "rx_fixtures", "valid_status", "valid_fields", "voided_status",
+    "superseded_status", "not_found_status", "no_phi", "rate_limited",
 ]
 TEMPLATES = [
     "signup_admin", "admin_me", "create_template", "doctor_signup",
@@ -866,6 +870,8 @@ def probe_rx(base, password, flow):
         "prescription_id": None,
         "rx_number": None,
         "code": None,
+        "valid_code": None,
+        "voided_code": None,
     }
 
     checks["signup_admin"] = signup_or_signin(
@@ -1097,6 +1103,7 @@ def probe_rx(base, password, flow):
     corrected_id = corrected.get("id")
     corrected_number = corrected.get("rxNumber")
     corrected_code = (corrected.get("verification") or {}).get("code")
+    verdict_extra["valid_code"] = corrected_code
     checks["supersede"] = (
         status == 200
         and bool(corrected_id)
@@ -1148,6 +1155,7 @@ def probe_rx(base, password, flow):
         {"acknowledgeWarnings": True},
     )
     third_code = (third_signed.get("verification") or {}).get("code")
+    verdict_extra["voided_code"] = third_code
     checks["sign_third"] = (
         status == 200
         and third_signed.get("status") == "signed"
@@ -1188,6 +1196,84 @@ def probe_rx(base, password, flow):
     return verdict
 
 
+PHI_KEYS = [
+    "patientName", "patientId", "patientNationalId", "nationalId", "cedula",
+    "diagnosis", "medications", "medName", "codeHash", "notes",
+]
+
+
+def probe_verify(base, password):
+    """Run the rx fixtures, then check the public verification endpoint unauthenticated."""
+    checks = {}
+    fixtures = probe_rx(base, password, "rx")
+    checks["rx_fixtures"] = bool(fixtures.get("ok"))
+    valid_code = fixtures.get("valid_code")
+    superseded_code = fixtures.get("code")
+    voided_code = fixtures.get("voided_code")
+    if not checks["rx_fixtures"] or not valid_code or not superseded_code or not voided_code:
+        return {
+            "ok": False,
+            "checks": {item: False for item in VERIFY},
+            "base": base,
+            "error": "rx fixtures failed",
+        }
+    jar = http.cookiejar.CookieJar()
+
+    def verify(code):
+        path = "/api/verify/" + urllib.parse.quote(code, safe="")
+        return get_json(base, path, jar)
+
+    status, valid = verify(valid_code)
+    checks["valid_status"] = status == 200 and valid.get("status") == "valid"
+    checks["valid_fields"] = (
+        valid.get("status") == "valid"
+        and bool(valid.get("doctorName"))
+        and bool(valid.get("issuedAt"))
+        and isinstance(valid.get("rxNumber"), int)
+        and valid.get("rxNumber", 0) > 0
+    )
+    status, voided = verify(voided_code)
+    checks["voided_status"] = status == 200 and voided.get("status") == "voided"
+    status, superseded = verify(superseded_code)
+    checks["superseded_status"] = (
+        status == 200 and superseded.get("status") == "superseded"
+    )
+    status, missing = verify("AAAA-0000-0000-0000")
+    checks["not_found_status"] = (
+        status == 200
+        and missing.get("status") == "not found"
+        and missing.get("doctorName") is None
+        and missing.get("rxNumber") is None
+    )
+    bodies = [valid, voided, superseded, missing]
+    checks["no_phi"] = all(
+        not any(key in body for key in PHI_KEYS)
+        and "Paciente Rx" not in json.dumps(body)
+        and "Diagnóstico de prueba" not in json.dumps(body)
+        and "Paracetamol" not in json.dumps(body)
+        for body in bodies
+    )
+    limited = False
+    for _ in range(40):
+        status, _ = verify("AAAA-0000-0000-0000")
+        if status == 429:
+            limited = True
+            break
+    checks["rate_limited"] = limited
+    ok = all(checks.get(item) for item in VERIFY)
+    verdict = {
+        "ok": ok,
+        "checks": {item: bool(checks.get(item)) for item in VERIFY},
+        "base": base,
+        "rx_checks": fixtures.get("checks"),
+        "code": valid_code,
+        "rx_number": valid.get("rxNumber"),
+    }
+    if not ok:
+        verdict["error"] = "one or more verification checks failed"
+    return verdict
+
+
 def probe(base, email, password, name, flow, db_path=""):
     """Run the page + auth probes against base; return the verdict dict."""
     if flow == "roles":
@@ -1200,6 +1286,8 @@ def probe(base, email, password, name, flow, db_path=""):
         return probe_templates(base, password, flow)
     if flow == "rx":
         return probe_rx(base, password, flow)
+    if flow == "verify":
+        return probe_verify(base, password)
 
     checks = {}
     jar = http.cookiejar.CookieJar()
@@ -1252,7 +1340,7 @@ def main():
     parser.add_argument("--name", default="Probe Tester")
     parser.add_argument(
         "--flow",
-        choices=["full", "signin", "roles", "patients", "devices", "templates", "rx"],
+        choices=["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify"],
         default="full",
     )
     parser.add_argument("--db", default="")

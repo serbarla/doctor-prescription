@@ -23,10 +23,10 @@ step is implemented and verified.*
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] 1. Implement the public verification read — requirements: `GET /api/verify/:code` without authentication looks up `verification_codes.code_hash` and returns status (`valid` / `voided` / `superseded` / `not found`) plus doctor name, issue date, and prescription number only; no patient name, cédula, diagnosis, or medications ever leave the endpoint (FR-050); the same lookup serves the re-typed printed code; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
-- [ ] 2. Build the verification page — requirements: route `/verify/:code` outside the authenticated shell, matching the QR target `{PUBLIC_BASE_URL}/verify/{code}` (architecture §14, same base as spec 08-H) and the typed code form; `es-EC` copy ("Receta auténtica" / status variants), minimal design-token styling; "not found" renders the same shape without leaking whether a code ever existed; commands: `cd persona-sanus && dx build --release --fullstack`
-- [ ] 3. Rate-limit and log verification — requirements: per-IP rate limit at the HTTP layer on `/api/verify/:code` and `/verify/:code` returning `429` past the limit (`VERIFY_RATE_LIMIT_PER_MINUTE`, architecture §14; in-memory keyed by IP, resets on restart); rate-limited (429) requests are not audited as verification attempts (bounded public write amplification); every other verification attempt writes an `audit_log` row with `actor_id` NULL (the spec 02-B audit helper takes `Option<actor>`) and without storing raw IPs beyond what the law allows; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
-- [ ] 4. Extend `.blocks/persona-probe.py` with `--flow verify` — requirements: composing the `rx` flow fixtures (signed, voided, and superseded prescriptions) by running them internally or accepting their ids as params (a single invocation must be self-contained), it asserts each status response, the `not found` response, the absence of PHI keys in the JSON, and the `429` under repetition — run last or with its own key/limit so saturated limits never poison later flows; block header and indexes updated; commands: `python3 .blocks/persona-probe.py --base http://127.0.0.1:8080 --flow verify`
+- [x] 1. Implement the public verification read — requirements: `GET /api/verify/:code` without authentication looks up `verification_codes.code_hash` and returns status (`valid` / `voided` / `superseded` / `not found`) plus doctor name, issue date, and prescription number only; no patient name, cédula, diagnosis, or medications ever leave the endpoint (FR-050); the same lookup serves the re-typed printed code; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
+- [x] 2. Build the verification page — requirements: route `/verify/:code` outside the authenticated shell, matching the QR target `{PUBLIC_BASE_URL}/verify/{code}` (architecture §14, same base as spec 08-H) and the typed code form; `es-EC` copy ("Receta auténtica" / status variants), minimal design-token styling; "not found" renders the same shape without leaking whether a code ever existed; commands: `cd persona-sanus && dx build --release --fullstack`
+- [x] 3. Rate-limit and log verification — requirements: per-IP rate limit at the HTTP layer on `/api/verify/:code` and `/verify/:code` returning `429` past the limit (`VERIFY_RATE_LIMIT_PER_MINUTE`, architecture §14; in-memory keyed by IP, resets on restart); rate-limited (429) requests are not audited as verification attempts (bounded public write amplification); every other verification attempt writes an `audit_log` row with `actor_id` NULL (the spec 02-B audit helper takes `Option<actor>`) and without storing raw IPs beyond what the law allows; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`
+- [x] 4. Extend `.blocks/persona-probe.py` with `--flow verify` — requirements: composing the `rx` flow fixtures (signed, voided, and superseded prescriptions) by running them internally or accepting their ids as params (a single invocation must be self-contained), it asserts each status response, the `not found` response, the absence of PHI keys in the JSON, and the `429` under repetition — run last or with its own key/limit so saturated limits never poison later flows; block header and indexes updated; commands: `python3 .blocks/persona-probe.py --base http://127.0.0.1:8080 --flow verify`
 
 ## 2. No-go
 
@@ -42,11 +42,11 @@ step is implemented and verified.*
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091` passes (fmt, check, clippy, release build, auth probe)
-- [ ] objective 4: `python3 .blocks/persona-probe.py --base http://127.0.0.1:8080 --flow verify` → all checks true (statuses, not-found, no PHI keys, rate limit)
-- [ ] objective 2: `http://127.0.0.1:8080/verify/:code` in a browser signed out → "Receta auténtica — … Dr. …, date …, No. …" with no patient data; an unknown code shows the same layout
-- [ ] objective 3: hammering the endpoint returns `429` and `audit_log` shows verification rows without raw IPs
-- [ ] every objective in section 1 is checked
+- [x] `python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091` passes (fmt, check, clippy, release build, auth probe)
+- [x] objective 4: `python3 .blocks/persona-probe.py --base http://127.0.0.1:8080 --flow verify` → all checks true (statuses, not-found, no PHI keys, rate limit)
+- [x] objective 2: `http://127.0.0.1:8080/verify/:code` in a browser signed out → "Receta auténtica — … Dr. …, date …, No. …" with no patient data; an unknown code shows the same layout
+- [x] objective 3: hammering the endpoint returns `429` and `audit_log` shows verification rows without raw IPs
+- [x] every objective in section 1 is checked
 
 ## 4. Divergences
 
@@ -56,7 +56,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 

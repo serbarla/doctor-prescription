@@ -15,6 +15,7 @@ use crate::assets;
 use crate::auth_server::{self, AppState};
 use crate::db;
 use crate::pdf_server;
+use crate::verify_server;
 
 #[derive(QueryableByName)]
 struct ForeignKeysPragma {
@@ -105,13 +106,18 @@ pub async fn router() -> Result<Router> {
         .with_state(state.clone())
         .merge(auth_router)
         .merge(api_server::router(state.clone()))
-        .merge(pdf_server::router(state));
+        .merge(pdf_server::router(state.clone()))
+        .merge(verify_server::router(state));
     let app_router = match cors_layer() {
         Some(cors) => app_router.layer(cors),
         None => app_router,
     };
 
-    Ok(Router::new()
-        .serve_dioxus_application(ServeConfig::new(), crate::App)
-        .merge(app_router))
+    let limiter = std::sync::Arc::new(verify_server::VerifyRateLimiter::new());
+    Ok(verify_server::layer(
+        Router::new()
+            .serve_dioxus_application(ServeConfig::new(), crate::App)
+            .merge(app_router),
+        limiter,
+    ))
 }

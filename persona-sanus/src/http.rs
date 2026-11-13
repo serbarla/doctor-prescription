@@ -113,6 +113,22 @@ pub async fn post_file(path: &str, file_name: String, bytes: Vec<u8>) -> Result<
     send(with_credentials(client().post(url(path)).multipart(form))).await
 }
 
+#[cfg(target_arch = "wasm32")]
+pub async fn is_server_reachable() -> bool {
+    true
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn is_server_reachable() -> bool {
+    client()
+        .get(url("/health"))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .map(|response| response.status().is_success())
+        .unwrap_or(false)
+}
+
 pub fn encode_query(value: &str) -> String {
     let mut encoded = String::new();
     for byte in value.as_bytes() {

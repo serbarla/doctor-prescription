@@ -431,7 +431,7 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `ASSETS_SECRET_ACCESS_KEY` | — | server | ✅ secret, never shipped |
 | `ASSETS_SIGNED_URL_TTL_SECONDS` | `900` | server | ✅ 15-minute GET URLs |
 | `ASSETS_PUBLIC_ENDPOINT` | `ASSETS_ENDPOINT` | server | ✅ browser-reachable base for signed URLs (Compose: host-published MinIO port, not `http://minio:9000`) |
-| `PERSONA_WEB_ORIGINS` | `` (same-origin only) | server | ✅ comma-separated web origins allowed by credentialed CORS (spec 04-D) |
+| `PERSONA_WEB_ORIGINS` | `` (same-origin only) | server | ✅ comma-separated web origins allowed by credentialed CORS (spec 04-D); the same-origin fallback compares the request `Origin` against `x-forwarded-host`/`Host` (proxy-aware), so a TLS terminator that rewrites `Host` still passes |
 | `PERSONA_SERVER_ORIGIN` | `http://127.0.0.1:8080` | client | native API origin; the wasm client always uses relative paths (spec 04-D) |
 | `VERIFY_RATE_LIMIT_PER_MINUTE` | `10` | server | ⬜ public verification per-IP limit (spec 09-I) |
 | `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ⬜ auth-endpoint per-IP limit (spec 12-L) |

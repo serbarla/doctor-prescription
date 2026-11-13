@@ -96,7 +96,15 @@ fn cors_layer() -> Option<CorsLayer> {
 }
 
 fn same_origin(request: &Request<Body>) -> Option<String> {
-    let host = request.headers().get(header::HOST)?.to_str().ok()?;
+    let host = request
+        .headers()
+        .get("x-forwarded-host")
+        .or_else(|| request.headers().get(header::HOST))?
+        .to_str()
+        .ok()?
+        .split(',')
+        .next()?
+        .trim();
     let scheme = request
         .headers()
         .get("x-forwarded-proto")

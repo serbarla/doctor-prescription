@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # /// block
 # name = "persona-docker-verify"
-# summary = "Verify compose stack: build, up, probe, recreate + re-sign-in for volume persistence, down."
+# summary = "Verify compose stack: build, up, auth + asset probes, recreate persistence, down."
 # effects = "external"
 # example = ["--dir", ".", "--port", "8080"]
-# matches = ['docker compose (build|up|down)']
+# matches = ['docker compose (build|up|down)', '/api/assets']
 #
 # [returns]
 # keys = ["ok", "checks", "port"]
-# doc = "checks merges compose stages (deployed, health, recreated) with persona-probe checks; on failure exits non-zero with error plus partial checks"
+# doc = "checks merges compose stages (deployed, health, recreated) with persona-probe and asset-probe checks; on failure exits non-zero with error plus partial checks"
 #
 # [params]
 # dir = { type = "path", default = ".", help = "compose project directory (repo root), must hold docker-compose.yml" }
@@ -21,7 +21,7 @@
 # source = "promoted: session verification flow"
 #
 # [stamp]
-# verified = "5912d0424fef"
+# verified = "c43b5c02332f"
 # ///
 """Verify the persona-sanus compose stack end to end and print one JSON verdict."""
 import argparse
@@ -33,6 +33,12 @@ import sys
 ORDERED = [
     "deployed", "health", "home", "login", "dashboard", "signup", "session",
     "signout", "session_after_signout", "signin", "recreated", "persistent_signin",
+]
+ASSETS = [
+    "upload_image", "metadata", "quota_exceeded", "oversized_rejected",
+    "webp_rejected", "svg_rejected", "signed_url_ttl", "signed_url_serves",
+    "signed_url_tampered", "private_bucket", "logo_upload",
+    "logo_excluded_from_quota", "template_publish_pins", "pinned_delete_refused",
 ]
 
 
@@ -67,6 +73,7 @@ def verify(project_dir, port, email, password):
     project_dir = os.path.abspath(project_dir)
 
     try:
+        run_cmd(["docker", "compose", "down", "-v"], 120, cwd=project_dir)
         checks["built"] = run_cmd(["docker", "compose", "build"], 1800, cwd=project_dir)
         checks["deployed"] = run_cmd(["docker", "compose", "up", "-d"], 300, cwd=project_dir)
         if not (checks["built"] and checks["deployed"]):
@@ -90,6 +97,18 @@ def verify(project_dir, port, email, password):
         if not ok:
             return {
                 "error": "persona-probe failed: " + probe.get("error", "unknown"),
+                "checks": checks, "port": port,
+            }
+
+        ok, assets = run_block(
+            "asset-probe",
+            ["--base", base, "--email", email, "--password", password],
+            240,
+        )
+        checks.update(assets.get("checks", {}))
+        if not ok:
+            return {
+                "error": "asset-probe failed: " + assets.get("error", "unknown"),
                 "checks": checks, "port": port,
             }
 
@@ -121,7 +140,7 @@ def verify(project_dir, port, email, password):
     finally:
         run_cmd(["docker", "compose", "down"], 120, cwd=project_dir)
 
-    wanted = ORDERED + ["health_after_recreate"]
+    wanted = ORDERED + ["health_after_recreate"] + ASSETS
     ok = all(checks.get(name) for name in wanted)
     verdict = {
         "ok": ok,

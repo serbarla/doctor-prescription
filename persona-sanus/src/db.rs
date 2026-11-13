@@ -7,10 +7,13 @@ use anyhow::{anyhow, Context, Result};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, CustomizeConnection, Pool};
+use diesel::sql_types::{BigInt, Text};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 use crate::schema::{
-    audit_log, clinic_members, clinics, doctors, patients, profiles, sessions, users,
+    assets, audit_log, clinic_members, clinics, devices, doctors, patients, prescription_items,
+    prescriptions, profiles, rx_blocks, rx_counters, sessions, template_version_assets,
+    template_versions, templates, users, verification_codes,
 };
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -144,6 +147,47 @@ pub struct NewSession<'a> {
     pub user_id: &'a str,
     pub expires_at: &'a str,
     pub created_at: &'a str,
+    pub device_id: Option<&'a str>,
+}
+
+#[derive(Debug, Queryable, Selectable)]
+#[diesel(table_name = sessions)]
+pub struct SessionRow {
+    pub id: String,
+    pub user_id: String,
+    pub expires_at: String,
+    pub device_id: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = devices)]
+pub struct Device {
+    pub id: String,
+    pub profile_id: String,
+    pub name: Option<String>,
+    pub platform: String,
+    pub app_version: Option<String>,
+    pub last_seen_at: Option<String>,
+    pub revoked_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = devices)]
+pub struct NewDevice<'a> {
+    pub id: &'a str,
+    pub profile_id: &'a str,
+    pub name: Option<&'a str>,
+    pub platform: &'a str,
+    pub app_version: Option<&'a str>,
+    pub last_seen_at: Option<&'a str>,
+    pub revoked_at: Option<&'a str>,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
 }
 
 #[allow(dead_code)]
@@ -403,12 +447,105 @@ pub fn insert_session(
 pub fn find_session_by_token_hash(
     connection: &mut SqliteConnection,
     token_hash: &str,
-) -> QueryResult<Option<(String, String, String)>> {
+) -> QueryResult<Option<SessionRow>> {
     sessions::table
         .filter(sessions::token_hash.eq(token_hash))
-        .select((sessions::id, sessions::user_id, sessions::expires_at))
+        .select(SessionRow::as_select())
         .first(connection)
         .optional()
+}
+
+pub fn link_session_device(
+    connection: &mut SqliteConnection,
+    session_id: &str,
+    device_id: &str,
+) -> QueryResult<usize> {
+    diesel::update(sessions::table.filter(sessions::id.eq(session_id)))
+        .set(sessions::device_id.eq(Some(device_id)))
+        .execute(connection)
+}
+
+pub fn delete_sessions_by_device(
+    connection: &mut SqliteConnection,
+    device_id: &str,
+) -> QueryResult<usize> {
+    diesel::delete(sessions::table.filter(sessions::device_id.eq(Some(device_id))))
+        .execute(connection)
+}
+
+pub fn find_device_by_id(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> QueryResult<Option<Device>> {
+    devices::table
+        .filter(devices::id.eq(id))
+        .select(Device::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn insert_device(
+    connection: &mut SqliteConnection,
+    device: &NewDevice<'_>,
+) -> QueryResult<usize> {
+    diesel::insert_into(devices::table)
+        .values(device)
+        .execute(connection)
+}
+
+pub fn update_device_seen(
+    connection: &mut SqliteConnection,
+    id: &str,
+    name: Option<&str>,
+    app_version: Option<&str>,
+    seen_at: &str,
+) -> QueryResult<usize> {
+    diesel::update(devices::table.filter(devices::id.eq(id)))
+        .set((
+            devices::name.eq(name),
+            devices::app_version.eq(app_version),
+            devices::last_seen_at.eq(Some(seen_at)),
+            devices::updated_at.eq(seen_at),
+        ))
+        .execute(connection)
+}
+
+pub fn revoke_device(
+    connection: &mut SqliteConnection,
+    id: &str,
+    revoked_at: &str,
+) -> QueryResult<usize> {
+    diesel::update(devices::table.filter(devices::id.eq(id)))
+        .set((
+            devices::revoked_at.eq(Some(revoked_at)),
+            devices::updated_at.eq(revoked_at),
+        ))
+        .execute(connection)
+}
+
+pub fn list_devices_by_profile(
+    connection: &mut SqliteConnection,
+    profile_id: &str,
+) -> QueryResult<Vec<Device>> {
+    devices::table
+        .filter(devices::profile_id.eq(profile_id))
+        .select(Device::as_select())
+        .order(devices::created_at.asc())
+        .load(connection)
+}
+
+pub fn list_devices_by_clinic(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+) -> QueryResult<Vec<(Device, String)>> {
+    let clinic_id = clinic_id.to_owned();
+    devices::table
+        .inner_join(profiles::table.on(profiles::id.eq(devices::profile_id)))
+        .inner_join(clinic_members::table.on(clinic_members::profile_id.eq(profiles::id)))
+        .filter(clinic_members::clinic_id.eq(clinic_id))
+        .select((Device::as_select(), profiles::display_name))
+        .order((profiles::display_name.asc(), devices::created_at.asc()))
+        .load(connection)
 }
 
 pub fn delete_session_by_token_hash(
@@ -770,4 +907,997 @@ pub fn list_profiles_with_membership(
         ))
         .order(profiles::display_name.asc())
         .load(connection)
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = templates)]
+pub struct Template {
+    pub id: String,
+    pub owner_type: String,
+    pub owner_id: String,
+    pub name: String,
+    pub current_version_id: Option<String>,
+    pub status: String,
+    pub client_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = templates)]
+pub struct NewTemplate<'a> {
+    pub id: &'a str,
+    pub owner_type: &'a str,
+    pub owner_id: &'a str,
+    pub name: &'a str,
+    pub current_version_id: Option<&'a str>,
+    pub status: &'a str,
+    pub client_id: Option<&'a str>,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = template_versions)]
+pub struct TemplateVersion {
+    pub id: String,
+    pub template_id: String,
+    pub version_no: i32,
+    pub doc_json: String,
+    pub variables_spec: String,
+    pub theme: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = template_versions)]
+pub struct NewTemplateVersion<'a> {
+    pub id: &'a str,
+    pub template_id: &'a str,
+    pub version_no: i32,
+    pub doc_json: &'a str,
+    pub variables_spec: &'a str,
+    pub theme: Option<&'a str>,
+    pub status: &'a str,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
+}
+
+pub fn list_templates_by_owner(
+    connection: &mut SqliteConnection,
+    owner_type: &str,
+    owner_id: &str,
+) -> QueryResult<Vec<Template>> {
+    templates::table
+        .filter(templates::owner_type.eq(owner_type))
+        .filter(templates::owner_id.eq(owner_id))
+        .select(Template::as_select())
+        .order(templates::created_at.desc())
+        .load(connection)
+}
+
+pub fn find_template_by_id(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> QueryResult<Option<Template>> {
+    templates::table
+        .filter(templates::id.eq(id))
+        .select(Template::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn insert_template(
+    connection: &mut SqliteConnection,
+    template: &NewTemplate<'_>,
+) -> QueryResult<usize> {
+    diesel::insert_into(templates::table)
+        .values(template)
+        .execute(connection)
+}
+
+pub fn find_template_version(
+    connection: &mut SqliteConnection,
+    template_id: &str,
+    id: &str,
+) -> QueryResult<Option<TemplateVersion>> {
+    template_versions::table
+        .filter(template_versions::template_id.eq(template_id))
+        .filter(template_versions::id.eq(id))
+        .select(TemplateVersion::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_template_version_by_id(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> QueryResult<Option<TemplateVersion>> {
+    template_versions::table
+        .filter(template_versions::id.eq(id))
+        .select(TemplateVersion::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn list_template_versions(
+    connection: &mut SqliteConnection,
+    template_id: &str,
+) -> QueryResult<Vec<TemplateVersion>> {
+    template_versions::table
+        .filter(template_versions::template_id.eq(template_id))
+        .select(TemplateVersion::as_select())
+        .order(template_versions::version_no.desc())
+        .load(connection)
+}
+
+pub fn latest_template_version_no(
+    connection: &mut SqliteConnection,
+    template_id: &str,
+) -> QueryResult<Option<i32>> {
+    template_versions::table
+        .filter(template_versions::template_id.eq(template_id))
+        .select(diesel::dsl::max(template_versions::version_no))
+        .first(connection)
+}
+
+pub fn insert_template_version(
+    connection: &mut SqliteConnection,
+    version: &NewTemplateVersion<'_>,
+) -> QueryResult<usize> {
+    diesel::insert_into(template_versions::table)
+        .values(version)
+        .execute(connection)
+}
+
+pub fn update_template_version_draft(
+    connection: &mut SqliteConnection,
+    id: &str,
+    doc_json: &str,
+    variables_spec: &str,
+    theme: Option<&str>,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        template_versions::table
+            .filter(template_versions::id.eq(id))
+            .filter(template_versions::status.eq("draft")),
+    )
+    .set((
+        template_versions::doc_json.eq(doc_json),
+        template_versions::variables_spec.eq(variables_spec),
+        template_versions::theme.eq(theme),
+        template_versions::updated_at.eq(now),
+    ))
+    .execute(connection)
+}
+
+pub fn publish_template_version_row(
+    connection: &mut SqliteConnection,
+    id: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        template_versions::table
+            .filter(template_versions::id.eq(id))
+            .filter(template_versions::status.eq("draft")),
+    )
+    .set((
+        template_versions::status.eq("published"),
+        template_versions::updated_at.eq(now),
+    ))
+    .execute(connection)
+}
+
+pub fn set_template_published(
+    connection: &mut SqliteConnection,
+    id: &str,
+    current_version_id: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(templates::table.filter(templates::id.eq(id)))
+        .set((
+            templates::current_version_id.eq(Some(current_version_id)),
+            templates::status.eq("published"),
+            templates::updated_at.eq(now),
+        ))
+        .execute(connection)
+}
+
+pub fn archive_template_row(
+    connection: &mut SqliteConnection,
+    id: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(templates::table.filter(templates::id.eq(id)))
+        .set((
+            templates::status.eq("archived"),
+            templates::updated_at.eq(now),
+        ))
+        .execute(connection)
+}
+
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = assets)]
+pub struct Asset {
+    pub id: String,
+    pub clinic_id: String,
+    pub object_key: String,
+    pub owner_type: String,
+    pub owner_id: String,
+    pub kind: String,
+    pub original_name: Option<String>,
+    pub content_type: String,
+    pub size_bytes: i32,
+    pub sha256: String,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub status: String,
+    pub deleted_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = assets)]
+pub struct NewAsset<'a> {
+    pub id: &'a str,
+    pub clinic_id: &'a str,
+    pub object_key: &'a str,
+    pub owner_type: &'a str,
+    pub owner_id: &'a str,
+    pub kind: &'a str,
+    pub original_name: Option<&'a str>,
+    pub content_type: &'a str,
+    pub size_bytes: i32,
+    pub sha256: &'a str,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub status: &'a str,
+    pub deleted_at: Option<&'a str>,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
+}
+
+#[derive(QueryableByName)]
+struct AssetReferenceCount {
+    #[diesel(sql_type = BigInt)]
+    ref_count: i64,
+}
+
+pub fn insert_asset(connection: &mut SqliteConnection, asset: &NewAsset<'_>) -> QueryResult<usize> {
+    diesel::insert_into(assets::table)
+        .values(asset)
+        .execute(connection)
+}
+
+pub fn find_asset_by_id(connection: &mut SqliteConnection, id: &str) -> QueryResult<Option<Asset>> {
+    assets::table
+        .filter(assets::id.eq(id))
+        .filter(assets::deleted_at.is_null())
+        .select(Asset::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn list_assets_by_clinic(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+) -> QueryResult<Vec<Asset>> {
+    assets::table
+        .filter(assets::clinic_id.eq(clinic_id))
+        .filter(assets::deleted_at.is_null())
+        .select(Asset::as_select())
+        .order(assets::created_at.desc())
+        .load(connection)
+}
+
+pub fn list_assets_by_kind(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    kind: &str,
+) -> QueryResult<Vec<Asset>> {
+    assets::table
+        .filter(assets::clinic_id.eq(clinic_id))
+        .filter(assets::kind.eq(kind))
+        .filter(assets::deleted_at.is_null())
+        .select(Asset::as_select())
+        .order(assets::created_at.desc())
+        .load(connection)
+}
+
+pub fn count_assets_by_kind(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    kind: &str,
+) -> QueryResult<i64> {
+    assets::table
+        .filter(assets::clinic_id.eq(clinic_id))
+        .filter(assets::kind.eq(kind))
+        .filter(assets::deleted_at.is_null())
+        .count()
+        .get_result(connection)
+}
+
+pub fn mark_asset_ready(
+    connection: &mut SqliteConnection,
+    id: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(assets::table.filter(assets::id.eq(id)))
+        .set((assets::status.eq("ready"), assets::updated_at.eq(now)))
+        .execute(connection)
+}
+
+pub fn soft_delete_asset(
+    connection: &mut SqliteConnection,
+    id: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(assets::table.filter(assets::id.eq(id)))
+        .set((assets::deleted_at.eq(Some(now)), assets::updated_at.eq(now)))
+        .execute(connection)
+}
+
+pub fn hard_delete_asset(connection: &mut SqliteConnection, id: &str) -> QueryResult<usize> {
+    diesel::delete(assets::table.filter(assets::id.eq(id))).execute(connection)
+}
+
+pub fn count_asset_references(
+    connection: &mut SqliteConnection,
+    asset_id: &str,
+) -> QueryResult<i64> {
+    diesel::sql_query(
+        "SELECT ((SELECT COUNT(*) FROM template_version_assets tva JOIN template_versions tv ON tv.id = tva.template_version_id WHERE tva.asset_id = ? AND tv.status = 'published') + (SELECT COUNT(*) FROM prescriptions p JOIN template_version_assets tva ON tva.template_version_id = p.template_version_id WHERE tva.asset_id = ?)) AS ref_count",
+    )
+    .bind::<Text, _>(asset_id)
+    .bind::<Text, _>(asset_id)
+    .get_result::<AssetReferenceCount>(connection)
+    .map(|row| row.ref_count)
+}
+
+pub fn list_template_version_asset_ids(
+    connection: &mut SqliteConnection,
+    template_version_id: &str,
+) -> QueryResult<Vec<String>> {
+    template_version_assets::table
+        .filter(template_version_assets::template_version_id.eq(template_version_id))
+        .select(template_version_assets::asset_id)
+        .load(connection)
+}
+
+pub fn insert_template_version_asset(
+    connection: &mut SqliteConnection,
+    template_version_id: &str,
+    asset_id: &str,
+) -> QueryResult<usize> {
+    diesel::insert_into(template_version_assets::table)
+        .values((
+            template_version_assets::template_version_id.eq(template_version_id),
+            template_version_assets::asset_id.eq(asset_id),
+        ))
+        .on_conflict_do_nothing()
+        .execute(connection)
+}
+
+pub fn set_clinic_branding(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    name: &str,
+    address: Option<&str>,
+    phone: Option<&str>,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(clinics::table.filter(clinics::id.eq(clinic_id)))
+        .set((
+            clinics::name.eq(name),
+            clinics::address.eq(address),
+            clinics::phone.eq(phone),
+            clinics::updated_at.eq(now),
+        ))
+        .execute(connection)
+}
+
+pub fn set_clinic_logo(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    asset_id: Option<&str>,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(clinics::table.filter(clinics::id.eq(clinic_id)))
+        .set((
+            clinics::logo_asset_id.eq(asset_id),
+            clinics::updated_at.eq(now),
+        ))
+        .execute(connection)
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = prescriptions)]
+pub struct Prescription {
+    pub id: String,
+    pub patient_id: String,
+    pub doctor_id: Option<String>,
+    pub clinic_id: String,
+    pub template_version_id: Option<String>,
+    pub status: String,
+    pub rx_number: Option<i32>,
+    pub rx_block_id: Option<String>,
+    pub diagnosis: Option<String>,
+    pub validity: Option<String>,
+    pub instructions: Option<String>,
+    pub signed_at: Option<String>,
+    pub synced_at: Option<String>,
+    pub voided_at: Option<String>,
+    pub void_reason: Option<String>,
+    pub client_id: String,
+    pub supersedes_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = prescriptions)]
+pub struct NewPrescription<'a> {
+    pub id: &'a str,
+    pub patient_id: &'a str,
+    pub doctor_id: Option<&'a str>,
+    pub clinic_id: &'a str,
+    pub template_version_id: Option<&'a str>,
+    pub status: &'a str,
+    pub rx_number: Option<i32>,
+    pub rx_block_id: Option<&'a str>,
+    pub diagnosis: Option<&'a str>,
+    pub validity: Option<&'a str>,
+    pub instructions: Option<&'a str>,
+    pub signed_at: Option<&'a str>,
+    pub synced_at: Option<&'a str>,
+    pub voided_at: Option<&'a str>,
+    pub void_reason: Option<&'a str>,
+    pub client_id: &'a str,
+    pub supersedes_id: Option<&'a str>,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = prescription_items)]
+pub struct PrescriptionItem {
+    pub id: String,
+    pub prescription_id: String,
+    pub position: i32,
+    pub med_name: String,
+    pub dose: Option<String>,
+    pub route: Option<String>,
+    pub frequency: Option<String>,
+    pub duration: Option<String>,
+    pub quantity: Option<String>,
+    pub notes: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = prescription_items)]
+pub struct NewPrescriptionItem<'a> {
+    pub id: &'a str,
+    pub prescription_id: &'a str,
+    pub position: i32,
+    pub med_name: &'a str,
+    pub dose: Option<&'a str>,
+    pub route: Option<&'a str>,
+    pub frequency: Option<&'a str>,
+    pub duration: Option<&'a str>,
+    pub quantity: Option<&'a str>,
+    pub notes: Option<&'a str>,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = verification_codes)]
+pub struct VerificationCode {
+    pub id: String,
+    pub prescription_id: String,
+    pub code: String,
+    pub code_hash: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = verification_codes)]
+pub struct NewVerificationCode<'a> {
+    pub id: &'a str,
+    pub prescription_id: &'a str,
+    pub code: &'a str,
+    pub code_hash: &'a str,
+    pub status: &'a str,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = rx_counters)]
+pub struct RxCounter {
+    pub clinic_id: String,
+    pub last_rx_number: i32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = rx_blocks)]
+pub struct RxBlock {
+    pub id: String,
+    pub clinic_id: String,
+    pub device_id: String,
+    pub start_number: i32,
+    pub end_number: i32,
+    pub consumed: i32,
+    pub status: String,
+    pub allocated_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = rx_blocks)]
+pub struct NewRxBlock<'a> {
+    pub id: &'a str,
+    pub clinic_id: &'a str,
+    pub device_id: &'a str,
+    pub start_number: i32,
+    pub end_number: i32,
+    pub consumed: i32,
+    pub status: &'a str,
+    pub allocated_at: &'a str,
+    pub created_at: &'a str,
+    pub updated_at: &'a str,
+    pub created_by: Option<&'a str>,
+}
+
+pub fn find_prescription_by_id(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    id: &str,
+) -> QueryResult<Option<Prescription>> {
+    prescriptions::table
+        .filter(prescriptions::clinic_id.eq(clinic_id))
+        .filter(prescriptions::id.eq(id))
+        .select(Prescription::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_prescription_by_client_id(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    client_id: &str,
+) -> QueryResult<Option<Prescription>> {
+    prescriptions::table
+        .filter(prescriptions::clinic_id.eq(clinic_id))
+        .filter(prescriptions::client_id.eq(client_id))
+        .select(Prescription::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn list_prescriptions(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    doctor_id: Option<&str>,
+    patient_id: Option<&str>,
+    status: Option<&str>,
+    date: Option<&str>,
+    limit: i64,
+) -> QueryResult<Vec<Prescription>> {
+    let mut statement = prescriptions::table
+        .filter(prescriptions::clinic_id.eq(clinic_id))
+        .into_boxed();
+    if let Some(doctor_id) = doctor_id {
+        statement = statement.filter(prescriptions::doctor_id.eq(Some(doctor_id)));
+    }
+    if let Some(patient_id) = patient_id {
+        statement = statement.filter(prescriptions::patient_id.eq(patient_id));
+    }
+    if let Some(status) = status {
+        statement = statement.filter(prescriptions::status.eq(status));
+    }
+    if let Some(date) = date {
+        statement = statement.filter(prescriptions::created_at.like(format!("{date}%")));
+    }
+    statement
+        .select(Prescription::as_select())
+        .order(prescriptions::created_at.desc())
+        .limit(limit)
+        .load(connection)
+}
+
+pub fn insert_prescription(
+    connection: &mut SqliteConnection,
+    prescription: &NewPrescription<'_>,
+) -> QueryResult<usize> {
+    diesel::insert_into(prescriptions::table)
+        .values(prescription)
+        .execute(connection)
+}
+
+pub fn update_prescription_draft(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    id: &str,
+    diagnosis: Option<&str>,
+    validity: Option<&str>,
+    instructions: Option<&str>,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        prescriptions::table
+            .filter(prescriptions::clinic_id.eq(clinic_id))
+            .filter(prescriptions::id.eq(id))
+            .filter(prescriptions::status.eq("draft")),
+    )
+    .set((
+        prescriptions::diagnosis.eq(diagnosis),
+        prescriptions::validity.eq(validity),
+        prescriptions::instructions.eq(instructions),
+        prescriptions::updated_at.eq(now),
+    ))
+    .execute(connection)
+}
+
+pub fn mark_prescription_signed(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    id: &str,
+    doctor_id: &str,
+    rx_number: i32,
+    rx_block_id: &str,
+    signed_at: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        prescriptions::table
+            .filter(prescriptions::clinic_id.eq(clinic_id))
+            .filter(prescriptions::id.eq(id))
+            .filter(prescriptions::status.eq("draft")),
+    )
+    .set((
+        prescriptions::status.eq("signed"),
+        prescriptions::doctor_id.eq(Some(doctor_id)),
+        prescriptions::rx_number.eq(Some(rx_number)),
+        prescriptions::rx_block_id.eq(Some(rx_block_id)),
+        prescriptions::signed_at.eq(Some(signed_at)),
+        prescriptions::updated_at.eq(signed_at),
+    ))
+    .execute(connection)
+}
+
+pub fn mark_prescription_voided(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    id: &str,
+    reason: &str,
+    at: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        prescriptions::table
+            .filter(prescriptions::clinic_id.eq(clinic_id))
+            .filter(prescriptions::id.eq(id))
+            .filter(prescriptions::status.eq("signed")),
+    )
+    .set((
+        prescriptions::status.eq("voided"),
+        prescriptions::voided_at.eq(Some(at)),
+        prescriptions::void_reason.eq(Some(reason)),
+        prescriptions::updated_at.eq(at),
+    ))
+    .execute(connection)
+}
+
+pub fn mark_prescription_superseded(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    id: &str,
+    at: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        prescriptions::table
+            .filter(prescriptions::clinic_id.eq(clinic_id))
+            .filter(prescriptions::id.eq(id))
+            .filter(prescriptions::status.eq("signed")),
+    )
+    .set((
+        prescriptions::status.eq("superseded"),
+        prescriptions::updated_at.eq(at),
+    ))
+    .execute(connection)
+}
+
+pub fn list_prescription_items(
+    connection: &mut SqliteConnection,
+    prescription_id: &str,
+) -> QueryResult<Vec<PrescriptionItem>> {
+    prescription_items::table
+        .filter(prescription_items::prescription_id.eq(prescription_id))
+        .select(PrescriptionItem::as_select())
+        .order(prescription_items::position.asc())
+        .load(connection)
+}
+
+pub fn find_prescription_item(
+    connection: &mut SqliteConnection,
+    prescription_id: &str,
+    id: &str,
+) -> QueryResult<Option<PrescriptionItem>> {
+    prescription_items::table
+        .filter(prescription_items::prescription_id.eq(prescription_id))
+        .filter(prescription_items::id.eq(id))
+        .select(PrescriptionItem::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn insert_prescription_item(
+    connection: &mut SqliteConnection,
+    item: &NewPrescriptionItem<'_>,
+) -> QueryResult<usize> {
+    diesel::insert_into(prescription_items::table)
+        .values(item)
+        .execute(connection)
+}
+
+pub struct PrescriptionItemFields<'a> {
+    pub position: i32,
+    pub med_name: &'a str,
+    pub dose: Option<&'a str>,
+    pub route: Option<&'a str>,
+    pub frequency: Option<&'a str>,
+    pub duration: Option<&'a str>,
+    pub quantity: Option<&'a str>,
+    pub notes: Option<&'a str>,
+}
+
+pub fn update_prescription_item(
+    connection: &mut SqliteConnection,
+    prescription_id: &str,
+    id: &str,
+    fields: &PrescriptionItemFields<'_>,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        prescription_items::table
+            .filter(prescription_items::prescription_id.eq(prescription_id))
+            .filter(prescription_items::id.eq(id)),
+    )
+    .set((
+        prescription_items::position.eq(fields.position),
+        prescription_items::med_name.eq(fields.med_name),
+        prescription_items::dose.eq(fields.dose),
+        prescription_items::route.eq(fields.route),
+        prescription_items::frequency.eq(fields.frequency),
+        prescription_items::duration.eq(fields.duration),
+        prescription_items::quantity.eq(fields.quantity),
+        prescription_items::notes.eq(fields.notes),
+        prescription_items::updated_at.eq(now),
+    ))
+    .execute(connection)
+}
+
+pub fn update_prescription_item_position(
+    connection: &mut SqliteConnection,
+    prescription_id: &str,
+    id: &str,
+    position: i32,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        prescription_items::table
+            .filter(prescription_items::prescription_id.eq(prescription_id))
+            .filter(prescription_items::id.eq(id)),
+    )
+    .set((
+        prescription_items::position.eq(position),
+        prescription_items::updated_at.eq(now),
+    ))
+    .execute(connection)
+}
+
+pub fn delete_prescription_item(
+    connection: &mut SqliteConnection,
+    prescription_id: &str,
+    id: &str,
+) -> QueryResult<usize> {
+    diesel::delete(
+        prescription_items::table
+            .filter(prescription_items::prescription_id.eq(prescription_id))
+            .filter(prescription_items::id.eq(id)),
+    )
+    .execute(connection)
+}
+
+pub fn find_verification_code_by_prescription(
+    connection: &mut SqliteConnection,
+    prescription_id: &str,
+) -> QueryResult<Option<VerificationCode>> {
+    verification_codes::table
+        .filter(verification_codes::prescription_id.eq(prescription_id))
+        .select(VerificationCode::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn insert_verification_code(
+    connection: &mut SqliteConnection,
+    code: &NewVerificationCode<'_>,
+) -> QueryResult<usize> {
+    diesel::insert_into(verification_codes::table)
+        .values(code)
+        .execute(connection)
+}
+
+pub fn set_verification_code_status(
+    connection: &mut SqliteConnection,
+    prescription_id: &str,
+    status: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(
+        verification_codes::table.filter(verification_codes::prescription_id.eq(prescription_id)),
+    )
+    .set((
+        verification_codes::status.eq(status),
+        verification_codes::updated_at.eq(now),
+    ))
+    .execute(connection)
+}
+
+pub fn find_rx_counter(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+) -> QueryResult<Option<RxCounter>> {
+    rx_counters::table
+        .filter(rx_counters::clinic_id.eq(clinic_id))
+        .select(RxCounter::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn insert_rx_counter(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    last_rx_number: i32,
+) -> QueryResult<usize> {
+    diesel::insert_into(rx_counters::table)
+        .values((
+            rx_counters::clinic_id.eq(clinic_id),
+            rx_counters::last_rx_number.eq(last_rx_number),
+        ))
+        .execute(connection)
+}
+
+pub fn set_rx_counter(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    last_rx_number: i32,
+) -> QueryResult<usize> {
+    diesel::update(rx_counters::table.filter(rx_counters::clinic_id.eq(clinic_id)))
+        .set(rx_counters::last_rx_number.eq(last_rx_number))
+        .execute(connection)
+}
+
+pub fn find_active_rx_block(
+    connection: &mut SqliteConnection,
+    device_id: &str,
+) -> QueryResult<Option<RxBlock>> {
+    rx_blocks::table
+        .filter(rx_blocks::device_id.eq(device_id))
+        .filter(rx_blocks::status.eq("active"))
+        .select(RxBlock::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_rx_block_by_id(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> QueryResult<Option<RxBlock>> {
+    rx_blocks::table
+        .filter(rx_blocks::id.eq(id))
+        .select(RxBlock::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn insert_rx_block(
+    connection: &mut SqliteConnection,
+    block: &NewRxBlock<'_>,
+) -> QueryResult<usize> {
+    diesel::insert_into(rx_blocks::table)
+        .values(block)
+        .execute(connection)
+}
+
+pub fn set_rx_block_consumed(
+    connection: &mut SqliteConnection,
+    id: &str,
+    consumed: i32,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(rx_blocks::table.filter(rx_blocks::id.eq(id)))
+        .set((
+            rx_blocks::consumed.eq(consumed),
+            rx_blocks::updated_at.eq(now),
+        ))
+        .execute(connection)
+}
+
+pub fn set_rx_block_status(
+    connection: &mut SqliteConnection,
+    id: &str,
+    status: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(rx_blocks::table.filter(rx_blocks::id.eq(id)))
+        .set((rx_blocks::status.eq(status), rx_blocks::updated_at.eq(now)))
+        .execute(connection)
+}
+
+pub fn find_doctor_by_id(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> QueryResult<Option<Doctor>> {
+    doctors::table
+        .filter(doctors::id.eq(id))
+        .select(Doctor::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_patient_any(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    id: &str,
+) -> QueryResult<Option<Patient>> {
+    patients::table
+        .filter(patients::clinic_id.eq(clinic_id))
+        .filter(patients::id.eq(id))
+        .select(Patient::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn set_clinic_llm_url(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    llm_url_template: Option<&str>,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(clinics::table.filter(clinics::id.eq(clinic_id)))
+        .set((
+            clinics::llm_url_template.eq(llm_url_template),
+            clinics::updated_at.eq(now),
+        ))
+        .execute(connection)
 }

@@ -12,7 +12,7 @@ pub fn api_base() -> String {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn api_base() -> String {
-    std::env::var("PERSONA_API_BASE")
+    std::env::var("PERSONA_SERVER_ORIGIN")
         .unwrap_or_else(|_| "http://127.0.0.1:8080".to_owned())
         .trim_end_matches('/')
         .to_owned()
@@ -105,6 +105,12 @@ pub async fn put_json(path: &str, body: Value) -> Result<Value, String> {
 
 pub async fn delete_json(path: &str) -> Result<Value, String> {
     send(with_credentials(client().delete(url(path)))).await
+}
+
+pub async fn post_file(path: &str, file_name: String, bytes: Vec<u8>) -> Result<Value, String> {
+    let part = reqwest::multipart::Part::bytes(bytes).file_name(file_name);
+    let form = reqwest::multipart::Form::new().part("file", part);
+    send(with_credentials(client().post(url(path)).multipart(form))).await
 }
 
 pub fn encode_query(value: &str) -> String {

@@ -4,10 +4,10 @@
 |---|---|
 | Source | `context/PRD.md` (Draft v0.8 — 2026-11-12) §5.4, §5.8, §7–§9, `context/database-design.md`, `context/sitemap.md` |
 | Baseline | Working tree 2026-11-11 — M0 auth implemented on the Dioxus fullstack base |
-| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `qrcode-generator` 6.1.2 (`std`, `qr`, `image`) for QR PNG output · `printpdf` 0.12 planned for M1 (not yet a dependency in `Cargo.toml`) |
+| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `qrcode-generator` 6.1.2 (`std`, `qr`, `image`) for QR PNG output · `printpdf` 0.12.9 (`default-features = false`, `text_layout`, `jpeg`, `png`) |
 | Topology | One fullstack node: server binary + wasm bundle; one SQLite file on local disk |
 | Datastore | `app.db` locally · `/data/app.db` in Docker (`persona-data` volume) |
-| Public surface | `:8080` — Dioxus pages, `/api/auth/*`, `/health`; `⬜ /verify/:code`, `⬜ /api/prescriptions/:id/pdf` |
+| Public surface | `:8080` — Dioxus pages, `/api/auth/*`, `/health`; `⬜ /verify/:code`, ✅ `/api/prescriptions/:id/pdf`, ✅ `/api/prescriptions/:id/preview` |
 | Build | `dx build --release --fullstack` → `target/dx/persona-sanus/release/web/{server,public}` |
 | Status key | ✅ Implemented · 🟡 Partial · ⬜ Planned |
 
@@ -24,15 +24,17 @@ The server process is the unit of deployment. There is no separate API service, 
 | Session cookie, SHA-256 token storage, 30-day expiry | ✅ | `src/auth_server.rs` |
 | SQLite pool + embedded migrations applied at boot | ✅ | `src/db.rs` |
 | Auth schema (`users`, `sessions`) | ✅ | `migrations/20261111000000_create_auth` |
-| App schema (`profiles`, `devices`, `assets`, clinical tables, `audit_log`; billing is v1.1) | ⬜ | DB §5; no migration yet |
-| Roles, clinic membership, server-side authorization | ⬜ | PRD §3, DB §2 |
-| Patients, templates, prescriptions, items, verification | ⬜ | PRD §5.1–§5.6 |
-| Templates form editor (forms on web + desktop, D-21) | ⬜ | PRD §5.3 |
-| A4 PDF + QR | ⬜ | PRD §5.4 |
+| App schema (`profiles`, `devices`, `assets`, clinical tables, `audit_log`; billing is v1.1) | ✅ | `migrations/20261112000000_create_app_schema` |
+| Roles, clinic membership, server-side authorization | ✅ | `src/service.rs`, `clinic_members` |
+| Patients | ✅ | `src/service.rs`, `/api/patients*` |
+| Templates, versions, publish/archive | ✅ | `src/service.rs`, `/api/templates*` |
+| Prescriptions, items, verification | ✅ | PRD §5.4–§5.6 |
+| Templates form editor (forms on web + desktop, D-21) | ✅ | `src/forms.rs` |
+| A4 PDF + QR | ✅ | `src/pdf.rs`, `src/pdf_server.rs`, PRD §5.4 |
 | Desktop cache + outbox + sync | ⬜ | PRD §5.5 |
 | Billing + scheduler (v1.1) | ⬜ | PRD §5.7, D-04 |
-| Image library (1 image in v1; MinIO, 15-min signed URLs) | ⬜ | PRD §5.8 |
-| Branding asset upload (logo only) | ⬜ | PRD §5.3, §5.8, D-06 |
+| Image library (1 image in v1; MinIO, 15-min signed URLs) | ✅ | `src/assets.rs`, `/api/assets*` |
+| Branding asset upload (logo only) | ✅ | `/api/clinic/logo`, `/settings/clinic` |
 | Audit, MFA, rate limiting, backups | ⬜ | PRD §9, §11 M3 |
 
 ```mermaid
@@ -77,16 +79,16 @@ flowchart LR
 |---|---|---|---|
 | `default = ["web", "server"]` | both below | fullstack dev/prod build | `dx serve`, Docker |
 | `web` | `dioxus/web`, `dioxus-motion` (`web`) | wasm client | browser |
-| `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `anyhow`, `qrcode-generator`; ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native server binary | node |
-| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`), `qrcode-generator`; ⬜ M1 adds `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`); ⬜ M2 adds `diesel` (`sqlite`, `r2d2`) + `libsqlite3-sys` (`bundled`) + `reqwest` (`cookies`) for the local cache and sync | native WebView app | macOS/Windows |
+| `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `anyhow`, `qrcode-generator`, `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native server binary | node |
+| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`), `qrcode-generator`, `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`); ⬜ M2 adds `diesel` (`sqlite`, `r2d2`) + `libsqlite3-sys` (`bundled`) + `reqwest` (`cookies`) for the local cache and sync | native WebView app | macOS/Windows |
 | `mobile` | `dioxus/mobile` | declared, not v1 | — |
 
 `reqwest` and `serde_json` are unconditional and compile on both sides.
 
 Rules:
 
-- Server modules are gated in `src/main.rs`: `auth_server`, `db`, `schema`, and `server` compile under `feature = "server"` today. ⬜ M1 adds `pdf` (`server` and `desktop`) and `pdf_server` (`server`). The non-server `main` launches `dioxus::launch(App)`; the server `main` is `#[tokio::main]`.
-- When the renderer lands (⬜ M1), `printpdf` never enters the `web` feature: the wasm bundle must not carry a PDF engine. `default-features = false` drops printpdf's `html` layout (azul CSS/XML stack); `text_layout` is still required because font embedding goes through it, and `jpeg`/`png` add the image decoders used for logos, library images, and the QR PNG. Never call `PdfDocument::from_html`.
+- Server modules are gated in `src/main.rs`: `auth_server`, `db`, `schema`, `server`, and `pdf_server` compile under `feature = "server"`; `pdf` compiles under `server` or `desktop`. The non-server `main` launches `dioxus::launch(App)`; the server `main` is `#[tokio::main]`.
+- `printpdf` never enters the `web` feature: the wasm bundle must not carry a PDF engine. `default-features = false` drops printpdf's `html` layout (azul CSS/XML stack); `text_layout` is still required because font embedding goes through it, and `jpeg`/`png` add the image decoders used for logos, library images, and the QR PNG. Never call `PdfDocument::from_html`.
 - `qrcode-generator` 6.1.2 ([upstream](https://github.com/magiclen/qrcode-generator), MIT) is the only QR encoder. It is optional, enabled by `server` and `desktop`, and uses `default-features = false` plus `std`/`qr`/`image` so the renderer can call `Renderer::to_png_vec()`. It never enters `web`: QR symbols are generated where the PDF is rendered and embedded as PNG; the payload is `{PUBLIC_BASE_URL}/verify/{code}` with no PHI. Do not add a second QR crate or hand-roll the matrix.
 - `dioxus-motion` 0.4 ([upstream](https://github.com/wheregmis/dioxus-motion), MIT) is the typed, interruptible animation crate for Dioxus UI (springs, tweens, keyframes, presence, route transitions). It is an optional dependency that gets exactly one platform feature per build: `web` on wasm, `desktop` on the WebView app, `dioxus` alone for SSR. Its default `web` feature would drag `wasm-bindgen`/`web-sys` into the native server binary, hence `default-features = false`. Use the crates.io release, not the repository `main` branch, which carries unreleased breaking API changes.
 - Editing is plain Dioxus forms (PRD D-21) — no WYSIWYG editor, no rich text, no editor dependency and no target gate: the same form components compile on `web`, `desktop`, and server-side render, so the desktop binary ships the same UI as the web. The forms emit schema-checked structured JSON (`doc_json`) and never produce raw HTML.
@@ -101,11 +103,12 @@ Rules:
 |---|---|---|---|
 | `src/main.rs` | shared | `Route` enum, `App`, `Navbar`, `AuthPage`, `Dashboard`, server entry point | contain SQL, crypto, or HTTP handlers |
 | `src/auth.rs` | client | auth HTTP calls, `SessionUser`, response parsing | import server modules |
-| `src/forms.rs` (⬜ M1) | client (shared) | template and prescription form components, `doc_json` (de)serialization, variable/medication/image fields | contain server code; persist or emit raw HTML |
+| `src/forms.rs` | client (shared) | template form component, A4 preview projection reused by prescriptions, `doc_json` (de)serialization and validation, variable/medication/image fields | contain server code; persist or emit raw HTML |
 | `src/auth_server.rs` | server | handlers, validation, Argon2, tokens, cookies, `with_conn` | build UI or HTML |
 | `src/db.rs` | server | pool, embedded migrations, SQL, models | emit HTTP responses |
-| `src/pdf.rs` (⬜ M1) | server + desktop | `printpdf` renderer: layout model → page ops, fonts, images, QR PNG via `qrcode-generator`, A4 page boxes; pure, deterministic, no I/O | SQL, HTTP, UI, `from_html` |
-| `src/pdf_server.rs` (⬜ M1) | server | `GET /api/prescriptions/:id/pdf`, authorization, `Content-Disposition` filename, load pinned version + variables | layout or drawing logic |
+| `src/assets.rs` | server | S3/SigV4 client, private-bucket readiness, image decode/EXIF strip, presigned GET URLs | build UI; hold a database transaction across network I/O |
+| `src/pdf.rs` | server + desktop | `printpdf` renderer: layout model → page ops, fonts, images, QR PNG via `qrcode-generator`, A4 page boxes; pure, deterministic, no I/O | SQL, HTTP, UI, `from_html` |
+| `src/pdf_server.rs` | server | `GET /api/prescriptions/:id/pdf`, authorization, `Content-Disposition` filename, load pinned version + variables | layout or drawing logic |
 | `src/schema.rs` | server | Diesel `table!` definitions | drift from migrations |
 | `src/server.rs` | server | axum composition, `AppState`, `/health` | query the database directly |
 | `migrations/` | server | schema history | be edited after release |
@@ -197,8 +200,8 @@ Connection rules:
 1. **Foreign keys.** SQLite requires `PRAGMA foreign_keys = ON` per connection. `db::ConnectionPragmas`, an r2d2 `CustomizeConnection`, sets it on every acquire, so no query path can bypass it; `/health` exposes the effective value through the pool.
 2. **Concurrency.** The customizer sets `journal_mode = WAL`, `busy_timeout = 5000`, and `synchronous = NORMAL`. `db::write_transaction` (deferred `BEGIN`) and `db::immediate_transaction` (raw `BEGIN IMMEDIATE`) retry `database is locked` with bounded attempts; allocation and quota paths must use `immediate_transaction`, never their own `BEGIN IMMEDIATE` or retry loop.
 3. **Blocking work.** Diesel calls and Argon2 run in `spawn_blocking`. Never hold a pooled connection or a Dioxus signal lock across `.await`; `clippy.toml` already rejects the signal-lock case.
-4. **Transactions.** Multi-row invariants belong in one transaction: sign-up (user + session), signing (rx block, prescription, items, verification code, audit), payment resolution (event + transaction + subscription, v1.1), and retention trim. Only sign-up is implemented today. Use the `db` helpers instead of Diesel `transaction()` when the transaction must take the write lock up front.
-5. **Migrations.** Append-only and embedded. Planned order: `create_auth` ✅ → app schema ✅ → billing ⬜ v1.1 (DB §8). Update `src/schema.rs` in the same change as each migration; startup applies pending migrations before serving.
+4. **Transactions.** Multi-row invariants belong in one transaction: sign-up (user + session), signing (rx block, prescription, items, verification code, audit), payment resolution (event + transaction + subscription, v1.1), and retention trim. Sign-up and prescription signing use the helper today. Use the `db` helpers instead of Diesel `transaction()` when the transaction must take the write lock up front.
+5. **Migrations.** Append-only and embedded. Planned order: `create_auth` ✅ → app schema ✅ → `sessions.device_id` ✅ (spec 04-D) → billing ⬜ v1.1 (DB §8). Update `src/schema.rs` in the same change as each migration; startup applies pending migrations before serving.
 6. **Scoping.** Clinic and role filters belong in the service layer, never in client-supplied query parameters. The dashboard and route guards are not an authorization boundary.
 7. **Assets.** Uploads reserve a `pending` row and count it against the v1 quota (1 library image per clinic) in a `BEGIN IMMEDIATE` transaction, then upload and mark it `ready`; failures delete the row and object. Deletion checks `template_version_assets` and retained prescriptions before touching the object. The 5/1/0 state quota and the cancellation purge are v1.1 (PRD §5.8, D-05).
 
@@ -213,8 +216,11 @@ The connection pragmas live in the r2d2 customizer in `db.rs`; `database-design.
 | `/` | `Navbar` | none | ✅ |
 | `/login` | `Navbar` | none; signed-in users see their session | ✅ |
 | `/dashboard` | `Navbar` | client-side redirect when signed out | ✅ |
-| `/patients*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (CRUD; prescription history spec 07) |
-| `/prescriptions*`, `/templates*`, `/settings*`, `/audit`, `/verify/:code` | target shell | role- and session-dependent (sitemap §1.2) | ⬜ |
+| `/patients*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (CRUD + prescription history) |
+| `/templates*` | `Navbar` | doctor or administrator (sitemap §1.2) | ✅ |
+| `/settings*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (clinic image library in spec 06-F) |
+| `/prescriptions*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (editor, items, sign, void, supersede, A4 preview, PDF) |
+| `/audit`, `/verify/:code` | target shell | role- and session-dependent (sitemap §1.2) | ⬜ |
 
 Rules and current limits:
 
@@ -224,14 +230,14 @@ Rules and current limits:
 - UI code must copy signal values before awaiting. Holding `WriteLock` or `GenerationalRef` across `.await` is flagged by the `clippy.toml` configuration.
 - No JavaScript interop: editing is plain Dioxus forms (PRD D-21) — no WYSIWYG editor, no rich text, no bridge. The forms emit schema-checked structured JSON (`doc_json`) and raw HTML is never persisted or rendered.
 
-Auth transport is the main client-side architectural defect:
+Auth transport is resolved in spec 04-D:
 
-| Runtime | Current behavior | Result | Required change |
-|---|---|---|---|
-| Web on the same host and port | absolute `http://127.0.0.1:8080/api/auth`; `fetch_credentials_include` | works only on the development machine | use a relative `/api/auth` base |
-| Web behind TLS or a domain | absolute `http` loopback URL | mixed content or the wrong host | relative base |
-| Desktop (native) | `reqwest` with the `json` feature; `with_credentials` is a no-op; no cookie store configured | the session cookie is neither stored nor sent, so auth cannot persist | configurable origin + cookie jar (chosen — spec 04-D) |
-| Remote desktop | loopback constant | calls the user's machine, not the server | configurable server origin |
+| Runtime | Behavior | Result |
+|---|---|---|
+| Web on the same host and port | relative `/api/*` base; `fetch_credentials_include` | works on the development machine and behind TLS |
+| Web behind TLS or a domain | relative base | same-origin requests preserve the cookie |
+| Desktop (native) | `reqwest` cookie store; `PERSONA_SERVER_ORIGIN` | the session cookie is stored and sent, so auth persists |
+| Remote desktop | configurable origin | calls the configured server, not a loopback constant |
 
 Decision: application data is exposed as REST under `/api/*` with the session cookie (chosen — specs 02-B/04-D). The client splits the base URL (relative on wasm, configurable origin + cookie jar on native), the session cookie stays `SameSite=Lax`, and the server allows credentialed CORS for the web origins listed in `PERSONA_WEB_ORIGINS` (native `reqwest` is not a browser and needs no CORS). The server stays authoritative: every read and write is authorized in the service layer. This must be in place before shipping desktop or terminating TLS.
 
@@ -241,9 +247,9 @@ Decision: application data is exposed as REST under `/api/*` with the session co
 |---|---|---|---|---|---|
 | Profile and membership | session → profile, role, clinic membership, doctor details | `users`, `sessions`, `profiles`, `clinic_members`, `doctors` | session | 🟡 identity only | §3, DB §2 |
 | Patients | CRUD, cédula dedupe, soft delete | `patients` | role + clinic | ✅ | FR-001–003 |
-| Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | ⬜ | FR-020–024 |
+| Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | 🟡 editor + publish; asset pinning spec 06-F | FR-020–024 |
 | Images | upload/delete, v1 quota (1), 15-min signed URLs, template pinning, placeholder rendering (v1.1) | `assets`, `template_version_assets` | role + quota | ⬜ | FR-080–085 |
-| Prescriptions | draft→signed→superseded/voided, ordered items, block-allocated number | `prescriptions`, `prescription_items`, `rx_counters`, `rx_blocks` | doctor signs; nursing drafts; secretary reads/reprints; administrator reads clinic-wide | ⬜ | FR-010–014 |
+| Prescriptions | draft→signed→superseded/voided, ordered items, block-allocated number | `prescriptions`, `prescription_items`, `rx_counters`, `rx_blocks` | doctor signs; nursing drafts; secretary reads/reprints; administrator reads clinic-wide | ✅ | FR-010–014 |
 | Verification | opaque code → public status, no PHI | `verification_codes` | public, rate limited | ⬜ | FR-050 |
 | Audit | append-only actor/action/entity and sensitive reads | `audit_log` | administrator read | ⬜ | PRD §6 |
 | Sync | idempotent mutations, block reconciliation, push | client cache + outbox | v1: none; v1.1: `can_sync` | ⬜ | FR-040–043 |
@@ -418,17 +424,18 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `PAYPHONE_CODING_PASSWORD` | — | server | ⬜ v1.1 AES-256-CBC key for `cardHolder` |
 | `RETENTION_TRIM_ENABLED` | `true` | server | enforced in v1 (D-12); counsel sign-off before production |
 | `UPDATE_MANIFEST_URL` | — | desktop | signed auto-update manifest (D-08) |
-| `ASSETS_BUCKET` | — | server | ⬜ private bucket name |
-| `ASSETS_ENDPOINT` | — | server | ⬜ S3-compatible endpoint |
-| `ASSETS_REGION` | — | server | ⬜ |
-| `ASSETS_ACCESS_KEY_ID` | — | server | ⬜ secret, never shipped |
-| `ASSETS_SECRET_ACCESS_KEY` | — | server | ⬜ secret, never shipped |
-| `ASSETS_SIGNED_URL_TTL_SECONDS` | `900` | server | ⬜ 15-minute GET URLs |
-| `ASSETS_PUBLIC_ENDPOINT` | `ASSETS_ENDPOINT` | server | ⬜ browser-reachable base for signed URLs (Compose: host-published MinIO port, not `http://minio:9000`) |
-| `PERSONA_WEB_ORIGINS` | `` (same-origin only) | server | ⬜ comma-separated web origins allowed by credentialed CORS (specs 04-D, 12-L) |
+| `ASSETS_BUCKET` | — | server | ✅ private bucket name |
+| `ASSETS_ENDPOINT` | — | server | ✅ S3-compatible endpoint |
+| `ASSETS_REGION` | `us-east-1` | server | ✅ |
+| `ASSETS_ACCESS_KEY_ID` | — | server | ✅ secret, never shipped |
+| `ASSETS_SECRET_ACCESS_KEY` | — | server | ✅ secret, never shipped |
+| `ASSETS_SIGNED_URL_TTL_SECONDS` | `900` | server | ✅ 15-minute GET URLs |
+| `ASSETS_PUBLIC_ENDPOINT` | `ASSETS_ENDPOINT` | server | ✅ browser-reachable base for signed URLs (Compose: host-published MinIO port, not `http://minio:9000`) |
+| `PERSONA_WEB_ORIGINS` | `` (same-origin only) | server | ✅ comma-separated web origins allowed by credentialed CORS (spec 04-D) |
+| `PERSONA_SERVER_ORIGIN` | `http://127.0.0.1:8080` | client | native API origin; the wasm client always uses relative paths (spec 04-D) |
 | `VERIFY_RATE_LIMIT_PER_MINUTE` | `10` | server | ⬜ public verification per-IP limit (spec 09-I) |
 | `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ⬜ auth-endpoint per-IP limit (spec 12-L) |
-| `AUTH_BASE` in `src/auth.rs` | `http://127.0.0.1:8080/api/auth` | client | ⚠️ hardcoded, not deployment-safe |
+
 
 MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket stays private. The LLM URL is per clinic in `clinics.llm_url_template` (DB §5), not a process environment variable. PRD FR-012 agrees (`clinics.llm_url_template`); seed it from configuration if an environment default is wanted.
 
@@ -436,7 +443,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 
 | Boundary | Control | Status |
 |---|---|---|
-| Image upload | magic-byte JPEG/PNG, decode limits, EXIF strip, private MinIO bucket, 15-min signed URLs, v1 quota 1 × 10 MB (v1.1: 5/1/0) | ⬜ |
+| Image upload | magic-byte JPEG/PNG, decode limits, EXIF strip, private MinIO bucket, 15-min signed URLs, v1 quota 1 × 10 MB (v1.1: 5/1/0) | ✅ spec 06-F |
 | Browser ↔ node | TLS outside the container; `Secure` cookie flag | 🟡 flag configurable, TLS is external and absent from Compose |
 | Session | `HttpOnly`, `SameSite=Lax`, SHA-256 token hash | ✅ |
 | CSRF | `SameSite=Lax` + JSON handlers; no `Origin` check | 🟡 |
@@ -447,19 +454,19 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | Card token | `ctoken` stored after consent; AES-256-CBC `cardHolder`; no PAN/CVV; revoked on cancel (v1.1) | ⬜ |
 | Audit | sensitive reads; billing transitions are v1.1 | ⬜ |
 | Abuse controls | rate limits on auth and `/verify/:code`; PayPhone polling is v1.1 | ⬜ |
-| Device control and MFA | `devices` modeled; revocation + MFA in M3 | ⬜ |
+| Device control and MFA | `devices` registered and revocable through `sessions.device_id`; MFA in M3 | 🟡 |
 
 ## 16. Invariants
 
 | Invariant | Enforced at |
 |---|---|
-| Images: v1 1 per clinic; v1.1 5 `active`/`past_due`, 1 `trialing`/`locked`, 0 `canceled`; ≤10 MiB each; logo excluded | service + DB CHECK (⬜) |
-| Assets pinned by published versions are never deleted while referenced; the v1.1 cancellation purge soft-deletes and leaves pins | service + `template_version_assets` (⬜) |
+| Images: v1 1 per clinic; v1.1 5 `active`/`past_due`, 1 `trialing`/`locked`, 0 `canceled`; ≤10 MiB each; logo excluded | service + DB CHECK (✅) |
+| Assets pinned by published versions are never deleted while referenced; the v1.1 cancellation purge soft-deletes and leaves pins | service + `template_version_assets` (✅) |
 | One node, one SQLite file; the desktop cache is a replica, not an authority | deployment + `db.rs` |
 | The server authorizes; client guards are UX only | service layer (⬜) |
 | Replayed client mutations are no-ops | `client_id` / request keys (⬜) |
-| Signed prescriptions are immutable; only void/supersede transition them | service layer (⬜) |
-| A supersede gets a new `rx_number` and verification code; the replaced row keeps its own and becomes `superseded` | transaction + `uq_prescriptions_rx` (⬜) |
+| Signed prescriptions are immutable; only void/supersede transition them | service layer (✅) |
+| A supersede gets a new `rx_number` and verification code; the replaced row keeps its own and becomes `superseded` | transaction + `uq_prescriptions_rx` (✅) |
 | The printed/QR verification code is recoverable for reprints (`code` + `code_hash`) | schema (⬜) |
 | A nursing draft may lack a doctor; any non-draft row requires one | table CHECK + service layer (⬜) |
 | `rx_number` is unique and monotonically increasing per clinic, assigned from a server-issued block and validated on sync; burned tails are recorded gaps | transaction + partial unique index + `rx_blocks` (⬜) |
@@ -473,7 +480,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 
 | # | Risk | Evidence | Severity | Action |
 |---|---|---|---|---|
-| 1 | Auth client targets loopback and does not carry cookies on desktop | `src/auth.rs`, `with_credentials` | P0 | relative base + configurable origin + cookie jar + credentialed CORS (specs 02-B/04-D) before desktop/TLS |
+| 1 | ~~Auth client targets loopback and does not carry cookies on desktop~~ resolved | `src/http.rs`, `PERSONA_SERVER_ORIGIN` | — | relative base on wasm, configurable native origin, cookie jar, and credentialed CORS (spec 04-D) |
 | 2 | No server-side authorization; only a client redirect | `Dashboard` | P0 | authorize every read/write in the service layer before PHI pages |
 | 3 | SQLite concurrency was unconfigured | ~~no WAL or busy timeout~~ resolved | — | pool customizer sets WAL/busy timeout/synchronous; `db` write helpers retry `database is locked` |
 | 4 | Sync push transport | ~~undefined~~ resolved | — | SSE + 30 s polling fallback (PRD D-11); no second socket server |
@@ -507,13 +514,14 @@ Repository policy is end-to-end and integration testing; unit tests are not requ
 | Auth endpoints and public pages | `persona-probe --flow full` |
 | Server reachability | `wait-health` |
 | Schema design or migration SQL | `sqlite-schema-check` |
-| Image upload, quota, signed URL | end-to-end probe; promote to a block when implemented |
+| Image upload, quota, signed URL | `asset-probe` |
 | PDF route and A4 output | end-to-end probe on `GET /api/prescriptions/:id/pdf`: `200`, `application/pdf`, `%PDF-` magic, `MediaBox` floats within ±1 pt of 595.28×841.89 (A4 in points), sanitized `Content-Disposition`, QR decodes to `/verify/`; promote to a block when implemented |
 
 ```bash
 python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091
 python3 .blocks/persona-docker-verify.py --dir . --port 8080
 python3 .blocks/persona-probe.py --base http://127.0.0.1:8080 --flow full
+python3 .blocks/asset-probe.py --base http://127.0.0.1:8080
 python3 .blocks/wait-health.py --url http://127.0.0.1:8080/health --expect 200 --timeout 60
 python3 .blocks/sqlite-schema-check.py --path context/database-design.md --query "select name from sqlite_master where type = 'table' order by name"
 ```

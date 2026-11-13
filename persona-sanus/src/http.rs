@@ -1,5 +1,5 @@
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 use serde_json::Value;
 
@@ -25,6 +25,19 @@ static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .unwrap_or_default()
 });
+#[cfg(not(target_arch = "wasm32"))]
+static SESSION_TOKEN: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+pub fn set_session_token(token: Option<String>) {
+    if let Ok(mut guard) = SESSION_TOKEN.write() {
+        *guard = token;
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub fn current_session_token() -> Option<String> {
+    SESSION_TOKEN.read().ok().and_then(|guard| guard.clone())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn client() -> reqwest::Client {
@@ -44,10 +57,12 @@ fn url(path: &str) -> String {
 fn with_credentials(builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     builder.fetch_credentials_include()
 }
-
 #[cfg(not(target_arch = "wasm32"))]
 fn with_credentials(builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-    builder
+    match current_session_token() {
+        Some(token) => builder.header("Cookie", format!("persona_session={token}")),
+        None => builder,
+    }
 }
 
 pub fn string_field(value: &Value, keys: &[&str]) -> Option<String> {
@@ -73,11 +88,32 @@ fn error_message(value: &Value, status: reqwest::StatusCode) -> String {
     format!("Request failed ({status})")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn capture_session_cookie(response: &reqwest::Response) {
+    for value in response
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+    {
+        if let Some(pair) = value.split(';').next() {
+            if let Some((name, token)) = pair.split_once('=') {
+                if name.trim() == "persona_session" {
+                    let token = token.trim().to_owned();
+                    set_session_token(if token.is_empty() { None } else { Some(token) });
+                }
+            }
+        }
+    }
+}
+
 async fn send(builder: reqwest::RequestBuilder) -> Result<Value, String> {
     let response = builder
         .send()
         .await
         .map_err(|error| format!("Could not reach the server: {error}"))?;
+    #[cfg(not(target_arch = "wasm32"))]
+    capture_session_cookie(&response);
     let status = response.status();
     let text = response
         .text()
@@ -93,6 +129,34 @@ async fn send(builder: reqwest::RequestBuilder) -> Result<Value, String> {
 
 pub async fn get_json(path: &str) -> Result<Value, String> {
     send(with_credentials(client().get(url(path)))).await
+}
+#[cfg(feature = "desktop")]
+pub async fn get_bytes(url_str: &str) -> Result<Vec<u8>, String> {
+    let response = client()
+        .get(url_str)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach the server: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Request failed ({status})"));
+    }
+    response
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|error| format!("Could not read the server response: {error}"))
+}
+#[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+pub async fn sse_response(path: &str) -> Result<reqwest::Response, String> {
+    let response = with_credentials(client().get(url(path)))
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach the server: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Request failed ({})", response.status()));
+    }
+    Ok(response)
 }
 
 pub async fn post_json(path: &str, body: Value) -> Result<Value, String> {

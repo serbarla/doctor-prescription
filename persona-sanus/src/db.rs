@@ -7,13 +7,13 @@ use anyhow::{anyhow, Context, Result};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, CustomizeConnection, Pool};
-use diesel::sql_types::{BigInt, Text};
+use diesel::sql_types::{BigInt, Nullable, Text};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 use crate::schema::{
     assets, audit_log, clinic_members, clinics, devices, doctors, patients, prescription_items,
     prescriptions, profiles, rx_blocks, rx_counters, sessions, template_version_assets,
-    template_versions, templates, users, verification_codes,
+    template_versions, templates, user_mfa, users, verification_codes,
 };
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -148,6 +148,7 @@ pub struct NewSession<'a> {
     pub expires_at: &'a str,
     pub created_at: &'a str,
     pub device_id: Option<&'a str>,
+    pub mfa_pending: i32,
 }
 
 #[derive(Debug, Queryable, Selectable)]
@@ -157,6 +158,7 @@ pub struct SessionRow {
     pub user_id: String,
     pub expires_at: String,
     pub device_id: Option<String>,
+    pub mfa_pending: i32,
 }
 
 #[allow(dead_code)]
@@ -771,6 +773,193 @@ pub fn insert_audit(
         .execute(connection)
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = user_mfa)]
+pub struct UserMfa {
+    pub user_id: String,
+    pub secret: String,
+    pub enabled: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn find_user_mfa(
+    connection: &mut SqliteConnection,
+    user_id: &str,
+) -> QueryResult<Option<UserMfa>> {
+    crate::schema::user_mfa::table
+        .filter(crate::schema::user_mfa::user_id.eq(user_id))
+        .select(UserMfa::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn upsert_user_mfa(
+    connection: &mut SqliteConnection,
+    user_id: &str,
+    secret: &str,
+    enabled: i32,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::sql_query(
+        "INSERT INTO user_mfa (user_id, secret, enabled, created_at, updated_at) \
+         VALUES (:user_id, :secret, :enabled, :now, :now) \
+         ON CONFLICT(user_id) DO UPDATE SET secret = excluded.secret, \
+         enabled = excluded.enabled, updated_at = excluded.updated_at",
+    )
+    .bind::<Text, _>(user_id)
+    .bind::<Text, _>(secret)
+    .bind::<diesel::sql_types::Integer, _>(enabled)
+    .bind::<Text, _>(now)
+    .execute(connection)
+}
+
+pub fn set_user_mfa_enabled(
+    connection: &mut SqliteConnection,
+    user_id: &str,
+    enabled: i32,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::sql_query(
+        "UPDATE user_mfa SET enabled = :enabled, updated_at = :now WHERE user_id = :user_id",
+    )
+    .bind::<diesel::sql_types::Integer, _>(enabled)
+    .bind::<Text, _>(now)
+    .bind::<Text, _>(user_id)
+    .execute(connection)
+}
+
+pub fn delete_user_mfa(connection: &mut SqliteConnection, user_id: &str) -> QueryResult<usize> {
+    diesel::sql_query("DELETE FROM user_mfa WHERE user_id = :user_id")
+        .bind::<Text, _>(user_id)
+        .execute(connection)
+}
+
+pub fn delete_sessions_by_user(
+    connection: &mut SqliteConnection,
+    user_id: &str,
+) -> QueryResult<usize> {
+    diesel::delete(sessions::table.filter(sessions::user_id.eq(user_id))).execute(connection)
+}
+
+pub fn promote_session(
+    connection: &mut SqliteConnection,
+    session_id: &str,
+    expires_at: &str,
+) -> QueryResult<usize> {
+    diesel::update(sessions::table.filter(sessions::id.eq(session_id)))
+        .set((
+            sessions::mfa_pending.eq(0),
+            sessions::expires_at.eq(expires_at),
+        ))
+        .execute(connection)
+}
+
+pub fn update_user_password(
+    connection: &mut SqliteConnection,
+    user_id: &str,
+    password_hash: &str,
+    now: &str,
+) -> QueryResult<usize> {
+    diesel::update(users::table.filter(users::id.eq(user_id)))
+        .set((
+            users::password_hash.eq(password_hash),
+            users::updated_at.eq(now),
+        ))
+        .execute(connection)
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, QueryableByName)]
+#[diesel(table_name = audit_log)]
+pub struct AuditRow {
+    pub id: String,
+    pub actor_id: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub actor_name: Option<String>,
+    pub action: String,
+    pub entity: String,
+    pub entity_id: String,
+    pub metadata_json: Option<String>,
+    pub at: String,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn list_audit(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    action: Option<&str>,
+    entity: Option<&str>,
+    query: Option<&str>,
+    limit: i64,
+) -> QueryResult<Vec<AuditRow>> {
+    diesel::sql_query(
+        "SELECT a.id, a.actor_id, COALESCE(p.display_name, u.display_name) AS actor_name, \
+         a.action, a.entity, a.entity_id, a.metadata_json, a.at FROM audit_log a \
+         LEFT JOIN profiles p ON p.id = a.actor_id \
+         LEFT JOIN users u ON u.id = a.actor_id \
+         WHERE (a.actor_id IS NULL \
+           OR EXISTS (SELECT 1 FROM clinic_members m WHERE m.clinic_id = :clinic_id \
+             AND (m.profile_id = a.actor_id OR m.profile_id = p.id)) \
+           OR EXISTS (SELECT 1 FROM profiles p2 JOIN clinic_members m2 \
+             ON m2.profile_id = p2.id WHERE p2.auth_user_id = a.actor_id AND m2.clinic_id = :clinic_id)) \
+         AND (:action IS NULL OR a.action = :action) \
+         AND (:entity IS NULL OR a.entity = :entity) \
+         AND (:query IS NULL OR a.entity_id LIKE '%' || :query || '%' \
+           OR a.action LIKE '%' || :query || '%' OR COALESCE(a.metadata_json, '') LIKE '%' || :query || '%') \
+         ORDER BY a.at DESC, a.rowid DESC LIMIT :limit",
+    )
+    .bind::<Text, _>(clinic_id)
+    .bind::<Nullable<Text>, _>(action)
+    .bind::<Nullable<Text>, _>(entity)
+    .bind::<Nullable<Text>, _>(query)
+    .bind::<BigInt, _>(limit)
+    .load::<AuditRow>(connection)
+}
+#[derive(Debug, Clone, QueryableByName)]
+#[diesel(table_name = audit_log)]
+pub struct SyncEvent {
+    #[diesel(sql_type = BigInt)]
+    pub cursor: i64,
+    pub action: String,
+    pub entity: String,
+    pub entity_id: String,
+    pub at: String,
+}
+
+pub fn list_sync_events(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    since: i64,
+) -> QueryResult<Vec<SyncEvent>> {
+    diesel::sql_query(
+        "SELECT a.rowid AS cursor, a.action, a.entity, a.entity_id, a.at \
+         FROM audit_log a INNER JOIN clinic_members m ON m.profile_id = a.actor_id \
+         WHERE m.clinic_id = :clinic_id AND a.rowid > :since \
+         ORDER BY a.rowid ASC LIMIT 200",
+    )
+    .bind::<Text, _>(clinic_id)
+    .bind::<BigInt, _>(since)
+    .load::<SyncEvent>(connection)
+}
+
+pub fn sync_cursor(connection: &mut SqliteConnection, clinic_id: &str) -> QueryResult<i64> {
+    #[derive(QueryableByName)]
+    struct CursorRow {
+        #[diesel(sql_type = Nullable<BigInt>)]
+        cursor: Option<i64>,
+    }
+    let row = diesel::sql_query(
+        "SELECT MAX(a.rowid) AS cursor FROM audit_log a \
+         INNER JOIN clinic_members m ON m.profile_id = a.actor_id \
+         WHERE m.clinic_id = :clinic_id",
+    )
+    .bind::<Text, _>(clinic_id)
+    .get_result::<CursorRow>(connection)?;
+    Ok(row.cursor.unwrap_or(0))
+}
+
 pub fn find_patient_by_id(
     connection: &mut SqliteConnection,
     clinic_id: &str,
@@ -779,6 +968,20 @@ pub fn find_patient_by_id(
     patients::table
         .filter(patients::clinic_id.eq(clinic_id))
         .filter(patients::id.eq(id))
+        .filter(patients::deleted_at.is_null())
+        .select(Patient::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_patient_by_client_id(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    client_id: &str,
+) -> QueryResult<Option<Patient>> {
+    patients::table
+        .filter(patients::clinic_id.eq(clinic_id))
+        .filter(patients::client_id.eq(Some(client_id)))
         .filter(patients::deleted_at.is_null())
         .select(Patient::as_select())
         .first(connection)
@@ -990,6 +1193,17 @@ pub fn find_template_by_id(
 ) -> QueryResult<Option<Template>> {
     templates::table
         .filter(templates::id.eq(id))
+        .select(Template::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_template_by_client_id(
+    connection: &mut SqliteConnection,
+    client_id: &str,
+) -> QueryResult<Option<Template>> {
+    templates::table
+        .filter(templates::client_id.eq(Some(client_id)))
         .select(Template::as_select())
         .first(connection)
         .optional()
@@ -1499,6 +1713,17 @@ pub fn find_prescription_by_client_id(
     prescriptions::table
         .filter(prescriptions::clinic_id.eq(clinic_id))
         .filter(prescriptions::client_id.eq(client_id))
+        .select(Prescription::as_select())
+        .first(connection)
+        .optional()
+}
+
+pub fn find_prescription_by_rx_number(
+    connection: &mut SqliteConnection,
+    rx_number: i32,
+) -> QueryResult<Option<Prescription>> {
+    prescriptions::table
+        .filter(prescriptions::rx_number.eq(Some(rx_number)))
         .select(Prescription::as_select())
         .first(connection)
         .optional()

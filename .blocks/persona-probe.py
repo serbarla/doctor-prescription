@@ -4,7 +4,7 @@
 # summary = "Probe persona-sanus: auth, roles, patients, devices, template versions, and prescriptions."
 # effects = "network"
 # example = ["--base", "http://127.0.0.1:8080", "--email", "probe@example.com", "--password", "ProbePass123!"]
-# matches = ['/api/auth/sign-up/email', '/api/auth/(sign-in|sign-out|get-session)', '/api/me', '/api/settings/users', '/api/patients', '/api/devices', '/api/templates', '/api/prescriptions', '/api/rx', '/api/verify']
+# matches = ['/api/auth/sign-up/email', '/api/auth/(sign-in|sign-out|get-session)', '/api/me', '/api/settings/users', '/api/patients', '/api/devices', '/api/templates', '/api/prescriptions', '/api/rx', '/api/verify', '/api/sync', '/api/audit', '/api/auth/mfa/*', '/api/auth/change-password']
 #
 # [returns]
 # keys = ["ok", "checks", "base", "patient_id", "template_id", "prescription_id", "rx_number", "code"]
@@ -15,7 +15,7 @@
 # email = { type = "str", default = "probe@example.com", help = "account email for the probe flow" }
 # password = { type = "str", default = "ProbePass123!", help = "account password for the probe flow" }
 # name = { type = "str", default = "Probe Tester", help = "display name used by signup (full flow only)" }
-# flow = { type = "enum", values = ["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify"], default = "full", help = "full runs signup then signout then signin; signin only signs in (needs an existing account); roles exercises bootstrap, membership, role assignment, and server-side refusal; patients exercises CRUD, search, dedupe, scoping, and soft delete; devices exercises registration, session linking, listing, revocation, and re-linking; templates exercises creation, draft editing, publishing, immutability, and archiving; rx exercises blocks, drafts, items, signing, replay, supersede, and void; verify runs the rx fixtures then checks the public verification endpoint unauthenticated (statuses, not found, no PHI, rate limit last)" }
+# flow = { type = "enum", values = ["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify", "sync", "security"], default = "full", help = "full runs signup then signout then signin; signin only signs in (needs an existing account); roles exercises bootstrap, membership, role assignment, and server-side refusal; patients exercises CRUD, search, dedupe, scoping, and soft delete; devices exercises registration, session linking, listing, revocation, and re-linking; templates exercises creation, draft editing, publishing, immutability, and archiving; rx exercises blocks, drafts, items, signing, replay, supersede, and void; verify runs the rx fixtures then checks the public verification endpoint unauthenticated (statuses, not found, no PHI, rate limit; security checks token hygiene, uniform errors, Origin, headers, MFA, password rotation, audit, and rate limitast); sync exercises idempotent replay, foreign and reused number rejection, burned tails, and the sync channels" }
 # db = { type = "path", default = "", help = "SQLite file used by the server for the second-clinic fixture; defaults to DATABASE_URL or persona-sanus/app.db" }
 #
 # [provenance]
@@ -37,6 +37,17 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import uuid
+import base64
+import hashlib
+SECURITY = [
+    "signup_admin", "token_hidden_before_mfa", "mfa_completed", "doctor_mfa",
+    "nursing_no_mfa", "uniform_errors", "foreign_origin_rejected",
+    "missing_origin_accepted", "security_headers", "password_change_rotates",
+    "audit_listed", "audit_admin_only", "rate_limited",
+]
+MFA_SECRETS_PATH = "/tmp/persona-probe-mfa-secrets.json"
+import hmac
+import time
 
 FULL = ["home", "login", "dashboard", "signup", "session", "signout", "session_after_signout", "signin"]
 SIGNIN = ["signin", "session"]
@@ -71,6 +82,14 @@ RX = [
 VERIFY = [
     "rx_fixtures", "valid_status", "valid_fields", "voided_status",
     "superseded_status", "not_found_status", "no_phi", "rate_limited",
+]
+SYNC = [
+    "signup_admin", "admin_me", "doctor_signup", "assign_doctor", "doctor_me",
+    "register_device", "allocate_block", "create_patient", "create_template",
+    "save_template_version", "publish_template", "create_draft", "add_item",
+    "sign_reconciled", "replay_create_idempotent", "replay_sign_idempotent",
+    "foreign_number_rejected", "foreign_block_rejected", "reused_number_rejected",
+    "burned_tail_recorded", "sync_state_ok", "sync_events_stream",
 ]
 TEMPLATES = [
     "signup_admin", "admin_me", "create_template", "doctor_signup",
@@ -142,6 +161,97 @@ def get_json(base, path, jar):
     return status, parsed if isinstance(parsed, dict) else {}
 
 
+def has_session_cookie(jar):
+    """Return True when the jar holds a non-empty persona_session cookie."""
+    return any(
+        cookie.name == "persona_session" and bool(cookie.value)
+        for cookie in jar
+    )
+
+
+def cookie_session_ok(status, data, jar):
+    """Return True on 200 with no token in the body and a session cookie set."""
+    return status == 200 and "token" not in data and has_session_cookie(jar)
+
+def load_mfa_secrets():
+    """Return stored MFA secrets from the shared probe file."""
+    try:
+        with open(MFA_SECRETS_PATH) as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def store_mfa_secret(email, secret):
+    """Persist a secret so later probe processes can complete MFA."""
+    secrets = load_mfa_secrets()
+    secrets[email] = secret
+    with open(MFA_SECRETS_PATH, "w") as handle:
+        json.dump(secrets, handle)
+
+
+def totp_code(secret):
+    """Compute the current TOTP code for a base32 secret with stdlib only."""
+    key = base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
+    counter = int(time.time()) // 30
+    digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha256).digest()
+    offset = digest[-1] & 0x0F
+    value = int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF
+    return f"{value % 1000000:06d}"
+
+
+def complete_mfa(base, jar, email, ticket):
+    """Verify the stored secret for email; True when a session cookie lands."""
+    secret = load_mfa_secrets().get(email, "")
+    if not secret or not ticket:
+        return False
+    status, data = http_post(
+        base, "/api/auth/mfa/verify", jar,
+        {"ticket": ticket, "code": totp_code(secret)},
+    )
+    if cookie_session_ok(status, data, jar):
+        return True
+    if status == 200:
+        status, data = get_json(base, "/api/auth/get-session", jar)
+        return status == 200 and bool(data.get("session"))
+    return False
+
+
+def signin_with_mfa(base, jar, email, password):
+    """Sign in, completing MFA when the account requires it."""
+    status, data = http_post(
+        base, "/api/auth/sign-in/email", jar,
+        {"email": email, "password": password, "rememberMe": True},
+    )
+    if data.get("mfaRequired"):
+        return complete_mfa(base, jar, email, data.get("mfaTicket", ""))
+    return cookie_session_ok(status, data, jar)
+
+
+def enroll_mfa(base, jar, email):
+    """Enroll and confirm TOTP for the signed-in account; True on success."""
+    status, data = http_post(base, "/api/auth/mfa/enroll", jar, {})
+    secret = data.get("secret", "") if status == 200 else ""
+    if not secret:
+        return False
+    store_mfa_secret(email, secret)
+    status, _ = http_post(
+        base, "/api/auth/mfa/confirm", jar, {"code": totp_code(secret)}
+    )
+    return status == 200
+
+
+def maybe_enroll_mfa(base, jar, email):
+    """Enroll MFA for Administrator/Doctor accounts not yet enrolled."""
+    _, me = get_json(base, "/api/me", jar)
+    if me.get("role") not in ("administrator", "doctor"):
+        return False
+    status, data = get_json(base, "/api/auth/mfa/status", jar)
+    if status == 200 and data.get("enabled"):
+        return True
+    return enroll_mfa(base, jar, email)
+
 def role_accounts(flow):
     """Return the deterministic admin/member emails for the roles flow."""
     return (f"probe-{flow}-admin@example.com", f"probe-{flow}-member@example.com")
@@ -153,15 +263,11 @@ def signup_or_signin(base, jar, email, password, name):
         base, "/api/auth/sign-up/email", jar,
         {"name": name, "email": email, "password": password, "rememberMe": True},
     )
-    if status == 200 and data.get("token"):
+    if cookie_session_ok(status, data, jar):
+        maybe_enroll_mfa(base, jar, email)
         return True
     if status == 409:
-        status, data = http_post(
-            base, "/api/auth/sign-in/email", jar,
-            {"email": email, "password": password, "rememberMe": True},
-        )
-        return status == 200 and bool(data.get("token"))
-    return False
+        return signin_with_mfa(base, jar, email, password)
 
 
 def probe_roles(base, password, flow):
@@ -573,7 +679,7 @@ def sign_in_account(base, jar, email, password):
         jar,
         {"email": email, "password": password, "rememberMe": True},
     )
-    return status == 200 and bool(data.get("token"))
+    return cookie_session_ok(status, data, jar)
 
 
 def probe_devices(base, password, flow):
@@ -1195,6 +1301,235 @@ def probe_rx(base, password, flow):
         verdict["error"] = "one or more prescription checks failed"
     return verdict
 
+def probe_sync(base, password, flow):
+    """Exercise idempotent replay, foreign and reused number rejection, burned tails, and sync channels."""
+    checks = {}
+    run = uuid.uuid4().hex
+    admin_email = f"probe-{flow}-admin@example.com"
+    doctor_email = f"probe-{flow}-doctor@example.com"
+    admin_jar = http.cookiejar.CookieJar()
+    doctor_jar = http.cookiejar.CookieJar()
+    verdict_extra = {
+        "patient_id": None,
+        "template_id": None,
+        "prescription_id": None,
+        "rx_number": None,
+        "code": None,
+    }
+
+    checks["signup_admin"] = signup_or_signin(
+        base, admin_jar, admin_email, password, "Probe Sync Admin"
+    )
+    status, admin_me = get_json(base, "/api/me", admin_jar)
+    checks["admin_me"] = (
+        status == 200
+        and admin_me.get("role") == "administrator"
+        and isinstance(admin_me.get("clinic"), dict)
+    )
+    if not checks["signup_admin"] or not checks["admin_me"]:
+        return {
+            "ok": False,
+            "checks": {item: False for item in SYNC},
+            "base": base,
+            "error": "administrator bootstrap failed",
+            **verdict_extra,
+        }
+
+    checks["doctor_signup"] = signup_or_signin(
+        base, doctor_jar, doctor_email, password, "Probe Sync Doctor"
+    )
+    doctor_profile = find_profile(base, admin_jar, doctor_email)
+    checks["assign_doctor"] = assign_role(base, admin_jar, doctor_profile, "doctor")
+    status, doctor_me = get_json(base, "/api/me", doctor_jar)
+    checks["doctor_me"] = (
+        status == 200
+        and doctor_me.get("role") == "doctor"
+        and isinstance(doctor_me.get("doctor"), dict)
+    )
+
+    device_id = f"probe-sync-{run}"
+    status, device = register_device(base, doctor_jar, device_id, "Probe Sync Device")
+    checks["register_device"] = status == 200 and device.get("id") == device_id
+
+    status, block = http_post(base, "/api/rx/blocks", doctor_jar, {})
+    block_id = block.get("id")
+    start = block.get("startNumber")
+    end = block.get("endNumber")
+    checks["allocate_block"] = (
+        status == 200 and bool(block_id)
+        and isinstance(start, int) and isinstance(end, int) and end >= start
+    )
+
+    status, patient = http_post(
+        base, "/api/patients", doctor_jar,
+        {"fullName": f"Paciente Sync {run}", "nationalId": f"9{run[:9]}"},
+    )
+    patient_id = patient.get("id")
+    verdict_extra["patient_id"] = patient_id
+    checks["create_patient"] = status == 200 and bool(patient_id)
+
+    status, template = http_post(
+        base, "/api/templates", admin_jar,
+        {"name": f"Plantilla Sync {run}", "ownerType": "clinic"},
+    )
+    template_id = template.get("id")
+    verdict_extra["template_id"] = template_id
+    checks["create_template"] = status == 200 and bool(template_id)
+
+    doc = template_document("Paciente: {{patient.name}}")
+    status, version = http_post(
+        base, f"/api/templates/{template_id}/versions", admin_jar,
+        {"docJson": json.dumps(doc), "theme": json.dumps({"margin_mm": 15})},
+    )
+    version_id = version.get("id")
+    checks["save_template_version"] = status == 200 and bool(version_id)
+    status, published = http_post(
+        base, f"/api/templates/{template_id}/publish", admin_jar,
+        {"versionId": version_id},
+    )
+    checks["publish_template"] = (
+        status == 200 and published.get("currentVersionId") == version_id
+    )
+
+    def make_draft(suffix):
+        payload = {
+            "patientId": patient_id,
+            "templateVersionId": version_id,
+            "clientId": f"sync-{run}-{suffix}",
+            "diagnosis": "Diagnóstico de sincronización",
+            "validity": "3 días",
+            "instructions": "Tomar con alimentos.",
+        }
+        status, draft = http_post(base, "/api/prescriptions", doctor_jar, payload)
+        return status, draft, payload
+
+    def sign(prescription_id, rx_number=None, rx_block=None):
+        payload = {"acknowledgeWarnings": True}
+        if rx_number is not None:
+            payload["rxNumber"] = rx_number
+        if rx_block is not None:
+            payload["rxBlockId"] = rx_block
+        return http_post(
+            base, f"/api/prescriptions/{prescription_id}/sign", doctor_jar, payload
+        )
+
+    status, draft, draft_payload = make_draft("one")
+    prescription_id = draft.get("id")
+    checks["create_draft"] = (
+        status == 200 and bool(prescription_id) and draft.get("status") == "draft"
+    )
+    status, item = http_post(
+        base, f"/api/prescriptions/{prescription_id}/items", doctor_jar,
+        {"medName": "Paracetamol", "dose": "500 mg"},
+    )
+    checks["add_item"] = status == 200 and bool(item.get("id"))
+
+    status, signed = sign(prescription_id, start, block_id)
+    code = (signed.get("verification") or {}).get("code")
+    verdict_extra["prescription_id"] = prescription_id
+    verdict_extra["rx_number"] = signed.get("rxNumber")
+    verdict_extra["code"] = code
+    checks["sign_reconciled"] = (
+        status == 200
+        and signed.get("status") == "signed"
+        and signed.get("rxNumber") == start
+        and signed.get("rxBlockId") == block_id
+        and bool(code)
+    )
+
+    status, replay = http_post(base, "/api/prescriptions", doctor_jar, draft_payload)
+    checks["replay_create_idempotent"] = (
+        status == 200 and replay.get("id") == prescription_id
+    )
+    status, replay_sign = sign(prescription_id, start, block_id)
+    checks["replay_sign_idempotent"] = (
+        status == 200
+        and replay_sign.get("id") == prescription_id
+        and replay_sign.get("rxNumber") == start
+        and (replay_sign.get("verification") or {}).get("code") == code
+    )
+
+    status, second, _ = make_draft("two")
+    second_id = second.get("id")
+    status, _ = sign(second_id, end + 1000, block_id)
+    checks["foreign_number_rejected"] = status in (400, 409)
+    status, _ = sign(second_id, start + 5, f"foreign-{run}")
+    checks["foreign_block_rejected"] = status in (400, 404, 409)
+    status, _ = sign(second_id, start, block_id)
+    checks["reused_number_rejected"] = status in (400, 409)
+
+    status, third, _ = make_draft("three")
+    third_id = third.get("id")
+    status, tail = sign(third_id, start + 2, block_id)
+    status, block_status = get_json(base, "/api/rx/block-status", doctor_jar)
+    status, listing = get_json(
+        base, f"/api/prescriptions?patientId={patient_id}", doctor_jar
+    )
+    numbers = {
+        row.get("rxNumber")
+        for row in listing.get("prescriptions", [])
+    }
+    checks["burned_tail_recorded"] = (
+        tail.get("status") == "signed"
+        and block_status.get("consumed") == 3
+        and (start + 1) not in numbers
+        and start in numbers
+    )
+
+    status, state = get_json(base, "/api/sync/state?since=999999999", doctor_jar)
+    checks["sync_state_ok"] = (
+        status == 200
+        and isinstance(state.get("cursor"), int)
+        and state.get("events") == []
+        and state.get("rxBlock", {}).get("blockId") == block_id
+    )
+    if checks["sync_state_ok"]:
+        cursor = state["cursor"]
+        status, state_since = get_json(
+            base, f"/api/sync/state?since={cursor - 1}", doctor_jar
+        )
+        events = state_since.get("events", [])
+        checks["sync_state_ok"] = (
+            status == 200
+            and len(events) == 1
+            and events[0].get("cursor") == cursor
+            and bool(events[0].get("entityId"))
+            and "patientName" not in json.dumps(events[0])
+            and "diagnosis" not in json.dumps(events[0])
+        )
+
+    stream_ok = False
+    req = urllib.request.Request(base + "/api/sync/events")
+    try:
+        with urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(doctor_jar)
+        ).open(req, timeout=6) as res:
+            stream_ok = (
+                res.status == 200
+                and "text/event-stream" in res.headers.get("Content-Type", "")
+            )
+            if stream_ok:
+                for _ in range(5):
+                    line = res.readline()
+                    if b"keepalive" in line:
+                        break
+                else:
+                    stream_ok = False
+    except OSError:
+        stream_ok = False
+    checks["sync_events_stream"] = stream_ok
+
+    ok = all(checks.get(item) for item in SYNC)
+    verdict = {
+        "ok": ok,
+        "checks": {item: bool(checks.get(item)) for item in SYNC},
+        "base": base,
+        **verdict_extra,
+    }
+    if not ok:
+        verdict["error"] = "one or more sync checks failed"
+    return verdict
+
 
 PHI_KEYS = [
     "patientName", "patientId", "patientNationalId", "nationalId", "cedula",
@@ -1274,6 +1609,184 @@ def probe_verify(base, password):
     return verdict
 
 
+def get_headers(base, path, jar):
+    """Return (status, headers dict) for a GET."""
+    req = urllib.request.Request(base + path)
+    try:
+        with urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(jar)
+        ).open(req, timeout=10) as res:
+            return res.status, dict(res.headers.items())
+    except urllib.error.HTTPError as exc:
+        return exc.code, dict(exc.headers.items())
+
+
+def raw_post(base, path, payload, jar, origin=None):
+    """POST JSON with an explicit Origin, or none when origin is None."""
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(base + path, data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    if origin is not None:
+        req.add_header("Origin", origin)
+    try:
+        with urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(jar)
+        ).open(req, timeout=10) as res:
+            return res.status, json.loads(res.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read() or b"{}")
+        except ValueError:
+            return exc.code, {}
+
+
+def probe_security(base, password, flow):
+    """Check token hygiene, uniform errors, Origin, headers, MFA, rotation, audit, rate limit."""
+    checks = {}
+    admin_email = f"probe-{flow}-admin@example.com"
+    doctor_email = f"probe-{flow}-doctor@example.com"
+    nursing_email = f"probe-{flow}-nursing@example.com"
+    admin_jar = http.cookiejar.CookieJar()
+    doctor_jar = http.cookiejar.CookieJar()
+    nursing_jar = http.cookiejar.CookieJar()
+
+    checks["signup_admin"] = signup_or_signin(
+        base, admin_jar, admin_email, password, "Probe Security Admin"
+    )
+    fresh_admin = http.cookiejar.CookieJar()
+    status, data = http_post(
+        base, "/api/auth/sign-in/email", fresh_admin,
+        {"email": admin_email, "password": password, "rememberMe": True},
+    )
+    checks["token_hidden_before_mfa"] = (
+        data.get("mfaRequired") is True
+        and "token" not in data
+        and not has_session_cookie(fresh_admin)
+    )
+    checks["mfa_completed"] = complete_mfa(
+        base, fresh_admin, admin_email, data.get("mfaTicket", "")
+    )
+    unknown_status, unknown_data = http_post(
+        base, "/api/auth/sign-in/email", http.cookiejar.CookieJar(),
+        {"email": "probe-security-unknown@example.com", "password": password},
+    )
+    wrong_status, wrong_data = http_post(
+        base, "/api/auth/sign-in/email", http.cookiejar.CookieJar(),
+        {"email": admin_email, "password": "WrongPass123!"},
+    )
+    checks["uniform_errors"] = (
+        unknown_status == wrong_status and unknown_data == wrong_data
+    )
+    foreign_status, _ = raw_post(
+        base, "/api/auth/sign-in/email",
+        {"email": nursing_email, "password": password},
+        http.cookiejar.CookieJar(), origin="https://evil.example",
+    )
+    checks["foreign_origin_rejected"] = foreign_status == 403
+    missing_status, _ = raw_post(
+        base, "/api/auth/sign-in/email",
+        {"email": admin_email, "password": password},
+        http.cookiejar.CookieJar(), origin=None,
+    )
+    checks["missing_origin_accepted"] = missing_status == 200
+    _, headers = get_headers(base, "/login", http.cookiejar.CookieJar())
+    lowered = {key.lower(): value for key, value in headers.items()}
+    checks["security_headers"] = (
+        "wasm-unsafe-eval" in lowered.get("content-security-policy", "")
+        and lowered.get("x-content-type-options") == "nosniff"
+        and "referrer-policy" in lowered
+    )
+    doctor_signed_up = signup_or_signin(
+        base, doctor_jar, doctor_email, password, "Probe Security Doctor"
+    )
+    _, me = get_json(base, "/api/me", doctor_jar)
+    doctor_profile = me.get("profile", {})
+    assign_status, _ = http_post(
+        base, "/api/settings/users/role", admin_jar,
+        {"profileId": doctor_profile.get("id", ""), "role": "doctor"},
+    )
+    doctor_enrolled = doctor_signed_up and assign_status == 200 and enroll_mfa(
+        base, doctor_jar, doctor_email
+    )
+    fresh_doctor = http.cookiejar.CookieJar()
+    status, data = http_post(
+        base, "/api/auth/sign-in/email", fresh_doctor,
+        {"email": doctor_email, "password": password, "rememberMe": True},
+    )
+    checks["doctor_mfa"] = (
+        doctor_enrolled
+        and data.get("mfaRequired") is True
+        and complete_mfa(base, fresh_doctor, doctor_email, data.get("mfaTicket", ""))
+    )
+    nursing_signed_up = signup_or_signin(
+        base, nursing_jar, nursing_email, password, "Probe Security Nursing"
+    )
+    _, me = get_json(base, "/api/me", nursing_jar)
+    nursing_profile = me.get("profile", {})
+    http_post(
+        base, "/api/settings/users/role", admin_jar,
+        {"profileId": nursing_profile.get("id", ""), "role": "nursing"},
+    )
+    fresh_nursing = http.cookiejar.CookieJar()
+    status, data = http_post(
+        base, "/api/auth/sign-in/email", fresh_nursing,
+        {"email": nursing_email, "password": password, "rememberMe": True},
+    )
+    checks["nursing_no_mfa"] = (
+        nursing_signed_up
+        and not data.get("mfaRequired")
+        and cookie_session_ok(status, data, fresh_nursing)
+    )
+    second_doctor = http.cookiejar.CookieJar()
+    second_signed_in = signin_with_mfa(base, second_doctor, doctor_email, password)
+    change_status, _ = http_post(
+        base, "/api/auth/change-password", doctor_jar,
+        {"currentPassword": password, "newPassword": password},
+    )
+    _, second_session = get_json(base, "/api/auth/get-session", second_doctor)
+    _, first_session = get_json(base, "/api/auth/get-session", doctor_jar)
+    checks["password_change_rotates"] = (
+        second_signed_in
+        and change_status == 200
+        and not second_session.get("session")
+        and bool(first_session.get("session"))
+    )
+    signin_status, signin_data = get_json(base, "/api/audit?action=sign_in", admin_jar)
+    verify_status, verify_data = get_json(base, "/api/audit?action=mfa_verify", admin_jar)
+    change_status, change_data = get_json(base, "/api/audit?action=change_password", admin_jar)
+    audit_status = signin_status
+    actions = [row.get("action") for row in signin_data.get("audit", [])]
+    actions += [row.get("action") for row in verify_data.get("audit", [])]
+    actions += [row.get("action") for row in change_data.get("audit", [])]
+    checks["audit_listed"] = (
+        signin_status == 200
+        and verify_status == 200
+        and change_status == 200
+        and ("sign_in" in actions or "mfa_verify" in actions)
+        and "change_password" in actions
+    )
+    forbidden_status, _ = get_json(base, "/api/audit", doctor_jar)
+    checks["audit_admin_only"] = forbidden_status == 403
+    limited = False
+    for _ in range(60):
+        status, _ = http_post(
+            base, "/api/auth/sign-in/email", http.cookiejar.CookieJar(),
+            {"email": "probe-security-unknown@example.com", "password": password},
+        )
+        if status == 429:
+            limited = True
+            break
+    checks["rate_limited"] = limited
+    ok = all(checks.get(item) for item in SECURITY)
+    verdict = {
+        "ok": ok,
+        "checks": {item: bool(checks.get(item)) for item in SECURITY},
+        "base": base,
+    }
+    if not ok:
+        verdict["error"] = "one or more security checks failed"
+    return verdict
+
 def probe(base, email, password, name, flow, db_path=""):
     """Run the page + auth probes against base; return the verdict dict."""
     if flow == "roles":
@@ -1288,16 +1801,16 @@ def probe(base, email, password, name, flow, db_path=""):
         return probe_rx(base, password, flow)
     if flow == "verify":
         return probe_verify(base, password)
+    if flow == "sync":
+        return probe_sync(base, password, flow)
+    if flow == "security":
+        return probe_security(base, password, flow)
 
     checks = {}
     jar = http.cookiejar.CookieJar()
 
     def signin():
-        status, data = http_post(
-            base, "/api/auth/sign-in/email", jar,
-            {"email": email, "password": password, "rememberMe": True},
-        )
-        return status == 200 and bool(data.get("token"))
+        return signin_with_mfa(base, jar, email, password)
 
     if flow == "signin":
         checks["signin"] = signin()
@@ -1315,7 +1828,9 @@ def probe(base, email, password, name, flow, db_path=""):
             base, "/api/auth/sign-up/email", jar,
             {"name": name, "email": email, "password": password, "rememberMe": True},
         )
-        checks["signup"] = status == 200 and bool(data.get("token"))
+        checks["signup"] = cookie_session_ok(status, data, jar)
+        if checks["signup"]:
+            maybe_enroll_mfa(base, jar, email)
         status, data = get_json(base, "/api/auth/get-session", jar)
         checks["session"] = status == 200 and bool(data.get("session"))
         status, data = http_post(base, "/api/auth/sign-out", jar, {})
@@ -1340,7 +1855,7 @@ def main():
     parser.add_argument("--name", default="Probe Tester")
     parser.add_argument(
         "--flow",
-        choices=["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify"],
+        choices=["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify", "sync", "security"],
         default="full",
     )
     parser.add_argument("--db", default="")

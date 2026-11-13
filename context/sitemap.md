@@ -8,7 +8,7 @@
 | Router | Dioxus 0.7.1 `router` — single `Route` enum, `#[layout(Navbar)]` for authenticated shell |
 | Status key | ✅ Implemented · 🟡 Partial · ⬜ Planned (PRD target) |
 
-> Scope note: v1 = multi-user clinic (doctors + nursing/secretary staff, shared patients and templates), prescriptions only. No EHR, clinical/medical billing, diagnosis support, or patient app — no routes for those. Subscription billing (3-month trial, $5/month or $50/year via **PayPhone Tokenization**, `https://docs.payphone.app/tokenizacion`) is **deferred to v1.1**: `/settings/billing` has no v1 surface, but the route stays reserved. The image library is 1 image per clinic in v1 (5 in v1.1 with billing), 10 MB each, surfaced in clinic settings and the template editor.
+> Scope note: v1 = multi-user clinic (doctors + nursing/secretary staff, shared patients and templates), prescriptions only. No EHR, clinical/medical billing, diagnosis support, or patient app — no routes for those. Text entry everywhere is forms and inputs only (plain-text inputs, textareas, selects, check controls; no rich text — PRD D-21), identical online and offline. Subscription billing (3-month trial, $5/month or $50/year via **PayPhone Tokenization**, `https://docs.payphone.app/tokenizacion`) is **deferred to v1.1**: `/settings/billing` has no v1 surface, but the route stays reserved. The image library is 1 image per clinic in v1 (5 in v1.1 with billing), 10 MB each, surfaced in clinic settings and the template forms.
 
 ## 1. Route map
 
@@ -26,11 +26,11 @@ flowchart TD
     PAT_EDIT["/patients/:id/edit"]
     RX["/prescriptions — History"]
     RX_NEW["/prescriptions/new — Issue"]
-    RX_ID["/prescriptions/:id — Editor / detail"]
+    RX_ID["/prescriptions/:id — Forms / detail"]
     RX_PREVIEW["/prescriptions/:id/preview — A4 preview"]
     TPL["/templates — Templates"]
     TPL_NEW["/templates/new"]
-    TPL_ID["/templates/:id/edit — Template editor · images"]
+    TPL_ID["/templates/:id/edit — Template forms · images"]
     TPL_PREVIEW["/templates/:id/preview — A4 preview · images"]
     SET["/settings — Settings"]
     SET_CLINIC["/settings/clinic — clinic · image library"]
@@ -86,11 +86,11 @@ All routes below sit under `#[layout(Navbar)]`: persistent nav (Dashboard, Patie
 | `/patients/:id/edit` | Patient edit | Doctor, Nursing, Secretary | FR-001 | ✅ | Update patient fields. Audited (§6 sensitive-read audit). |
 | `/prescriptions` | Prescriptions — history | Doctor (own), Nursing, Secretary (reprint), Administrator | §4 flow 5, FR-042 | 🟡 | Search/filter history by patient, date, status (`draft → signed → superseded/voided`, FR-013). *Download PDF* / *Print* regenerates the same content from the final versioned document with `printpdf` (same content, not byte-identical across renderer versions). Desktop: only ≤ 30 days in local cache; older rows show on-demand regeneration. |
 | `/prescriptions/new` | Issue prescription | Doctor, Nursing (draft only) | §4 flows 1–2, FR-010 | ✅ | Create from `?patient_id=` + `?template_id=`. Prefills variables, medications, diagnosis. Query params optional — patient/template pickers shown when absent. |
-| `/prescriptions/:id` | Prescription editor / detail | Doctor (own; sign), Nursing (draft fields only), Secretary (read + reprint only) | FR-010–014, §5.3 | 🟡 | Form-based editing over the A4 template (no rich text — D-21). `draft`: editable. `signed`: locked, read-only with *Download PDF*, *Print*, *Share*, *Void* (reason required), *Supersede* (new version referencing previous). Per-medication *Explain with LLM* (FR-012, external — §3 below). |
+| `/prescriptions/:id` | Prescription forms / detail | Doctor (own; sign), Nursing (draft fields only), Secretary (read + reprint only) | FR-010–014, §5.3 | 🟡 | Forms and inputs only over the A4 template (plain-text inputs/textareas; no rich text — D-21), online and offline. `draft`: editable. `signed`: locked, read-only with *Download PDF*, *Print*, *Share*, *Void* (reason required), *Supersede* (new version referencing previous). Per-medication *Explain with LLM* (FR-012, external — §3 below). |
 | `/prescriptions/:id/preview` | A4 preview | Same as `/prescriptions/:id` | FR-022, FR-030–034 | ✅ | True-scale A4 (210×297 mm) 1:1 preview; the browser projection of the same layout model `printpdf` renders. Actions: *Sign and issue* (from draft), *Download PDF* (`GET /api/prescriptions/:id/pdf`), *Print* (opens the rendered PDF in the system viewer; desktop renders locally), *Share* (web). Filename `{PatientName}-receta-{DD-MM-AAAA}-{DoctorName}.pdf` via `Content-Disposition` (FR-032, `es-EC`). QR + readable verification code in header/footer (FR-033/034). A provisional offline PDF shows `PENDIENTE DE SINCRONIZACIÓN` and a placeholder QR; the active QR appears only after sync (FR-043). |
 | `/templates` | Templates — list | Doctor (own + clinic master), Administrator (master) | FR-020/024 | ✅ | List per-doctor templates and clinic master templates; status and current version. Actions: *New template*, *Use for prescription*. |
 | `/templates/new` | Template create | Doctor, Administrator | §4 flow 3, FR-020 | ✅ | Create template: letterhead (clinic logo via `asset_id`, doctor/clinic details, colors) + body + footer (printed signature line, QR, contact). Clinics can insert the 1 library image (v1 quota; 5 in v1.1). No signature or stamp images (D-06). |
-| `/templates/:id/edit` | Template editor | Owner doctor; Administrator for master | FR-020/021/023, FR-080–085 | ✅ | Form-based template editor (no rich text — D-21): letterhead fields, body text, footer fields, variable insertion, image slots, medication blocks. Insert images from the clinic library; the upload prompt appears when the v1 quota (1 image) blocks an upload. Variables: `patient.{name,national_id,age}`, `doctor.{name,specialty,national_id,contact}`, `clinic.{name,address,phone}`, `prescription.{number,date,diagnosis}`, `medications[]`. Unknown variables warn pre-signing. Stored as versioned `doc_json` built from form fields, never HTML. *Publish* pins every referenced `asset_id` and creates an immutable version (FR-024). |
+| `/templates/:id/edit` | Template forms | Owner doctor; Administrator for master | FR-020/021/023, FR-080–085 | ✅ | Forms and inputs only (no rich text — D-21): letterhead fields, body text (textarea), footer fields, variable insertion, image slots, medication blocks — plain-text values, online and offline. Insert images from the clinic library; the upload prompt appears when the v1 quota (1 image) blocks an upload. Variables: `patient.{name,national_id,age}`, `doctor.{name,specialty,national_id,contact}`, `clinic.{name,address,phone}`, `prescription.{number,date,diagnosis}`, `medications[]`. Unknown variables warn pre-signing. Stored as versioned `doc_json` built from form fields, never HTML. *Publish* pins every referenced `asset_id` and creates an immutable version (FR-024). |
 | `/templates/:id/preview` | Template A4 preview | Owner doctor, Administrator | FR-022 | ✅ | True-scale A4 preview with sample variable values, repeated header/footer, margins/page breaks, and the pinned images before publishing. |
 | `/settings` | Settings — index | All authenticated | §3, §5.5 | ⬜ | Hub linking clinic, users, profile, and (Administrator, v1.1) billing. Redirects to `/settings/profile` for non-admin roles. |
 | `/settings/clinic` | Clinic settings | Administrator | §6 `clinics`, FR-042, FR-080–085 | ✅ | Clinic name/address/phone/logo, timezone, `llm_url_template`, local retention days (default 30). Image library: upload/delete 1 image (10 MB; 5 only in v1.1), quota/usage, clinic logo (does not consume the slot). |
@@ -123,7 +123,7 @@ All routes below sit under `#[layout(Navbar)]`: persistent nav (Dashboard, Patie
 | `/patients` (+ `/new`, `/:id`, `/:id/edit`) | read | ✓ | ✓ | ✓ | — |
 | `/prescriptions` (history) | ✓ | own | ✓ | ✓ reprint | — |
 | `/prescriptions/new` | — | ✓ | draft only | — | — |
-| `/prescriptions/:id` (editor) | read | own, sign | draft fields | read + reprint | — |
+| `/prescriptions/:id` (forms) | read | own, sign | draft fields | read + reprint | — |
 | `/prescriptions/:id/preview` | ✓ | ✓ | draft preview | ✓ | — |
 | `/templates` (+ `/new`, `/:id/edit`, `/:id/preview`) | master | own + master | — | — | — |
 | Image library (upload/delete) | ✓ clinic | ✓ own | — | — | — |

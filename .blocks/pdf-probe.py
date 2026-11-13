@@ -101,14 +101,49 @@ def post_json(base, path, jar, payload):
     except OSError:
         return None, {}
 
+import base64
+import hashlib
+import hmac
+import time
+
+MFA_SECRETS_PATH = "/tmp/persona-probe-mfa-secrets.json"
+
+
+def totp_code(secret):
+    """Compute the current TOTP code for a base32 secret with stdlib only."""
+    key = base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
+    counter = int(time.time()) // 30
+    digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha256).digest()
+    offset = digest[-1] & 0x0F
+    value = int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF
+    return f"{value % 1000000:06d}"
+
+
+def complete_mfa(base, jar, email, ticket):
+    """Complete MFA with the secret persona-probe stored; True on a session."""
+    try:
+        with open(MFA_SECRETS_PATH) as handle:
+            secret = json.load(handle).get(email, "")
+    except (OSError, ValueError):
+        return False
+    if not secret or not ticket:
+        return False
+    status, _ = post_json(
+        base, "/api/auth/mfa/verify", jar,
+        {"ticket": ticket, "code": totp_code(secret)},
+    )
+    return status == 200
+
 
 def sign_in(base, email, password):
     """Return a signed-in cookie jar for the doctor account, or None."""
     jar = http.cookiejar.CookieJar()
-    status, _ = post_json(
+    status, data = post_json(
         base, "/api/auth/sign-in/email", jar,
         {"email": email, "password": password, "rememberMe": True},
     )
+    if status == 200 and data.get("mfaRequired"):
+        return jar if complete_mfa(base, jar, email, data.get("mfaTicket", "")) else None
     return jar if status == 200 else None
 
 

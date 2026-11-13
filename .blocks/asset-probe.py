@@ -55,6 +55,38 @@ def opener(jar):
     """Return a urllib opener that carries the session cookie jar."""
     return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
+import hashlib
+import hmac
+import time
+
+MFA_SECRETS_PATH = "/tmp/persona-probe-mfa-secrets.json"
+
+
+def totp_code(secret):
+    """Compute the current TOTP code for a base32 secret with stdlib only."""
+    key = base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
+    counter = int(time.time()) // 30
+    digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha256).digest()
+    offset = digest[-1] & 0x0F
+    value = int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF
+    return f"{value % 1000000:06d}"
+
+
+def complete_mfa(base, jar, email, ticket):
+    """Complete MFA with the secret persona-probe stored; True on a session."""
+    try:
+        with open(MFA_SECRETS_PATH) as handle:
+            secret = json.load(handle).get(email, "")
+    except (OSError, ValueError):
+        return False
+    if not secret or not ticket:
+        return False
+    status, _, _ = http_json(
+        base, "POST", "/api/auth/mfa/verify", jar,
+        {"ticket": ticket, "code": totp_code(secret)},
+    )
+    return status == 200
+
 
 def http_call(base, method, path, jar, body=None, headers=None):
     """Send one request; return (status, parsed JSON, headers dict)."""
@@ -111,11 +143,13 @@ def upload(base, path, jar, data, filename="probe.jpg", content_type="image/jpeg
 
 def sign_in(base, email, password, name, jar):
     """Sign in, creating the administrator account when it does not exist yet."""
-    status, _, _ = http_json(
+    status, data, _ = http_json(
         base, "POST", "/api/auth/sign-in/email", jar,
         {"email": email, "password": password},
     )
     if status == 200:
+        if data.get("mfaRequired"):
+            return complete_mfa(base, jar, email, data.get("mfaTicket", ""))
         return True
     status, _, _ = http_json(
         base, "POST", "/api/auth/sign-up/email", jar,

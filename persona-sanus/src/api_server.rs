@@ -6,7 +6,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::auth_server::{AppState, AuthError};
+use crate::auth_server::{self, AppState, AuthError};
 use crate::db;
 use crate::service::{
     self, ActorContext, AssetKind, ClinicSettings, DeviceRegistration, DoctorUpdate,
@@ -65,6 +65,8 @@ pub struct PatientCreateRequest {
     notes: Option<String>,
     #[serde(default, alias = "confirm_duplicate")]
     confirm_duplicate: bool,
+    #[serde(default, alias = "client_id")]
+    client_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +109,8 @@ pub struct TemplateCreateRequest {
     name: String,
     #[serde(default, alias = "owner_type")]
     owner_type: Option<String>,
+    #[serde(default, alias = "client_id")]
+    client_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,6 +218,10 @@ pub struct PrescriptionReorderRequest {
 pub struct PrescriptionSignRequest {
     #[serde(default, alias = "acknowledge_warnings")]
     acknowledge_warnings: bool,
+    #[serde(default, alias = "rx_number")]
+    rx_number: Option<i32>,
+    #[serde(default, alias = "rx_block_id")]
+    rx_block_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,6 +244,12 @@ pub struct PrescriptionSupersedeRequest {
     instructions: Option<String>,
     #[serde(default, alias = "acknowledge_warnings")]
     acknowledge_warnings: bool,
+    #[serde(default, alias = "rx_number")]
+    rx_number: Option<i32>,
+    #[serde(default, alias = "rx_block_id")]
+    rx_block_id: Option<String>,
+    #[serde(default, alias = "new_prescription_id")]
+    new_prescription_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -262,6 +276,7 @@ fn clinic_json(actor: &ActorContext) -> Value {
             "timezone": clinic.timezone,
             "llmUrlTemplate": clinic.llm_url_template,
             "rxBlockSize": clinic.rx_block_size,
+            "retentionDays": clinic.retention_days,
         }),
         None => Value::Null,
     }
@@ -503,6 +518,60 @@ pub(crate) async fn require_actor(
 pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, AuthError> {
     let actor = require_actor(&state, &headers).await?;
     Ok(Json(me_json(&actor)).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuditQuery {
+    #[serde(default)]
+    action: Option<String>,
+    #[serde(default)]
+    entity: Option<String>,
+    #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
+pub async fn list_audit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AuditQuery>,
+) -> Result<Response, AuthError> {
+    let actor = require_actor(&state, &headers).await?;
+    actor.require_administrator()?;
+    let clinic_id = actor.clinic_id()?.to_owned();
+    let action = query.action.filter(|value| !value.trim().is_empty());
+    let entity = query.entity.filter(|value| !value.trim().is_empty());
+    let q = query.q.filter(|value| !value.trim().is_empty());
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let rows = auth_server::with_conn(&state.pool, move |connection| {
+        Ok(db::list_audit(
+            connection,
+            &clinic_id,
+            action.as_deref(),
+            entity.as_deref(),
+            q.as_deref(),
+            limit,
+        )?)
+    })
+    .await?;
+    let audit = rows
+        .iter()
+        .map(|row| {
+            json!({
+                "id": row.id,
+                "actorId": row.actor_id,
+                "actorName": row.actor_name,
+                "action": row.action,
+                "entity": row.entity,
+                "entityId": row.entity_id,
+                "metadata": serde_json::from_str::<Value>(row.metadata_json.as_deref().unwrap_or("null"))
+                    .unwrap_or(Value::Null),
+                "at": row.at,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(Json(json!({ "audit": audit })).into_response())
 }
 
 pub async fn register_device(
@@ -801,6 +870,8 @@ pub async fn sign_prescription(
         id,
         PrescriptionSignInput {
             acknowledge_warnings: request.acknowledge_warnings,
+            rx_number: request.rx_number,
+            rx_block_id: request.rx_block_id,
         },
     )
     .await?;
@@ -835,6 +906,9 @@ pub async fn supersede_prescription(
             validity: request.validity,
             instructions: request.instructions,
             acknowledge_warnings: request.acknowledge_warnings,
+            rx_number: request.rx_number,
+            rx_block_id: request.rx_block_id,
+            new_prescription_id: request.new_prescription_id,
         },
     )
     .await?;
@@ -886,6 +960,7 @@ pub async fn create_patient(
             sex: request.sex,
             phone: request.phone,
             notes: request.notes,
+            client_id: request.client_id,
         },
         request.confirm_duplicate,
     )
@@ -966,8 +1041,14 @@ pub async fn create_template(
     Json(request): Json<TemplateCreateRequest>,
 ) -> Result<Response, AuthError> {
     let actor = require_actor(&state, &headers).await?;
-    let template =
-        service::create_template(&state.pool, &actor, request.name, request.owner_type).await?;
+    let template = service::create_template(
+        &state.pool,
+        &actor,
+        request.name,
+        request.owner_type,
+        request.client_id,
+    )
+    .await?;
     Ok(Json(template_json(&template, &[])).into_response())
 }
 
@@ -1200,6 +1281,7 @@ pub fn router(state: AppState) -> Router {
         .layer(DefaultBodyLimit::max(crate::assets::body_limit()));
     Router::new()
         .route("/api/me", get(me))
+        .route("/api/audit", get(list_audit))
         .route("/api/devices", get(list_devices))
         .route("/api/devices/register", post(register_device))
         .route("/api/devices/revoke", post(revoke_device))

@@ -29,7 +29,7 @@ The server process is the unit of deployment. There is no separate API service, 
 | Patients | ✅ | `src/service.rs`, `/api/patients*` |
 | Templates, versions, publish/archive | ✅ | `src/service.rs`, `/api/templates*` |
 | Prescriptions, items, verification | ✅ | PRD §5.4–§5.6 |
-| Templates form editor (forms on web + desktop, D-21) | ✅ | `src/forms.rs` |
+| Templates forms and inputs (forms on web + desktop, online and offline, D-21) | ✅ | `src/forms.rs` |
 | A4 PDF + QR | ✅ | `src/pdf.rs`, `src/pdf_server.rs`, PRD §5.4 |
 | Desktop cache + outbox + sync | ⬜ | PRD §5.5 |
 | Billing + scheduler (v1.1) | ⬜ | PRD §5.7, D-04 |
@@ -91,7 +91,7 @@ Rules:
 - `printpdf` never enters the `web` feature: the wasm bundle must not carry a PDF engine. `default-features = false` drops printpdf's `html` layout (azul CSS/XML stack); `text_layout` is still required because font embedding goes through it, and `jpeg`/`png` add the image decoders used for logos, library images, and the QR PNG. Never call `PdfDocument::from_html`.
 - `qrcode-generator` 6.1.2 ([upstream](https://github.com/magiclen/qrcode-generator), MIT) is the only QR encoder. It is optional, enabled by `server` and `desktop`, and uses `default-features = false` plus `std`/`qr`/`image` so the renderer can call `Renderer::to_png_vec()`. It never enters `web`: QR symbols are generated where the PDF is rendered and embedded as PNG; the payload is `{PUBLIC_BASE_URL}/verify/{code}` with no PHI. Do not add a second QR crate or hand-roll the matrix.
 - `dioxus-motion` 0.4 ([upstream](https://github.com/wheregmis/dioxus-motion), MIT) is the typed, interruptible animation crate for Dioxus UI (springs, tweens, keyframes, presence, route transitions). It is an optional dependency that gets exactly one platform feature per build: `web` on wasm, `desktop` on the WebView app, `dioxus` alone for SSR. Its default `web` feature would drag `wasm-bindgen`/`web-sys` into the native server binary, hence `default-features = false`. Use the crates.io release, not the repository `main` branch, which carries unreleased breaking API changes.
-- Editing is plain Dioxus forms (PRD D-21) — no WYSIWYG editor, no rich text, no editor dependency and no target gate: the same form components compile on `web`, `desktop`, and server-side render, so the desktop binary ships the same UI as the web. The forms emit schema-checked structured JSON (`doc_json`) and never produce raw HTML.
+- Text entry is plain Dioxus forms and inputs only (PRD D-21) — no WYSIWYG editor, no rich text, no editor dependency, no JS bridge, no contenteditable, and no target gate: single-line inputs, multi-line textareas, selects, and check controls carry plain-text values only (no formatting), and the same `src/forms.rs` components compile on `web`, `desktop`, and server-side render, so the desktop binary does the same plain-text entry offline against the local cache/outbox as the web does online. The forms emit schema-checked structured JSON (`doc_json`) and never produce raw HTML.
 - Diesel, Argon2, and axum types must never appear in shared signatures. `SessionUser` is a plain struct in `src/auth.rs` precisely so the client can hold session state without pulling in the server stack.
 - `libsqlite3-sys` uses `bundled`: SQLite is compiled with the crate, so the runtime image needs no system `libsqlite3`.
 - `uuid` `v7` supplies sortable entity ids; `v4` supplies session-token entropy (DB §1).
@@ -186,7 +186,7 @@ Security findings in the current implementation:
 
 | Finding | Evidence | Impact | Action |
 |---|---|---|---|
-| Token returned in the JSON body as well as the cookie | `session_response` | an XSS can read a credential that `HttpOnly` otherwise protects | return it only for a non-cookie transport |
+| Token returned in the JSON body as well as the cookie | `session_response` | an XSS can read a credential that `HttpOnly` otherwise protects | closed: `session_response` returns the user only and sets the `HttpOnly` cookie; the desktop client reads the token from `Set-Cookie` |
 | Account enumeration | sign-up returns `409`; sign-in skips Argon2 for unknown emails | email discovery and timing signal | uniform sign-in errors plus a dummy hash and rate limiting (spec 12-L); sign-up keeps `409` — enumeration is inherent in account creation (accepted residual) |
 | No CSRF token or `Origin` check | cookie auth with JSON `POST` | `SameSite=Lax` mitigates, but lacks defense in depth | validate `Origin` on state-changing routes |
 | No security headers or CORS layer | router composition | no CSP/HSTS surface; a browser-served second origin would fail without CORS | add `tower-http` when a second origin exists |
@@ -219,7 +219,7 @@ The connection pragmas live in the r2d2 customizer in `db.rs`; `database-design.
 | `/patients*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (CRUD + prescription history) |
 | `/templates*` | `Navbar` | doctor or administrator (sitemap §1.2) | ✅ |
 | `/settings*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (clinic image library in spec 06-F) |
-| `/prescriptions*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (editor, items, sign, void, supersede, A4 preview, PDF) |
+| `/prescriptions*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (forms and inputs, items, sign, void, supersede, A4 preview, PDF) |
 | `/audit`, `/verify/:code` | target shell | role- and session-dependent (sitemap §1.2) | ⬜ |
 
 Rules and current limits:
@@ -228,7 +228,7 @@ Rules and current limits:
 - The redirect is client-side only. SSR still renders the page shell for an unauthenticated request, and any future PHI load must be authorized in the service layer behind the REST handler. Never rely on the redirect for data protection (PRD §3).
 - The session fetch is a `use_effect`, so the first SSR paint is signed-out and flips after hydration. Data pages load through the authorized `/api/*` endpoints (`use_resource` or SSR-side fetch) so the first render carries the authorized result instead of an unauthenticated stub.
 - UI code must copy signal values before awaiting. Holding `WriteLock` or `GenerationalRef` across `.await` is flagged by the `clippy.toml` configuration.
-- No JavaScript interop: editing is plain Dioxus forms (PRD D-21) — no WYSIWYG editor, no rich text, no bridge. The forms emit schema-checked structured JSON (`doc_json`) and raw HTML is never persisted or rendered.
+- No JavaScript interop: text entry is plain Dioxus forms and inputs (PRD D-21) — no WYSIWYG editor, no rich text, no bridge, no contenteditable. Single-line inputs, multi-line textareas, selects, and check controls hold plain-text values only, online and offline. The forms emit schema-checked structured JSON (`doc_json`) and raw HTML is never persisted or rendered.
 
 Auth transport is resolved in spec 04-D:
 
@@ -247,7 +247,7 @@ Decision: application data is exposed as REST under `/api/*` with the session co
 |---|---|---|---|---|---|
 | Profile and membership | session → profile, role, clinic membership, doctor details | `users`, `sessions`, `profiles`, `clinic_members`, `doctors` | session | 🟡 identity only | §3, DB §2 |
 | Patients | CRUD, cédula dedupe, soft delete | `patients` | role + clinic | ✅ | FR-001–003 |
-| Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | 🟡 editor + publish; asset pinning spec 06-F | FR-020–024 |
+| Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | 🟡 forms and inputs + publish; asset pinning spec 06-F | FR-020–024 |
 | Images | upload/delete, v1 quota (1), 15-min signed URLs, template pinning, placeholder rendering (v1.1) | `assets`, `template_version_assets` | role + quota | ⬜ | FR-080–085 |
 | Prescriptions | draft→signed→superseded/voided, ordered items, block-allocated number | `prescriptions`, `prescription_items`, `rx_counters`, `rx_blocks` | doctor signs; nursing drafts; secretary reads/reprints; administrator reads clinic-wide | ✅ | FR-010–014 |
 | Verification | opaque code → public status, no PHI | `verification_codes` | public, rate limited | ⬜ | FR-050 |

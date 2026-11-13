@@ -154,6 +154,7 @@ pub struct PatientInput {
     pub sex: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    pub client_id: Option<String>,
 }
 
 pub struct PatientUpdate {
@@ -316,6 +317,7 @@ pub async fn register_user(pool: &DbPool, input: RegisterUser) -> Result<db::Use
                     expires_at: &input.expires_at,
                     created_at: &input.created_at,
                     device_id: None,
+                    mfa_pending: 0,
                 },
             )?;
             record_audit(
@@ -354,6 +356,9 @@ pub async fn resolve_actor(
         let Some(session) = db::find_session_by_token_hash(connection, &token_hash)? else {
             return Ok(None);
         };
+        if session.mfa_pending != 0 {
+            return Ok(None);
+        }
         if let Some(device_id) = session.device_id.as_deref() {
             let valid = db::find_device_by_id(connection, device_id)?
                 .is_some_and(|device| device.revoked_at.is_none());
@@ -926,9 +931,20 @@ pub async fn create_patient(
     let phone = clean_optional(input.phone);
     let notes = clean_optional(input.notes);
     let normalized_name = normalize_name(&full_name);
+    let client_id = input
+        .client_id
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
+            if let Some(client_id) = client_id.as_deref() {
+                if let Some(existing) =
+                    db::find_patient_by_client_id(connection, &clinic_id, client_id)?
+                {
+                    return Ok(PatientCreateOutcome::Created(existing));
+                }
+            }
             if let Some(national_id) = national_id.as_deref() {
                 if db::find_patient_id_by_national_id(connection, &clinic_id, national_id)?
                     .is_some()
@@ -959,7 +975,7 @@ pub async fn create_patient(
                     sex: sex.as_deref(),
                     phone: phone.as_deref(),
                     notes: notes.as_deref(),
-                    client_id: None,
+                    client_id: client_id.as_deref(),
                     deleted_at: None,
                     created_at: &at,
                     updated_at: &at,
@@ -1331,6 +1347,7 @@ pub async fn create_template(
     actor: &ActorContext,
     name: String,
     owner_type: Option<String>,
+    client_id: Option<String>,
 ) -> Result<db::Template, AuthError> {
     let name = template_name(&name)?;
     let is_administrator = actor.role() == Some(Role::Administrator);
@@ -1371,6 +1388,15 @@ pub async fn create_template(
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
+            let client_id = client_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            if let Some(client_id) = client_id {
+                if let Some(existing) = db::find_template_by_client_id(connection, client_id)? {
+                    return Ok(existing);
+                }
+            }
             let id = Uuid::now_v7().to_string();
             db::insert_template(
                 connection,
@@ -1381,7 +1407,7 @@ pub async fn create_template(
                     name: &name,
                     current_version_id: None,
                     status: "draft",
-                    client_id: None,
+                    client_id,
                     created_at: &at,
                     updated_at: &at,
                     created_by: Some(&actor_id),
@@ -1564,6 +1590,11 @@ pub async fn publish_template_version(
             }
             let version = db::find_template_version(connection, &template.id, &version_id)?
                 .ok_or_else(|| AuthError::NotFound("Versión no encontrada.".to_owned()))?;
+            if version.status == "published" {
+                db::set_template_published(connection, &template.id, &version.id, &at)?;
+                return db::find_template_by_id(connection, &template.id)?
+                    .ok_or_else(|| AuthError::NotFound("Plantilla no encontrada.".to_owned()));
+            }
             let published = db::publish_template_version_row(connection, &version.id, &at)?;
             if published == 0 {
                 return Err(AuthError::Conflict(
@@ -2069,6 +2100,8 @@ pub struct PrescriptionItemInput {
 
 pub struct PrescriptionSignInput {
     pub acknowledge_warnings: bool,
+    pub rx_number: Option<i32>,
+    pub rx_block_id: Option<String>,
 }
 
 pub struct PrescriptionSupersedeInput {
@@ -2077,6 +2110,9 @@ pub struct PrescriptionSupersedeInput {
     pub validity: Option<String>,
     pub instructions: Option<String>,
     pub acknowledge_warnings: bool,
+    pub rx_number: Option<i32>,
+    pub rx_block_id: Option<String>,
+    pub new_prescription_id: Option<String>,
 }
 
 pub struct PrescriptionDetail {
@@ -2302,6 +2338,40 @@ fn consume_block_number(
     }
     db::find_rx_block_by_id(connection, &block.id)?
         .map(|block| (block, number))
+        .ok_or_else(|| AuthError::NotFound("Bloque no encontrado.".to_owned()))
+}
+
+fn reconcile_block_number(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    device_id: &str,
+    block_id: &str,
+    number: i32,
+    at: &str,
+) -> Result<db::RxBlock, AuthError> {
+    let block = db::find_rx_block_by_id(connection, block_id)?
+        .ok_or_else(|| AuthError::NotFound("Bloque no encontrado.".to_owned()))?;
+    if block.device_id != device_id || block.clinic_id != clinic_id {
+        return Err(AuthError::BadRequest(
+            "El bloque de números no pertenece a este dispositivo.".to_owned(),
+        ));
+    }
+    if number < block.start_number || number > block.end_number {
+        return Err(AuthError::Conflict(
+            "El número está fuera del bloque asignado.".to_owned(),
+        ));
+    }
+    if db::find_prescription_by_rx_number(connection, number)?.is_some() {
+        return Err(AuthError::Conflict(
+            "El número ya está asignado a otra receta.".to_owned(),
+        ));
+    }
+    let consumed = (number - block.start_number + 1).max(block.consumed);
+    db::set_rx_block_consumed(connection, &block.id, consumed, at)?;
+    if consumed > block.end_number - block.start_number {
+        db::set_rx_block_status(connection, &block.id, "exhausted", at)?;
+    }
+    db::find_rx_block_by_id(connection, &block.id)?
         .ok_or_else(|| AuthError::NotFound("Bloque no encontrado.".to_owned()))
 }
 
@@ -2583,28 +2653,50 @@ pub async fn upsert_prescription_item(
             }
             let item = match item_id.clone() {
                 Some(item_id) => {
-                    let existing =
+                    if let Some(existing) =
                         db::find_prescription_item(connection, &prescription.id, &item_id)?
-                            .ok_or_else(|| {
-                                AuthError::NotFound("Medicamento no encontrado.".to_owned())
-                            })?;
-                    db::update_prescription_item(
-                        connection,
-                        &prescription.id,
-                        &existing.id,
-                        &db::PrescriptionItemFields {
-                            position: existing.position,
-                            med_name: &med_name,
-                            dose: dose.as_deref(),
-                            route: route.as_deref(),
-                            frequency: frequency.as_deref(),
-                            duration: duration.as_deref(),
-                            quantity: quantity.as_deref(),
-                            notes: notes.as_deref(),
-                        },
-                        &at,
-                    )?;
-                    existing.id
+                    {
+                        db::update_prescription_item(
+                            connection,
+                            &prescription.id,
+                            &existing.id,
+                            &db::PrescriptionItemFields {
+                                position: existing.position,
+                                med_name: &med_name,
+                                dose: dose.as_deref(),
+                                route: route.as_deref(),
+                                frequency: frequency.as_deref(),
+                                duration: duration.as_deref(),
+                                quantity: quantity.as_deref(),
+                                notes: notes.as_deref(),
+                            },
+                            &at,
+                        )?;
+                        existing.id
+                    } else {
+                        let items = db::list_prescription_items(connection, &prescription.id)?;
+                        let position =
+                            items.iter().map(|item| item.position).max().unwrap_or(0) + 1;
+                        db::insert_prescription_item(
+                            connection,
+                            &db::NewPrescriptionItem {
+                                id: &item_id,
+                                prescription_id: &prescription.id,
+                                position,
+                                med_name: &med_name,
+                                dose: dose.as_deref(),
+                                route: route.as_deref(),
+                                frequency: frequency.as_deref(),
+                                duration: duration.as_deref(),
+                                quantity: quantity.as_deref(),
+                                notes: notes.as_deref(),
+                                created_at: &at,
+                                updated_at: &at,
+                                created_by: Some(&actor_id),
+                            },
+                        )?;
+                        item_id
+                    }
                 }
                 None => {
                     let items = db::list_prescription_items(connection, &prescription.id)?;
@@ -3243,6 +3335,15 @@ pub async fn sign_prescription(
                 AuthError::Forbidden("El perfil no tiene ficha de médico.".to_owned())
             })?;
             if prescription.status != "draft" {
+                if let Some(number) = input.rx_number {
+                    if prescription.rx_number != Some(number) {
+                        return Err(AuthError::Conflict(
+                            "El número ya reconciliado no coincide.".to_owned(),
+                        ));
+                    }
+                }
+            }
+            if prescription.status != "draft" {
                 if prescription.doctor_id.as_deref() != Some(doctor_id) {
                     return Err(AuthError::Forbidden(
                         "Solo el médico autor puede firmar esta receta.".to_owned(),
@@ -3267,9 +3368,22 @@ pub async fn sign_prescription(
             if !warnings.is_empty() && !input.acknowledge_warnings {
                 return Err(AuthError::UnacknowledgedWarnings(warnings));
             }
-            let (block, number) = consume_block_number(
-                connection, &actor_id, &clinic_id, &device_id, block_size, &at,
-            )?;
+            let (block, number) = match (input.rx_number, input.rx_block_id.as_deref()) {
+                (Some(number), Some(block_id)) => (
+                    reconcile_block_number(
+                        connection, &clinic_id, &device_id, block_id, number, &at,
+                    )?,
+                    number,
+                ),
+                (Some(_), None) => {
+                    return Err(AuthError::BadRequest(
+                        "Falta el bloque de números.".to_owned(),
+                    ));
+                }
+                _ => consume_block_number(
+                    connection, &actor_id, &clinic_id, &device_id, block_size, &at,
+                )?,
+            };
             db::mark_prescription_signed(
                 connection,
                 &clinic_id,
@@ -3352,6 +3466,21 @@ pub async fn void_prescription(
             let prescription =
                 db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                     .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
+            if prescription.status == "voided" {
+                let items = db::list_prescription_items(connection, &prescription.id)?;
+                let verification =
+                    db::find_verification_code_by_prescription(connection, &prescription.id)?;
+                let patient_name =
+                    db::find_patient_any(connection, &clinic_id, &prescription.patient_id)?
+                        .map(|patient| patient.full_name)
+                        .unwrap_or_else(|| "Paciente eliminado".to_owned());
+                return Ok(PrescriptionDetail {
+                    prescription,
+                    items,
+                    verification,
+                    patient_name,
+                });
+            }
             prescription_transition_allowed(role, doctor_id.as_deref(), &prescription)?;
             db::mark_prescription_voided(connection, &clinic_id, &prescription.id, &reason, &at)?;
             db::set_verification_code_status(connection, &prescription.id, "voided", &at)?;
@@ -3441,10 +3570,27 @@ pub async fn supersede_prescription(
             if !warnings.is_empty() && !input.acknowledge_warnings {
                 return Err(AuthError::UnacknowledgedWarnings(warnings));
             }
-            let (block, number) = consume_block_number(
-                connection, &actor_id, &clinic_id, &device_id, block_size, &at,
-            )?;
-            let new_id = Uuid::now_v7().to_string();
+            let (block, number) = match (input.rx_number, input.rx_block_id.as_deref()) {
+                (Some(number), Some(block_id)) => (
+                    reconcile_block_number(
+                        connection, &clinic_id, &device_id, block_id, number, &at,
+                    )?,
+                    number,
+                ),
+                (Some(_), None) => {
+                    return Err(AuthError::BadRequest(
+                        "Falta el bloque de números.".to_owned(),
+                    ));
+                }
+                _ => consume_block_number(
+                    connection, &actor_id, &clinic_id, &device_id, block_size, &at,
+                )?,
+            };
+            let new_id = input
+                .new_prescription_id
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| Uuid::now_v7().to_string());
             db::insert_prescription(
                 connection,
                 &db::NewPrescription {

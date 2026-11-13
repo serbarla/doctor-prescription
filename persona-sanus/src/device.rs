@@ -32,9 +32,9 @@ fn device_path() -> Option<std::path::PathBuf> {
     } else if cfg!(target_os = "windows") {
         std::env::var("APPDATA").ok().map(std::path::PathBuf::from)
     } else {
-        std::env::var("HOME").ok().map(std::path::PathBuf::from)
-    }?;
-    Some(base.join("PersonaSanus").join("device_id"))
+        return None;
+    };
+    Some(base?.join("PersonaSanus").join("device_id"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

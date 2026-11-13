@@ -16,6 +16,7 @@ diesel::table! {
         user_id -> Text,
         expires_at -> Text,
         created_at -> Text,
+        device_id -> Nullable<Text>,
     }
 }
 
@@ -264,6 +265,7 @@ diesel::joinable!(clinic_members -> clinics (clinic_id));
 diesel::joinable!(clinic_members -> profiles (profile_id));
 diesel::joinable!(doctors -> profiles (profile_id));
 diesel::joinable!(profiles -> users (auth_user_id));
+diesel::joinable!(devices -> profiles (profile_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     users,

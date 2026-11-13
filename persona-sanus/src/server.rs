@@ -11,8 +11,10 @@ use serde_json::json;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::api_server;
+use crate::assets;
 use crate::auth_server::{self, AppState};
 use crate::db;
+use crate::pdf_server;
 
 #[derive(QueryableByName)]
 struct ForeignKeysPragma {
@@ -81,9 +83,14 @@ pub async fn router() -> Result<Router> {
     let cookie_secure = std::env::var("PERSONA_COOKIE_SECURE")
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    let storage = assets::AssetStorage::from_env();
+    if let Some(storage) = storage.as_ref() {
+        storage.initialize().await;
+    }
     let state = AppState {
         pool: db::connect()?,
         cookie_secure,
+        assets: storage.map(std::sync::Arc::new),
     };
 
     let auth_router = Router::new()
@@ -97,7 +104,8 @@ pub async fn router() -> Result<Router> {
         .route("/health", get(health))
         .with_state(state.clone())
         .merge(auth_router)
-        .merge(api_server::router(state));
+        .merge(api_server::router(state.clone()))
+        .merge(pdf_server::router(state));
     let app_router = match cors_layer() {
         Some(cors) => app_router.layer(cors),
         None => app_router,

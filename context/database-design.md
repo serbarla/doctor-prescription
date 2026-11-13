@@ -38,7 +38,7 @@
 
 ## 2. Table overview
 
-Auth module owns: `users` (`id`, `email`, `password_hash`, `display_name`, `created_at`, `updated_at`) and `sessions` (`id`, `token_hash`, `user_id`, `expires_at`, `created_at`, `device_id`). The initial Diesel migration drops the previous RustAuth `users`, `sessions`, `accounts`, and `verifications` tables and creates these two; `sessions.device_id` is nullable and added by a later auth migration once `devices` exists.
+Auth module owns: `users` (`id`, `email`, `password_hash`, `display_name`, `created_at`, `updated_at`) and `sessions` (`id`, `token_hash`, `user_id`, `expires_at`, `created_at`, `device_id`). The initial Diesel migration drops the previous RustAuth `users`, `sessions`, `accounts`, and `verifications` tables and creates these two; `sessions.device_id` is nullable and added by `20261112000001_add_session_device` once `devices` exists.
 
 App-owned tables (this design):
 
@@ -594,7 +594,7 @@ CREATE TABLE asset_cache (
 - Diesel migrations live under `persona-sanus/migrations/` and are embedded in the server binary with `embed_migrations!`.
 - `src/db.rs` runs `run_pending_migrations` on startup, before the pool serves requests.
 - The initial migration (`20261111000000_create_auth`) replaces the previous RustAuth schema with the app-owned `users` and `sessions` tables.
-- A later auth migration adds `sessions.device_id` (nullable) after `devices` exists; the sync migration (spec 11-K) adds nullable UNIQUE `client_id` columns to `patients` and `templates`.
+- `20261112000001_add_session_device` adds nullable `sessions.device_id` after `devices` exists (spec 04-D); the sync migration (spec 11-K) adds nullable UNIQUE `client_id` columns to `patients` and `templates`.
 - The app-schema migration creates every non-billing table from §2 in FK-safe order: `profiles`, `clinics` (created with `logo_asset_id = NULL`), `assets`, `clinic_members`, `devices`, `doctors`, `patients`, `templates`, `template_versions`, `template_version_assets`, `rx_counters`, `rx_blocks`, `prescriptions`, `prescription_items`, `verification_codes`, and `audit_log`. The circular `clinics` ↔ `assets` logo reference follows the §6 insertion order. MinIO runs as a Compose service and the bucket is created at server startup, holding no SQLite data.
 - **v1.1:** a dedicated `*_create_billing` migration runs after the app-schema migration: `tax_rates` (with the 15% seed), `plans` (tax-inclusive amounts only), `billing_accounts`, `payment_methods`, `subscriptions`, `payment_transactions`, `payment_events`, and the partial indexes. It also backfills one `trialing` subscription per existing clinic. v1 does not create these tables.
 - **Backfill policy (v1.1):** existing clinics get `trial_ends_at = migration_time + 3 calendar months` (grandfathering) so the migration never locks a live clinic. New clinics use `created_at + 3 calendar months`. Retention boundaries remain on `clinics` (`server_retention_until`, `data_grace_ends_at`); the migration clears `clinics.data_grace_ends_at` for backfilled `trialing` clinics so no trim runs while they are active.

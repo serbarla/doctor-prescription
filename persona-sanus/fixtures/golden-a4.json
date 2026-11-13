@@ -1,0 +1,72 @@
+{
+  "doc_json": {
+    "schema_version": 1,
+    "letterhead": {
+      "logo_asset_id": null,
+      "doctor_details": "Dr. Prueba\nMedicina General",
+      "clinic_details": "Clínica de prueba\nQuito",
+      "colors": {
+        "primary": "#0f6e64",
+        "accent": "#e8b04b"
+      }
+    },
+    "body": "Paciente: {{patient.name}}",
+    "footer": "Firma del médico\n{{doctor.name}}",
+    "images": [],
+    "medications": [
+      {
+        "name": "Paracetamol",
+        "dose": "500 mg",
+        "route": "oral",
+        "frequency": "cada 8 horas",
+        "duration": "3 días",
+        "quantity": "9",
+        "notes": ""
+      }
+    ]
+  },
+  "variables": {
+    "patient.name": "Paciente Rx af45492e2e4d49febbb1669b0aceb0b1",
+    "patient.national_id": "9af45492e2",
+    "patient.age": "—",
+    "doctor.name": "Probe Rx Doctor",
+    "doctor.specialty": "—",
+    "doctor.national_id": "—",
+    "doctor.contact": "",
+    "clinic.name": "Clínica de Probe Rx Admin",
+    "clinic.address": "—",
+    "clinic.phone": "—",
+    "prescription.number": "000001",
+    "prescription.date": "12-11-2026",
+    "prescription.diagnosis": "Diagnóstico de prueba",
+    "medications[]": "Ibuprofeno, Paracetamol"
+  },
+  "medications": [
+    {
+      "dose": "400 mg",
+      "duration": "2 días",
+      "frequency": "cada 12 horas",
+      "name": "Ibuprofeno",
+      "notes": "",
+      "quantity": "4",
+      "route": "oral"
+    },
+    {
+      "dose": "500 mg",
+      "duration": "3 días",
+      "frequency": "cada 8 horas",
+      "name": "Paracetamol",
+      "notes": "",
+      "quantity": "9",
+      "route": "oral"
+    }
+  ],
+  "margin_mm": 15,
+  "meta": {
+    "rx_number": 1,
+    "verification_code": "17B7-C512-6286-493F",
+    "issued_at": "12-11-2026 19:15",
+    "provisional": false
+  },
+  "expected_pages": 1
+}

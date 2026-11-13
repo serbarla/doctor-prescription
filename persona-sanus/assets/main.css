@@ -521,3 +521,322 @@ button.danger:hover {
     align-items: flex-start;
   }
 }
+
+#templates-page {
+  max-width: 1100px;
+  margin: var(--spacing-48) auto;
+  padding: 0 var(--spacing-24);
+}
+
+#templates-page h4 {
+  margin-bottom: var(--spacing-4);
+}
+
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.template-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-16);
+  background-color: var(--surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-16) var(--spacing-20);
+}
+
+.template-row p {
+  margin: 0;
+}
+
+.template-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+}
+
+.editor-section {
+  background-color: var(--surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-20);
+}
+
+.editor-section h4 {
+  margin-bottom: var(--spacing-12);
+}
+
+.variable-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-12);
+  margin-bottom: var(--spacing-12);
+}
+
+.variable-row select {
+  flex: 1;
+}
+
+.medication-block {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-inputs);
+  padding: var(--spacing-16);
+  margin-bottom: var(--spacing-12);
+}
+
+.inline-block {
+  align-items: end;
+  margin-bottom: var(--spacing-12);
+}
+
+.preview-controls {
+  display: flex;
+  align-items: end;
+  gap: var(--spacing-16);
+  margin-bottom: var(--spacing-16);
+}
+
+.preview-controls .field {
+  min-width: 180px;
+}
+
+.preview-scroll {
+  overflow-x: auto;
+  padding: var(--spacing-24);
+  background-color: var(--color-cream);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+}
+
+.a4-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-24);
+}
+
+.a4-page {
+  width: 210mm;
+  height: 297mm;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  color: #111111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12pt;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+.a4-header {
+  position: relative;
+  border-bottom: 2px solid currentColor;
+  padding-bottom: 3mm;
+  margin-bottom: 5mm;
+}
+
+.a4-logo-image {
+  position: absolute;
+  top: 0;
+  right: 0;
+  max-width: 22mm;
+  max-height: 22mm;
+  object-fit: contain;
+}
+
+.a4-image {
+  display: block;
+  max-width: 100%;
+  max-height: 30mm;
+  margin: 0 0 3mm;
+  object-fit: contain;
+}
+
+.a4-body {
+  flex: 1;
+}
+
+.a4-doctor {
+  font-size: 15pt;
+  font-weight: 700;
+  margin: 0 0 1mm;
+}
+
+.a4-clinic,
+.a4-logo {
+  font-size: 10pt;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.a4-body {
+  flex: 1;
+}
+
+.a4-body p,
+.a4-footer p {
+  margin: 0 0 2.5mm;
+  white-space: pre-wrap;
+}
+
+.a4-footer {
+  position: relative;
+  border-top: 1px solid currentColor;
+  padding-top: 3mm;
+  margin-top: 5mm;
+  padding-right: 32mm;
+  font-size: 9.5pt;
+}
+
+.a4-qr {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 25mm;
+  height: 25mm;
+}
+
+.a4-qr img {
+  width: 25mm;
+  height: 25mm;
+  display: block;
+}
+
+.a4-qr-placeholder {
+  width: 25mm;
+  height: 25mm;
+  border: 1px dashed currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7pt;
+  text-align: center;
+}
+
+.a4-page-no {
+  text-align: right;
+  font-size: 8.5pt;
+}
+
+.a4-warnings {
+  color: var(--color-ember-ring);
+  font-family: var(--font-mint);
+  font-size: var(--text-body-sm);
+}
+
+@media (max-width: 640px) {
+  .template-row,
+  .variable-row,
+  .preview-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.a4-images {
+  margin-bottom: 3mm;
+  font-size: 9.5pt;
+}
+
+.a4-images p {
+  margin: 0 0 1.5mm;
+}
+
+.clinic-logo {
+  display: block;
+  max-width: 240px;
+  max-height: 96px;
+  object-fit: contain;
+  margin-bottom: var(--spacing-12);
+  padding: var(--spacing-8);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-buttons);
+  background-color: var(--color-paper);
+}
+
+.asset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-16);
+  padding: var(--spacing-12) 0;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.asset-row p {
+  margin: var(--spacing-4) 0 0;
+}
+
+#prescriptions-page {
+  max-width: 1040px;
+  margin: var(--spacing-48) auto;
+  padding: 0 var(--spacing-24);
+}
+
+#prescriptions-page h4 {
+  margin-bottom: var(--spacing-4);
+}
+
+.prescription-filters {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: var(--spacing-12);
+  margin-bottom: var(--spacing-24);
+}
+
+.block-indicator {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-12);
+  background-color: var(--color-cream);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-12) var(--spacing-16);
+  margin-bottom: var(--spacing-24);
+  font-size: var(--text-body-sm);
+  color: var(--color-mist);
+}
+
+.warning {
+  color: var(--color-ember-ring);
+  font-size: var(--text-body-sm);
+}
+
+.medication-list h4 {
+  margin-top: var(--spacing-24);
+}
+
+.item-card {
+  background-color: var(--surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-16) var(--spacing-20);
+  margin-bottom: var(--spacing-12);
+}
+
+.item-read p {
+  margin: 0;
+}
+
+.llm-link {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-8);
+  margin-top: var(--spacing-8);
+}
+
+.llm-link .hint {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .prescription-filters {
+    grid-template-columns: 1fr;
+  }
+}

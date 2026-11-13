@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use argon2::password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier};
 use argon2::Argon2;
 use axum::extract::State;
@@ -11,6 +13,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::assets::AssetStorage;
 use crate::db::{self, DbPool, NewSession};
 use crate::service::{self, RegisterUser};
 
@@ -21,6 +24,7 @@ const SESSION_DAYS: i64 = 30;
 pub struct AppState {
     pub pool: DbPool,
     pub cookie_secure: bool,
+    pub assets: Option<Arc<AssetStorage>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,7 +47,14 @@ pub enum AuthError {
     Unauthorized(String),
     Forbidden(String),
     NotFound(String),
+    Unprocessable(String),
     DuplicateNationalId,
+    ImageQuotaExceeded,
+    AssetInUse,
+    TooLarge(String),
+    UnsupportedMedia(String),
+    StorageUnavailable(String),
+    UnacknowledgedWarnings(Vec<String>),
     Internal,
 }
 
@@ -57,11 +68,49 @@ impl IntoResponse for AuthError {
             }
             Self::Forbidden(message) => (StatusCode::FORBIDDEN, json!({ "message": message })),
             Self::NotFound(message) => (StatusCode::NOT_FOUND, json!({ "message": message })),
+            Self::Unprocessable(message) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({ "message": message }),
+            ),
             Self::DuplicateNationalId => (
                 StatusCode::CONFLICT,
                 json!({
                     "code": "duplicate_national_id",
                     "message": "Ya existe un paciente con esta cédula.",
+                }),
+            ),
+            Self::ImageQuotaExceeded => (
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "image_quota_exceeded",
+                    "message": "La biblioteca de la clínica ya tiene su imagen. Elimínala antes de subir otra.",
+                }),
+            ),
+            Self::AssetInUse => (
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "asset_in_use",
+                    "message": "La imagen está fijada por una versión publicada o una receta retenida.",
+                }),
+            ),
+            Self::TooLarge(message) => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                json!({ "code": "image_too_large", "message": message }),
+            ),
+            Self::UnsupportedMedia(message) => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                json!({ "code": "unsupported_media_type", "message": message }),
+            ),
+            Self::StorageUnavailable(message) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({ "code": "storage_unavailable", "message": message }),
+            ),
+            Self::UnacknowledgedWarnings(keys) => (
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "unacknowledged_warnings",
+                    "message": "La plantilla tiene variables desconocidas.",
+                    "unknownKeys": keys,
                 }),
             ),
             Self::Internal => (
@@ -182,6 +231,7 @@ pub async fn sign_in(
                 user_id: &user_id,
                 expires_at: &expires_at,
                 created_at: &created_at,
+                device_id: None,
             },
         )?;
         Ok(())
@@ -203,13 +253,27 @@ pub async fn get_session(
     let now = now();
     let session = with_conn(&state.pool, move |connection| {
         db::delete_expired_sessions(connection, &now)?;
-        db::find_session_by_token_hash(connection, &token_hash).map_err(AuthError::from)
+        let Some(session) = db::find_session_by_token_hash(connection, &token_hash)? else {
+            return Ok(None);
+        };
+        if let Some(device_id) = session.device_id.as_deref() {
+            let valid = db::find_device_by_id(connection, device_id)?
+                .is_some_and(|device| device.revoked_at.is_none());
+            if !valid {
+                db::delete_session_by_token_hash(connection, &token_hash)?;
+                return Ok(None);
+            }
+        }
+        Ok(Some(session))
     })
     .await?;
 
-    let Some((session_id, user_id, expires_at)) = session else {
+    let Some(session) = session else {
         return Ok(Json(Value::Null).into_response());
     };
+    let session_id = session.id;
+    let user_id = session.user_id;
+    let expires_at = session.expires_at;
 
     let user = with_conn(&state.pool, move |connection| {
         db::find_user_by_id(connection, &user_id).map_err(AuthError::from)

@@ -570,6 +570,38 @@ button.danger:hover {
   margin-bottom: var(--spacing-12);
 }
 
+#settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+  max-width: 960px;
+  margin: var(--spacing-48) auto;
+  padding: 0 var(--spacing-24);
+}
+
+#settings-page .editor-section {
+  margin-bottom: 0;
+}
+
+#settings-page .page-head {
+  margin-bottom: 0;
+}
+
+#settings-page .editor-section > button {
+  margin-top: var(--spacing-16);
+}
+
+.settings-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--spacing-24);
+  align-items: start;
+}
+
+.break-anywhere {
+  word-break: break-all;
+}
+
 .variable-row {
   display: flex;
   align-items: center;

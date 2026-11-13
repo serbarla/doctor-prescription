@@ -2377,199 +2377,251 @@ fn SettingsProfile() -> Element {
     };
     let is_doctor = profile.is_doctor();
     let is_admin = profile.is_administrator();
+    let clinic_label = match profile.clinic {
+        Some(clinic) => format!("Clínica: {}", clinic.name),
+        None => "Sin clínica asignada. Un administrador debe asignarte un rol.".to_string(),
+    };
+    let subtitle = format!("{clinic_label} · Rol: {}", role_label(profile.role.as_deref()));
 
     rsx! {
         div {
-            id: "echo",
-            h4 { "Mi perfil" }
-            if let Some(clinic) = profile.clinic {
-                p { "Clínica: {clinic.name}" }
-            } else {
-                p { "Sin clínica asignada. Un administrador debe asignarte un rol." }
-            }
-            p { "Rol: {role_label(profile.role.as_deref())}" }
+            id: "settings-page",
             div {
-                input {
-                    placeholder: "Nombre visible",
-                    value: "{display_name}",
-                    oninput: move |event| display_name.set(event.value()),
-                }
-            }
-            if is_doctor {
+                class: "page-head",
                 div {
-                    input {
-                        placeholder: "Especialidad",
-                        value: "{specialty}",
-                        oninput: move |event| specialty.set(event.value()),
-                    }
-                    input {
-                        placeholder: "Número de licencia",
-                        value: "{license_no}",
-                        oninput: move |event| license_no.set(event.value()),
-                    }
-                    input {
-                        placeholder: "Cédula",
-                        value: "{national_id}",
-                        oninput: move |event| national_id.set(event.value()),
-                    }
-                    input {
-                        placeholder: "Teléfono",
-                        value: "{phone}",
-                        oninput: move |event| phone.set(event.value()),
-                    }
-                    input {
-                        placeholder: "Correo",
-                        value: "{email}",
-                        oninput: move |event| email.set(event.value()),
-                    }
+                    h4 { "Mi perfil" }
+                    p { "{subtitle}" }
                 }
             }
-            if !message().is_empty() {
-                p { "{message}" }
-            }
-            button {
-                disabled: saving(),
-                onclick: move |_| {
-                    if saving() {
-                        return;
+            section {
+                class: "editor-section",
+                h4 { "Datos del perfil" }
+                div {
+                    class: "form-grid",
+                    label {
+                        class: "field",
+                        span { "Nombre visible" }
+                        input {
+                            value: "{display_name}",
+                            oninput: move |event| display_name.set(event.value()),
+                        }
                     }
-                    saving.set(true);
-                    message.set(String::new());
-                    spawn(async move {
-                        let result = api::update_profile(
-                            &display_name(),
-                            &specialty(),
-                            &license_no(),
-                            &national_id(),
-                            &phone(),
-                            &email(),
-                        )
-                        .await;
-                        saving.set(false);
-                        match result {
-                            Ok(updated) => {
-                                actor.set(Some(updated));
-                                message.set("Perfil guardado.".to_string());
+                    if is_doctor {
+                        label {
+                            class: "field",
+                            span { "Especialidad" }
+                            input {
+                                value: "{specialty}",
+                                oninput: move |event| specialty.set(event.value()),
                             }
-                            Err(error) => message.set(error),
                         }
-                    });
-                },
-                if saving() { "Guardando..." } else { "Guardar" }
-            }
-            if is_doctor || is_admin {
-                div {
-                    h4 { "Verificación en dos pasos" }
-                    p {
-                        if mfa_enabled() {
-                            "Activada. Se pedirá el código al iniciar sesión."
-                        } else {
-                            "Sin activar. Actívala para proteger tu cuenta."
+                        label {
+                            class: "field",
+                            span { "Número de licencia" }
+                            input {
+                                value: "{license_no}",
+                                oninput: move |event| license_no.set(event.value()),
+                            }
                         }
-                    }
-                    if !mfa_secret().is_empty() {
-                        p { "Secreto: {mfa_secret}" }
-                        p { "URI: {mfa_uri}" }
-                        input {
-                            placeholder: "Código de 6 dígitos",
-                            value: "{mfa_code}",
-                            oninput: move |event| mfa_code.set(event.value()),
+                        label {
+                            class: "field",
+                            span { "Cédula" }
+                            input {
+                                value: "{national_id}",
+                                oninput: move |event| national_id.set(event.value()),
+                            }
                         }
-                        button {
-                            onclick: move |_| {
-                                spawn(async move {
-                                    match auth::confirm_mfa(&mfa_code()).await {
-                                        Ok(_) => {
-                                            mfa_enabled.set(true);
-                                            mfa_secret.set(String::new());
-                                            mfa_message.set("Verificación activada.".to_string());
-                                        }
-                                        Err(error) => mfa_message.set(error),
-                                    }
-                                });
-                            },
-                            "Confirmar activación"
+                        label {
+                            class: "field",
+                            span { "Teléfono" }
+                            input {
+                                value: "{phone}",
+                                oninput: move |event| phone.set(event.value()),
+                            }
                         }
-                    } else {
-                        button {
-                            onclick: move |_| {
-                                spawn(async move {
-                                    match auth::enroll_mfa().await {
-                                        Ok(value) => {
-                                            if let Some(secret) = http::string_field(&value, &["secret"]) {
-                                                mfa_secret.set(secret);
-                                            }
-                                            if let Some(uri) = http::string_field(&value, &["uri"]) {
-                                                mfa_uri.set(uri);
-                                            }
-                                            mfa_message.set("Escanea el URI o copia el secreto en tu app de autenticación.".to_string());
-                                        }
-                                        Err(error) => mfa_message.set(error),
-                                    }
-                                });
-                            },
-                            "Activar verificación"
+                        label {
+                            class: "field",
+                            span { "Correo" }
+                            input {
+                                value: "{email}",
+                                oninput: move |event| email.set(event.value()),
+                            }
                         }
-                    }
-                    if mfa_enabled() {
-                        input {
-                            r#type: "password",
-                            placeholder: "Contraseña para desactivar",
-                            value: "{mfa_password}",
-                            oninput: move |event| mfa_password.set(event.value()),
-                        }
-                        button {
-                            onclick: move |_| {
-                                spawn(async move {
-                                    match auth::disable_mfa(&mfa_password()).await {
-                                        Ok(_) => {
-                                            mfa_enabled.set(false);
-                                            mfa_message.set("Verificación desactivada.".to_string());
-                                        }
-                                        Err(error) => mfa_message.set(error),
-                                    }
-                                });
-                            },
-                            "Desactivar verificación"
-                        }
-                    }
-                    if !mfa_message().is_empty() {
-                        p { "{mfa_message}" }
                     }
                 }
-            }
-            div {
-                h4 { "Cambiar contraseña" }
-                p { "Al cambiarla se invalidan las demás sesiones." }
-                input {
-                    r#type: "password",
-                    placeholder: "Contraseña actual",
-                    value: "{current_password}",
-                    oninput: move |event| current_password.set(event.value()),
-                }
-                input {
-                    r#type: "password",
-                    placeholder: "Nueva contraseña",
-                    value: "{new_password}",
-                    oninput: move |event| new_password.set(event.value()),
-                }
-                if !password_message().is_empty() {
-                    p { "{password_message}" }
+                if !message().is_empty() {
+                    p { "{message}" }
                 }
                 button {
+                    disabled: saving(),
                     onclick: move |_| {
+                        if saving() {
+                            return;
+                        }
+                        saving.set(true);
+                        message.set(String::new());
                         spawn(async move {
-                            match auth::change_password(&current_password(), &new_password()).await {
-                                Ok(_) => {
-                                    current_password.set(String::new());
-                                    new_password.set(String::new());
-                                    password_message.set("Contraseña cambiada. Sesión renovada.".to_string());
+                            let result = api::update_profile(
+                                &display_name(),
+                                &specialty(),
+                                &license_no(),
+                                &national_id(),
+                                &phone(),
+                                &email(),
+                            )
+                            .await;
+                            saving.set(false);
+                            match result {
+                                Ok(updated) => {
+                                    actor.set(Some(updated));
+                                    message.set("Perfil guardado.".to_string());
                                 }
-                                Err(error) => password_message.set(error),
+                                Err(error) => message.set(error),
                             }
                         });
                     },
-                    "Cambiar contraseña"
+                    if saving() { "Guardando..." } else { "Guardar" }
+                }
+            }
+            div {
+                class: "settings-columns",
+                if is_doctor || is_admin {
+                    section {
+                        class: "editor-section",
+                        h4 { "Verificación en dos pasos" }
+                        p {
+                            if mfa_enabled() {
+                                "Activada. Se pedirá el código al iniciar sesión."
+                            } else {
+                                "Sin activar. Actívala para proteger tu cuenta."
+                            }
+                        }
+                        if !mfa_secret().is_empty() {
+                            p {
+                                class: "break-anywhere",
+                                "Secreto: {mfa_secret}"
+                            }
+                            p {
+                                class: "break-anywhere",
+                                "URI: {mfa_uri}"
+                            }
+                            label {
+                                class: "field",
+                                span { "Código de 6 dígitos" }
+                                input {
+                                    value: "{mfa_code}",
+                                    oninput: move |event| mfa_code.set(event.value()),
+                                }
+                            }
+                            button {
+                                onclick: move |_| {
+                                    spawn(async move {
+                                        match auth::confirm_mfa(&mfa_code()).await {
+                                            Ok(_) => {
+                                                mfa_enabled.set(true);
+                                                mfa_secret.set(String::new());
+                                                mfa_message.set("Verificación activada.".to_string());
+                                            }
+                                            Err(error) => mfa_message.set(error),
+                                        }
+                                    });
+                                },
+                                "Confirmar activación"
+                            }
+                        } else {
+                            button {
+                                onclick: move |_| {
+                                    spawn(async move {
+                                        match auth::enroll_mfa().await {
+                                            Ok(value) => {
+                                                if let Some(secret) = http::string_field(&value, &["secret"]) {
+                                                    mfa_secret.set(secret);
+                                                }
+                                                if let Some(uri) = http::string_field(&value, &["uri"]) {
+                                                    mfa_uri.set(uri);
+                                                }
+                                                mfa_message.set("Escanea el URI o copia el secreto en tu app de autenticación.".to_string());
+                                            }
+                                            Err(error) => mfa_message.set(error),
+                                        }
+                                    });
+                                },
+                                "Activar verificación"
+                            }
+                        }
+                        if mfa_enabled() {
+                            label {
+                                class: "field",
+                                span { "Contraseña para desactivar" }
+                                input {
+                                    r#type: "password",
+                                    value: "{mfa_password}",
+                                    oninput: move |event| mfa_password.set(event.value()),
+                                }
+                            }
+                            button {
+                                onclick: move |_| {
+                                    spawn(async move {
+                                        match auth::disable_mfa(&mfa_password()).await {
+                                            Ok(_) => {
+                                                mfa_enabled.set(false);
+                                                mfa_message.set("Verificación desactivada.".to_string());
+                                            }
+                                            Err(error) => mfa_message.set(error),
+                                        }
+                                    });
+                                },
+                                "Desactivar verificación"
+                            }
+                        }
+                        if !mfa_message().is_empty() {
+                            p { "{mfa_message}" }
+                        }
+                    }
+                }
+                section {
+                    class: "editor-section",
+                    h4 { "Cambiar contraseña" }
+                    p { "Al cambiarla se invalidan las demás sesiones." }
+                    div {
+                        class: "form-grid",
+                        label {
+                            class: "field",
+                            span { "Contraseña actual" }
+                            input {
+                                r#type: "password",
+                                value: "{current_password}",
+                                oninput: move |event| current_password.set(event.value()),
+                            }
+                        }
+                        label {
+                            class: "field",
+                            span { "Nueva contraseña" }
+                            input {
+                                r#type: "password",
+                                value: "{new_password}",
+                                oninput: move |event| new_password.set(event.value()),
+                            }
+                        }
+                    }
+                    if !password_message().is_empty() {
+                        p { "{password_message}" }
+                    }
+                    button {
+                        onclick: move |_| {
+                            spawn(async move {
+                                match auth::change_password(&current_password(), &new_password()).await {
+                                    Ok(_) => {
+                                        current_password.set(String::new());
+                                        new_password.set(String::new());
+                                        password_message.set("Contraseña cambiada. Sesión renovada.".to_string());
+                                    }
+                                    Err(error) => password_message.set(error),
+                                }
+                            });
+                        },
+                        "Cambiar contraseña"
+                    }
                 }
             }
         }

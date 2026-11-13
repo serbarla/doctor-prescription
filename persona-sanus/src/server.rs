@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, HeaderValue, Method, Request, StatusCode};
+use axum::http::{header, HeaderValue, Method, Request, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -113,6 +113,36 @@ fn same_origin(request: &Request<Body>) -> Option<String> {
     Some(format!("{scheme}://{host}"))
 }
 
+fn loopback_origin(origin: &str) -> bool {
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    if !matches!(uri.scheme_str(), Some("http" | "https")) {
+        return false;
+    }
+    let host = uri.host().unwrap_or_default().trim_matches(['[', ']']);
+    host.eq_ignore_ascii_case("localhost")
+        || host.ends_with(".localhost")
+        || matches!(host, "127.0.0.1" | "::1" | "0.0.0.0")
+}
+
+fn dev_proxy_origin(request: &Request<Body>, origin: &str) -> bool {
+    if request.headers().get("x-proxied-by-dioxus").is_none() || !loopback_origin(origin) {
+        return false;
+    }
+    match std::env::var("DIOXUS_DEVSERVER_PORT")
+        .ok()
+        .and_then(|port| port.parse::<u16>().ok())
+    {
+        Some(port) => origin
+            .parse::<Uri>()
+            .ok()
+            .and_then(|uri| uri.port_u16())
+            .is_some_and(|origin_port| origin_port == port),
+        None => false,
+    }
+}
+
 async fn origin_guard(request: Request<Body>, next: Next) -> Response {
     if matches!(
         *request.method(),
@@ -121,7 +151,8 @@ async fn origin_guard(request: Request<Body>, next: Next) -> Response {
         if let Some(origin) = request.headers().get(header::ORIGIN) {
             if let Ok(origin) = origin.to_str() {
                 let allowed = web_origins().iter().any(|item| item == origin)
-                    || same_origin(&request).as_deref() == Some(origin);
+                    || same_origin(&request).as_deref() == Some(origin)
+                    || dev_proxy_origin(&request, origin);
                 if !allowed {
                     return (
                         StatusCode::FORBIDDEN,

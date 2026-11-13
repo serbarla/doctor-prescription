@@ -31,12 +31,8 @@ pub async fn fetch_session() -> Option<SessionUser> {
     }
 }
 
-pub async fn sign_up(
-    name: &str,
-    email: &str,
-    password: &str,
-) -> Result<Option<SessionUser>, String> {
-    let value = post_json(
+pub async fn sign_up(name: &str, email: &str, password: &str) -> Result<Value, String> {
+    post_json(
         "/api/auth/sign-up/email",
         json!({
             "name": name,
@@ -45,12 +41,10 @@ pub async fn sign_up(
             "rememberMe": true
         }),
     )
-    .await?;
-    Ok(parse_session_user(&value))
+    .await
 }
-
-pub async fn sign_in(email: &str, password: &str) -> Result<Option<SessionUser>, String> {
-    let value = post_json(
+pub async fn sign_in(email: &str, password: &str) -> Result<Value, String> {
+    post_json(
         "/api/auth/sign-in/email",
         json!({
             "email": email,
@@ -58,11 +52,56 @@ pub async fn sign_in(email: &str, password: &str) -> Result<Option<SessionUser>,
             "rememberMe": true
         }),
     )
-    .await?;
-    Ok(parse_session_user(&value))
+    .await
 }
-
 pub async fn sign_out() -> Result<(), String> {
     post_json("/api/auth/sign-out", json!({})).await?;
     Ok(())
+}
+
+pub fn is_mfa_required(value: &Value) -> bool {
+    value
+        .get("mfaRequired")
+        .and_then(|flag| flag.as_bool())
+        .unwrap_or(false)
+}
+
+pub fn mfa_ticket(value: &Value) -> Option<String> {
+    string_field(value, &["mfaTicket"])
+}
+
+pub async fn verify_mfa(ticket: &str, code: &str) -> Result<Value, String> {
+    post_json(
+        "/api/auth/mfa/verify",
+        json!({ "ticket": ticket, "code": code }),
+    )
+    .await
+}
+
+pub async fn enroll_mfa() -> Result<Value, String> {
+    post_json("/api/auth/mfa/enroll", json!({})).await
+}
+
+pub async fn confirm_mfa(code: &str) -> Result<Value, String> {
+    post_json("/api/auth/mfa/confirm", json!({ "code": code })).await
+}
+
+pub async fn disable_mfa(password: &str) -> Result<Value, String> {
+    post_json("/api/auth/mfa/disable", json!({ "password": password })).await
+}
+
+pub async fn mfa_status() -> Result<bool, String> {
+    let value = get_json("/api/auth/mfa/status").await?;
+    Ok(value
+        .get("enabled")
+        .and_then(|flag| flag.as_bool())
+        .unwrap_or(false))
+}
+
+pub async fn change_password(current: &str, new: &str) -> Result<Value, String> {
+    post_json(
+        "/api/auth/change-password",
+        json!({ "currentPassword": current, "newPassword": new }),
+    )
+    .await
 }

@@ -35,6 +35,7 @@
 | Tax (v1.1) | `tax_rates` table, basis points, effective-dated | IVA is 15% today and may change; the rate is data, never a constant, and each transaction snapshots the rate it used. |
 | Audit retention | 5 years, append-only | Matches the PRD §8 assumption; audit rows are never rewritten and no purge job runs before the window. |
 | Refunds (v1.1) | same-day automatic API Reverse; later refunds manual by the Administrator | Matches PayPhone's same-day Reverse limit (FR-066); every refund writes an audit row and `status='reversed'`. |
+| Text entry (D-21) | forms and inputs only; plain-text values in `TEXT` columns and structured `doc_json` | No rich-text editor, no WYSIWYG, no HTML: single-line inputs, multi-line textareas, selects, and check controls hold plain text (no formatting) online and offline; the form emits `doc_json`, and raw HTML is never stored |
 
 ## 2. Table overview
 
@@ -125,7 +126,7 @@ Auth relationship: `profiles.auth_user_id` → `users.id` (1:1). `sessions.devic
 | `assets.status` | `pending`, `ready` |
 | `assets.content_type` | `image/jpeg`, `image/png` |
 | `devices.platform` | `macos`, `windows`, `web` |
-| `outbox.operation` | `create_patient`, `update_patient`, `create_template`, `publish_template_version`, `create_prescription`, `upsert_prescription_item`, `sign_prescription`, `void_prescription`, `supersede_prescription` |
+| `outbox.operation` | `create_patient`, `update_patient`, `create_template`, `publish_template_version`, `create_prescription`, `update_prescription`, `upsert_prescription_item`, `sign_prescription`, `void_prescription`, `supersede_prescription` |
 | `outbox.status` | `pending`, `failed` |
 | `tax_rates.name` | `IVA` |
 | `plans.code` | `monthly`, `yearly` |
@@ -269,7 +270,7 @@ CREATE TABLE template_versions (
   id             TEXT PRIMARY KEY,
   template_id    TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
   version_no     INTEGER NOT NULL,
-  doc_json       TEXT NOT NULL,                                       -- structured JSON built from form fields (never raw HTML)
+  doc_json       TEXT NOT NULL,                                       -- structured JSON built from form fields, plain text only (never raw HTML)
   variables_spec TEXT NOT NULL,                                       -- JSON: known variables
   theme          TEXT,                                                -- JSON: colors/fonts/margins
   status         TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
@@ -297,7 +298,7 @@ CREATE TABLE prescriptions (
   rx_block_id         TEXT REFERENCES rx_blocks(id),
   diagnosis           TEXT,
   validity            TEXT,                                           -- validity/recommendations (FR-010)
-  instructions        TEXT,                                           -- general instructions (text, D-21)
+  instructions        TEXT,                                           -- general instructions (plain text from a form textarea, D-21)
   signed_at           TEXT,
   synced_at           TEXT,                                           -- server: set when accepted from the outbox; cache: NULL = not yet uploaded
   voided_at           TEXT,
@@ -584,6 +585,7 @@ CREATE TABLE asset_cache (
 - **Images offline (FR-040):** cache every image pinned by a cached published template; verify `sha256` before rendering; never evict an image still referenced by a cached template; local filenames use the asset id only; the cache cap is per asset at the 10 MiB upload cap (logo + one library image ≤ 20 MiB in v1; 60 MiB at the v1.1 five-image quota plus logo). New image uploads are online-only; the outbox carries no image bytes.
 - **Retention (FR-042):** cache evicts **server-backed** prescriptions older than `clinics.retention_days` (default 30). Eviction removes only local rows, never server data; re-download on demand. Rows with no server copy (local `synced_at IS NULL` or still in `outbox`) are never evicted — they are the only copy.
 - **Entitlement cache (v1.1):** `sync_meta` stores `entitlement_status`, `entitlement_checked_at`, `trial_ends_at`, `server_retention_until`, `image_quota`, `image_render_limit`, and `sync_locked_reason` for offline UI. v1 caches only `last_synced_at`, the active `rx_block`, and `image_quota=1`; there is no entitlement to cache.
+- **Session persistence (offline restart):** `sync_meta` stores `session_token`, `session_user`, `session_profile`, `session_expires_at`. Token is the server opaque token (30-day expiry), stored plaintext in the app-data dir (`0700`); the client resends it as the `persona_session` cookie and restores user + profile at startup without network. Server acceptance is authoritative: a reachable server returning no session, sign-out, or local expiry clears all four keys.
 - **`pending_sync` is client-derived**, not a server column: a prescription whose sign/upload still sits in `outbox` renders as `pending_sync` (FR-043, `/prescriptions?status=pending_sync`). Its PDF carries `PENDIENTE DE SINCRONIZACIÓN` and the QR is inactive until the upload succeeds.
 - **PDFs are not stored** on the server or in the local cache: `printpdf` renders bytes on demand from the pinned `template_versions.doc_json` + items + variables (PRD FR-030). No `pdf_blob`/`pdf_path` column exists; desktop renders in-process through the same module, so an offline reprint needs no cached PDF file.
 - **`sync_locked` (v1.1):** the outbox keeps growing while billing is locked; rows are never discarded. After renewal, drain oldest-first with the existing `client_id` idempotency; show size/count so the user knows what is pending. v1 never locks sync.

@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use anyhow::Result;
+use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::http::{header, HeaderValue, Method, Request, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -9,12 +13,15 @@ use diesel::sql_types::{Integer, Text};
 use dioxus::server::{DioxusRouterExt, ServeConfig};
 use serde_json::json;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::api_server;
 use crate::assets;
 use crate::auth_server::{self, AppState};
 use crate::db;
 use crate::pdf_server;
+use crate::sync_server;
+use crate::verify_server;
 
 #[derive(QueryableByName)]
 struct ForeignKeysPragma {
@@ -55,11 +62,19 @@ async fn health(State(state): State<AppState>) -> Response {
     }
 }
 
-fn cors_layer() -> Option<CorsLayer> {
-    let origins: Vec<HeaderValue> = std::env::var("PERSONA_WEB_ORIGINS")
-        .ok()?
+fn web_origins() -> Vec<String> {
+    std::env::var("PERSONA_WEB_ORIGINS")
+        .unwrap_or_default()
         .split(',')
-        .filter_map(|origin| HeaderValue::from_str(origin.trim()).ok())
+        .map(|origin| origin.trim().to_owned())
+        .filter(|origin| !origin.is_empty())
+        .collect()
+}
+
+fn cors_layer() -> Option<CorsLayer> {
+    let origins: Vec<HeaderValue> = web_origins()
+        .iter()
+        .filter_map(|origin| HeaderValue::from_str(origin).ok())
         .collect();
     if origins.is_empty() {
         return None;
@@ -77,6 +92,69 @@ fn cors_layer() -> Option<CorsLayer> {
             ])
             .allow_headers([header::CONTENT_TYPE, header::COOKIE]),
     )
+}
+
+fn same_origin(request: &Request<Body>) -> Option<String> {
+    let host = request.headers().get(header::HOST)?.to_str().ok()?;
+    let scheme = request
+        .headers()
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("http");
+    Some(format!("{scheme}://{host}"))
+}
+
+async fn origin_guard(request: Request<Body>, next: Next) -> Response {
+    if matches!(
+        *request.method(),
+        Method::POST | Method::PUT | Method::DELETE | Method::PATCH
+    ) {
+        if let Some(origin) = request.headers().get(header::ORIGIN) {
+            if let Ok(origin) = origin.to_str() {
+                let allowed = web_origins().iter().any(|item| item == origin)
+                    || same_origin(&request).as_deref() == Some(origin);
+                if !allowed {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({
+                            "code": "origin_rejected",
+                            "message": "Origin no permitido.",
+                        })),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
+    next.run(request).await
+}
+
+fn security_headers(router: Router, cookie_secure: bool) -> Router {
+    let csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'";
+    let router = router.layer(SetResponseHeaderLayer::overriding(
+        header::HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(csp),
+    ));
+    let router = router.layer(SetResponseHeaderLayer::overriding(
+        header::HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    ));
+    let router = router.layer(SetResponseHeaderLayer::overriding(
+        header::HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("same-origin"),
+    ));
+    let router = router.layer(SetResponseHeaderLayer::overriding(
+        header::HeaderName::from_static("x-frame-options"),
+        HeaderValue::from_static("SAMEORIGIN"),
+    ));
+    if cookie_secure {
+        router.layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("strict-transport-security"),
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+    } else {
+        router
+    }
 }
 
 pub async fn router() -> Result<Router> {
@@ -98,6 +176,15 @@ pub async fn router() -> Result<Router> {
         .route("/api/auth/sign-in/email", post(auth_server::sign_in))
         .route("/api/auth/get-session", get(auth_server::get_session))
         .route("/api/auth/sign-out", post(auth_server::sign_out))
+        .route("/api/auth/mfa/verify", post(auth_server::mfa_verify))
+        .route("/api/auth/mfa/enroll", post(auth_server::mfa_enroll))
+        .route("/api/auth/mfa/confirm", post(auth_server::mfa_confirm))
+        .route("/api/auth/mfa/disable", post(auth_server::mfa_disable))
+        .route("/api/auth/mfa/status", get(auth_server::mfa_status))
+        .route(
+            "/api/auth/change-password",
+            post(auth_server::change_password),
+        )
         .with_state(state.clone());
 
     let app_router = Router::new()
@@ -105,13 +192,24 @@ pub async fn router() -> Result<Router> {
         .with_state(state.clone())
         .merge(auth_router)
         .merge(api_server::router(state.clone()))
-        .merge(pdf_server::router(state));
+        .merge(pdf_server::router(state.clone()))
+        .merge(sync_server::router(state.clone()))
+        .merge(verify_server::router(state));
     let app_router = match cors_layer() {
         Some(cors) => app_router.layer(cors),
         None => app_router,
     };
+    let app_router = app_router.layer(middleware::from_fn(origin_guard));
+    let auth_limiter = Arc::new(auth_server::AuthRateLimiter::new());
+    let app_router = app_router.layer(middleware::from_fn_with_state(
+        auth_limiter,
+        auth_server::auth_rate_limit,
+    ));
 
-    Ok(Router::new()
+    let limiter = std::sync::Arc::new(verify_server::VerifyRateLimiter::new());
+    let router = Router::new()
         .serve_dioxus_application(ServeConfig::new(), crate::App)
-        .merge(app_router))
+        .merge(app_router);
+    let router = security_headers(router, cookie_secure);
+    Ok(verify_server::layer(router, limiter))
 }

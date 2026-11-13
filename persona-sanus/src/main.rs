@@ -29,11 +29,11 @@ mod server;
 mod service;
 #[cfg(feature = "server")]
 mod sync_server;
-#[cfg(feature = "server")]
-mod verify_server;
 #[cfg(any(feature = "server", feature = "desktop"))]
 #[allow(dead_code)]
 mod update;
+#[cfg(feature = "server")]
+mod verify_server;
 use api::Me;
 use auth::SessionUser;
 use dioxus::prelude::*;

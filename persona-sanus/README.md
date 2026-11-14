@@ -30,6 +30,23 @@ dx serve --fullstack
 
 Open `http://127.0.0.1:8080`, sign up at `/login`, then visit the protected `/dashboard` route.
 
+Debug builds also mount a read-only SQLite browser at `http://127.0.0.1:8080/dev/db` (`src/dev_db.rs`). It lists the live schema, paginates every table, shows the DDL, and runs read-only SQL against `DATABASE_URL`.
+
+| Surface | Purpose |
+|---|---|
+| `/dev/db` | Browser UI |
+| `/dev/db/api/tables` | Tables and views from `sqlite_master` |
+| `/dev/db/api/table?name=…&limit=…&offset=…` | Paginated table rows and column metadata (max 500 rows) |
+| `/dev/db/api/query?sql=…` | Read-only SQL console (max 500 rows, one statement) |
+
+Guards:
+
+- Only compiled with `debug_assertions`; `dx serve --release --fullstack` and release binaries return 404.
+- Loopback peer addresses only; non-loopback connections return 403.
+- SQLite is opened with `SQLITE_OPEN_READONLY`.
+- Writes are rejected via `sqlite3_stmt_readonly`; multiple statements are rejected.
+- GET only; no write endpoint is mounted.
+
 Environment variables (all optional in development):
 
 | Variable | Default | Purpose |

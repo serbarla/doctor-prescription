@@ -368,9 +368,22 @@ pub struct NewAuditLog<'a> {
     pub at: &'a str,
 }
 
+pub fn database_url() -> String {
+    env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://app.db".to_owned())
+}
+
+pub fn database_path() -> String {
+    let database_url = database_url();
+    let path = database_url
+        .strip_prefix("sqlite://")
+        .or_else(|| database_url.strip_prefix("sqlite:"))
+        .unwrap_or(&database_url);
+    path.split('?').next().unwrap_or(path).to_owned()
+}
+
 pub fn connect() -> Result<DbPool> {
-    let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://app.db".to_owned());
-    ensure_parent_dir(&database_url)?;
+    let database_url = database_url();
+    ensure_parent_dir(&database_path())?;
     let manager = ConnectionManager::<SqliteConnection>::new(database_url);
     let pool = Pool::builder()
         .max_size(8)

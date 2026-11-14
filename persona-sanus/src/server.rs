@@ -237,6 +237,14 @@ pub async fn router() -> Result<Router> {
         .merge(pdf_server::router(state.clone()))
         .merge(sync_server::router(state.clone()))
         .merge(verify_server::router(state));
+    #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+    let app_router = {
+        println!(
+            "dev sqlite browser mounted at /dev/db for {}",
+            db::database_path()
+        );
+        app_router.merge(crate::dev_db::router())
+    };
     let app_router = match cors_layer() {
         Some(cors) => app_router.layer(cors),
         None => app_router,

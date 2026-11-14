@@ -13,6 +13,8 @@ mod assets;
 mod auth_server;
 #[cfg(feature = "server")]
 mod db;
+#[cfg(all(feature = "server", not(target_arch = "wasm32"), debug_assertions))]
+mod dev_db;
 mod forms;
 mod http;
 #[cfg(feature = "server")]

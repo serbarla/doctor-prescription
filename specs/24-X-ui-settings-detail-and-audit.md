@@ -152,7 +152,7 @@ Fixed variants:
 - `ErrorText` for `message`.
 - `SectionCard title="Personal"`:
   - If `users()` is empty: `EmptyState title="Sin usuarios" description="No hay usuarios para mostrar."`.
-  - Else `DataTable columns: vec!["Persona","Correo","Alta","Estado","Rol","Acciones"]` and plain rows. Cells:
+  - Else `DataTable columns: vec!["Persona".to_owned(),"Correo".to_owned(),"Alta".to_owned(),"Estado".to_owned(),"Rol".to_owned(),"Acciones".to_owned()]` and plain rows. Cells:
     - Persona: `display_name`.
     - Correo: `email`.
     - Alta: `format_date(created_at)`.
@@ -161,7 +161,7 @@ Fixed variants:
     - Acciones: Danger `Quitar del equipo` when `row.role.is_some()` calls `api::remove_member`; Danger `Deshabilitar` when active or Secondary `Habilitar` when disabled calls `api::disable_profile`; each success `refresh += 1`.
 - `SectionCard title="Dispositivos" description="Equipos registrados y su último acceso."`:
   - If `devices()` is empty: `EmptyState title="Sin dispositivos" description="No hay equipos registrados."`.
-  - Else `DataTable columns: vec!["Equipo","Plataforma","Versión","Última conexión","Estado","Acciones"]`:
+  - Else `DataTable columns: vec!["Equipo".to_owned(),"Plataforma".to_owned(),"Versión".to_owned(),"Última conexión".to_owned(),"Estado".to_owned(),"Acciones".to_owned()]`:
     - Equipo: `{profile_name} · {device_name_label(device)}`.
     - Plataforma: `platform_label(&platform)`.
     - Versión: `app_version` or `—`.
@@ -196,7 +196,7 @@ Fixed variants:
 - Add `loaded` false; set false at the start of every fetch and true after the `fetch_audit` `match` resolves. `LoadingState` while `!loaded()`.
 - `ErrorText` for `message` when non-empty.
 - `EmptyState title="Sin eventos"` when `rows().is_empty() && loaded()`.
-- Else `DataTable columns: vec!["Fecha","Actor","Acción","Entidad","ID entidad","Metadatos"]`; `Fecha` uses `format_timestamp(&row.at)`; `Actor` uses `row.actor_name.clone().unwrap_or_else(|| row.actor_id.clone().unwrap_or_default())`; `Metadatos` renders `code.ui-mono` with `row.metadata`.
+- Else `DataTable columns: vec!["Fecha".to_owned(),"Actor".to_owned(),"Acción".to_owned(),"Entidad".to_owned(),"ID entidad".to_owned(),"Metadatos".to_owned()]`; `Fecha` uses `format_timestamp(&row.at)`; `Actor` uses `row.actor_name.clone().unwrap_or_else(|| row.actor_id.clone().unwrap_or_default())`; `Metadatos` renders `code.ui-mono` with `row.metadata`.
 - Keep `api::fetch_audit(&action_value, &entity_value, &q_value)` and the admin guard.
 - Only Primary: `Filtrar`.
 

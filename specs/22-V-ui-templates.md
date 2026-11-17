@@ -137,8 +137,8 @@ The form's save button keeps the busy label `Guardando...` and disables while `s
 - Header Primary `ButtonLink` `Nueva plantilla` -> `Route::TemplateNew {}`.
 - Add `loaded` set true after the fetch resolves; `LoadingState` while `!loaded()`.
 - Access denied keeps `Notice tone="Error"` and its existing copy.
-- Empty: `EmptyState title="Todavía no hay plantillas."` with the default empty description.
-- Row: `ListRow title={template.name}`; meta `[owner_label, format!("Versión {n}")]`; badge `TemplateStatusBadge { status }`; actions Secondary `Editar` -> `Route::TemplateEdit { id }`, and Secondary `Vista previa` -> `Route::TemplatePreview { id }` only when `status != "archived"`.
+- Empty: `EmptyState title="Todavía no hay plantillas." description=""`.
+- Row: `ListRow title={template.name}`; meta={vec![owner_label.to_owned(), format!("Versión {n}")]}; badge `TemplateStatusBadge { status }`; actions Secondary `Editar` -> `Route::TemplateEdit { id }`, and Secondary `Vista previa` -> `Route::TemplatePreview { id }` only when `status != "archived"`.
 - Only Primary: `Nueva plantilla`.
 
 ### TemplateNew
@@ -160,7 +160,7 @@ The form's save button keeps the busy label `Guardando...` and disables while `s
 - Active: `TemplateDocumentForm` with the existing `template_id`, `version_id`, `initial_doc`, `initial_margin_mm`, `on_saved`, and generation key.
 - `ErrorText { text: message }` for the page message.
 - `ActionRow`: Primary `Publicar versión` (disabled while `saved_draft().is_none()`), Secondary `Recargar`, Danger `Archivar plantilla`.
-- Archive: Danger trigger toggles `ConfirmPanel`; panel message `La plantilla archivada no admite cambios.`, confirm label `Confirmar archivo`, cancel `Cancelar`, busy from the existing archive signal, confirm calls the existing archive dispatch, cancels without a call.
+- Archive: Danger trigger toggles `ConfirmPanel`; panel message `La plantilla archivada no admite cambios.`, confirm label `Confirmar archivo`, cancel `Cancelar`, busy: false; the existing archive dispatch is immediate, confirm calls the existing archive dispatch, cancels without a call.
 - Keep all publish/archive dispatch bodies and generation increments.
 - Only Primary: `Publicar versión`.
 
@@ -189,7 +189,8 @@ The form's save button keeps the busy label `Guardando...` and disables while `s
 | Selector | Values |
 |---|---|
 | `.ui-preview-canvas` | overflow-x auto, padding 24px, Cream background, 1px hairline, radius 24 |
-| `.ui-variable-row` | grid `1fr auto`, gap 12, align-end, margin-bottom 12; one column below 640 |
+
+`16-P` owns `.ui-variable-row` (grid `1fr auto`, gap 12, align-end, margin-bottom 12; one column below 640); this spec only consumes it.
 
 No new literal colour outside `:root`; no drop shadow; no second stylesheet. The form's cards use the shared `.ui-card` surface; no `.template-editor`/`.editor-section` style hook remains in RSX after adoption.
 
@@ -202,7 +203,7 @@ These are hints; reread before editing.
 | `persona-sanus/src/main.rs` | `Templates` 3567; `TemplateNew` 3680; `TemplateEdit` 3788; `TemplatePreview` 4049; `enum Route` 48-93 |
 | `persona-sanus/src/forms.rs` | `A4Preview` 463; `TemplateDocumentForm` 635; `SCHEMA_VERSION` 9; `TEMPLATE_VARIABLES` 11; `parse_document`; `validate_document`; `paginate_document`; `save_document` |
 | `persona-sanus/src/ui/mod.rs` | Components consumed by these pages |
-| `persona-sanus/assets/main.css` | Add `.ui-preview-canvas` and `.ui-variable-row`; keep legacy selectors until `25-Y` |
+| `persona-sanus/assets/main.css` | Add `.ui-preview-canvas`; `.ui-variable-row` is owned by 16-P and consumed here; keep legacy selectors until `25-Y` |
 | `context/PRD.md` | FR-020/021/023/024, FR-080–085, D-06, D-21 |
 | `context/sitemap.md` | template routes; role matrix §2 |
 

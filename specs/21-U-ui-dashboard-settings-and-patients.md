@@ -24,7 +24,7 @@ This spec is markup adoption. Do not change authorization, session, API argument
 - [ ] Adopt Dashboard — requirements: use `PageShell id="dashboard-page"` and `PageHeader title="Panel"` with the session subtitle `{name} · {email}`. Render `LoadingState` while `checked` is false. Keep the signed-out `navigator.replace(Route::AuthPage {})` guard. In the signed-in branch render `SectionCard title="Sesión"` with `DetailGrid` items `Nombre` (session.name), `Correo` (session.email), `Rol` (Badge with `role_label(profile.role)` when a profile exists, else Neutral `Sin rol`), and `Clínica` (`profile.clinic.name` when present, else exact `Sin clínica asignada.`). Remove the duplicate page-level `Cerrar sesión` control; the navbar owns sign-out. No Primary action; commands: `cd persona-sanus && cargo check`.
 - [ ] Adopt Settings — requirements: use `PageShell id="settings-page"` and `PageHeader title="Configuración" subtitle="Administra el acceso del personal y tu perfil."`. Render `div.ui-link-grid` with Secondary `ButtonLink` `ui-link-card`s `Usuarios y roles` -> `Route::SettingsUsers {}`, `Clínica y biblioteca` -> `Route::SettingsClinic {}`, `Mi perfil` -> `Route::SettingsProfile {}`, admin-only `Auditoría` -> `Route::Audit {}`, and a debug-only `Sistema de diseño` -> `Route::DevUi {}`. Keep the existing redirects and the compile-time gate on the debug link. No Primary action; commands: `cd persona-sanus && cargo check`.
 - [ ] Adopt Patients — requirements: use `PageShell id="patients-page"` and `PageHeader title="Pacientes" subtitle="Busca por nombre o cédula dentro de tu clínica."`; render the Primary `ButtonLink` `Nuevo paciente` to `Route::PatientNew {}` only when `profile.can_write_patients()`. Add `let mut loaded = use_signal(|| false);`, set it true once after every fetch branch resolves (including the desktop fallback), and render `LoadingState` while `!loaded()`. Replace the search input with `SearchField label="Buscar paciente"` bound to `query`; keep the existing search effect and arguments. Render `EmptyState title="Sin pacientes" description="No hay pacientes para esta búsqueda."` when the list is empty. Render each result as `ListRow` with title `full_name`, meta `["Cédula {national_id or —}", "Nacimiento {format_date(birth_date) or —}"]`, and a Secondary `Ver ficha` child to `Route::PatientDetail { id }`. Keep the desktop local fallback. The only Primary is `Nuevo paciente`; commands: `cd persona-sanus && cargo check`.
-- [ ] Adopt PatientNew — requirements: use `PageShell id="patients-page"`, `PageHeader title="Nuevo paciente"` with a Secondary `Cancelar` header action to the existing target route. Put the fields in `Card` > `FormGrid columns: Two`: `TextField` for names, cédula, birth date (`input_type="date"`, `step="date"`), and tel; `SelectField` for sex; `TextAreaField wide` for notes. Keep every signal, initial value, validation, dedup check, and `submit_new_patient` call. When `warning_ids` is non-empty, render a Warning `Notice` with the existing warning message and a Danger `Button` `Crear de todas formas` that calls the existing confirmed submit. Render `ErrorText` only for a non-warning error. `ActionRow` has the only Primary, `Guardar paciente`; commands: `cd persona-sanus && cargo check`.
+- [ ] Adopt PatientNew — requirements: use `PageShell id="patients-page"`, `PageHeader title="Nuevo paciente"` with a Secondary `Cancelar` header action to the existing target route. Put the fields in `Card` > `FormGrid columns: Two`: `TextField` for names, cédula, birth date (`input_type="date"`, `step="1"`), and tel; `SelectField` for sex; `TextAreaField wide` for notes. Keep every signal, initial value, validation, dedup check, and `submit_new_patient` call. When `warning_ids` is non-empty, render a Warning `Notice` with the existing warning message and a Danger `Button` `Crear de todas formas` that calls the existing confirmed submit. Render `ErrorText` only for a non-warning error. `ActionRow` has the only Primary, `Guardar paciente`; commands: `cd persona-sanus && cargo check`.
 - [ ] Adopt PatientDetail — requirements: use `PageShell id="patients-page"` and `PageHeader title={full_name} subtitle="Ficha del paciente"`. Header actions, in order: Secondary `Editar` when `can_write_patients`, else Neutral `Badge` `Solo lectura`; Primary `Nueva receta` when `can_create_prescriptions()`; Secondary `Historial de recetas` using the existing target. Keep every guard and navigation target. Render demographics in `Card` > `DetailGrid`/`DetailItem`. Delete is a Danger `Eliminar paciente` inside a `ConfirmPanel` with confirm `Confirmar eliminación`; keep the delete API and navigation. Use `ErrorText` for errors. The only Primary is `Nueva receta` and only when allowed; commands: `cd persona-sanus && cargo check`.
 - [ ] Adopt PatientEdit — requirements: use `PageShell id="patients-page"`, `PageHeader title="Editar paciente"` with a Secondary `Cancelar` header action. Put the same fields in `Card` > `FormGrid`; keep every signal, initial value, and validation. Use `ErrorText` for errors and `ActionRow` with the only Primary `Guardar cambios`; keep the existing update dispatch and navigation; commands: `cd persona-sanus && cargo check`.
 
@@ -110,6 +110,10 @@ These six pages cover the administrative frame of the app. They are independent 
 | Existing API arguments and desktop fallbacks | Keep exactly. Do not add a `loaded` argument to a fetch. |
 | `.a4-*` CSS | Not touched by these pages. |
 
+## 7. Component surface
+
+No new Rust components. This spec consumes the primitives named in section 8.
+
 ## 8. Page adoption
 
 ### Dashboard
@@ -153,7 +157,7 @@ These six pages cover the administrative frame of the app. They are independent 
 - `Card` > `FormGrid columns: FormColumns::Two` with:
   - `TextField label="Nombres completos"` bound to the existing names signal.
   - `TextField label="Cédula"` bound to national id.
-  - `TextField label="Fecha de nacimiento" input_type="date" step="date"` bound to birth date.
+  - `TextField label="Fecha de nacimiento" input_type="date" step="1"` bound to birth date.
   - `TextField label="Teléfono" input_type="tel"` bound to phone.
   - `SelectField label="Sexo"` with the existing options; preserve `sex` value.
   - `TextAreaField label="Notas" wide` bound to notes.
@@ -170,7 +174,7 @@ These six pages cover the administrative frame of the app. They are independent 
   - Primary `ButtonLink` `Nueva receta` -> `Route::PrescriptionNew { patient_id: Some(id.clone()), template_id: None }` when `profile.can_create_prescriptions()`.
   - Secondary `ButtonLink` `Historial de recetas` to the existing target.
 - Demographics in `Card` > `DetailGrid` / `DetailItem`.
-- Delete block: Danger `Button` `Eliminar paciente` toggling the existing confirmation state; `ConfirmPanel` with the existing message, Danger confirm `Confirmar eliminación`, Secondary cancel `Cancelar`, busy from the existing saving signal, and the existing delete API/navigation.
+- Delete block: Danger `Button` `Eliminar paciente` toggling the existing confirmation state; `ConfirmPanel` with the existing message, Danger confirm `Confirmar eliminación`, Secondary cancel `Cancelar`, busy from the existing deleting signal, and the existing delete API/navigation.
 - Use `ErrorText` for the error signal.
 - Only Primary: `Nueva receta` when allowed; otherwise none.
 

@@ -122,15 +122,15 @@ New components live only in `persona-sanus/src/ui/`. There is no second styling 
 
 ## 7. Component surface
 
-All symbols are re-exported from `src/ui/mod.rs`; `main.rs` and `forms.rs` import them explicitly. Every interactive control renders with `aria-*` where stated, a visible `:focus-visible` ring, and no drop shadow. `Button` and `LinkAction` both use `.ui-button`, so their geometry is identical.
+All symbols are re-exported from `src/ui/mod.rs`; `main.rs` and `forms.rs` import them explicitly. Every interactive control renders with `aria-*` where stated, a visible `:focus-visible` ring, and no drop shadow. `Button` and `LinkAction` both use `.ui-button`, so their geometry is identical. Fields marked `#[props(default)]` are optional; unmarked fields are required.
 
 ### Icons and actions
 
-- `Button`: `variant: ButtonVariant = Primary`, `button_type: String = "button"`, `disabled: bool`, `loading: bool`, `extra_class: String`, `onclick: EventHandler<MouseEvent> = no-op`, `children`. Renders `button.ui-button.ui-button--{variant}` with `type=button_type`, `disabled=disabled || loading`, and `aria-busy="true"` while loading. No shadow.
-- `ButtonLink`: `#[props(into)] to: NavigationTarget`, `variant`, `active_class: Option<String>`, `extra_class`, `children`. Renders Dioxus `Link` with `.ui-button` classes and passes the active class through. Used only for in-app navigation.
-- `LinkAction`: `href: String`, `variant`, `target: Option<String>`, `rel: Option<String>`, `extra_class`, `children`. Renders `<a class="ui-button ...">`; omits `target` and `rel` when `None`. Used for PDF, print, share, export, and external LLM links.
+- `Button`: `variant: ButtonVariant = Primary`, `button_type: String = "button"`, `#[props(default)] disabled: bool`, `#[props(default)] loading: bool`, `#[props(default)] extra_class: String`, `onclick: EventHandler<MouseEvent> = no-op`, `children`. Renders `button.ui-button.ui-button--{variant}` with `type=button_type`, `disabled=disabled || loading`, and `aria-busy="true"` while loading. No shadow.
+- `ButtonLink`: `#[props(into)] to: NavigationTarget`, `variant: ButtonVariant = Primary`, `active_class: Option<String>`, `#[props(default)] extra_class: String`, `children`. Renders Dioxus `Link` with `.ui-button` classes and passes the active class through. Used only for in-app navigation.
+- `LinkAction`: `href: String`, `variant: ButtonVariant = Primary`, `target: Option<String>`, `rel: Option<String>`, `#[props(default)] extra_class: String`, `children`. Renders `<a class="ui-button ...">`; omits `target` and `rel` when `None`. Used for PDF, print, share, export, and external LLM links.
 - `NavLink`: `#[props(into)] to: NavigationTarget`, `label: String`. Renders `Link.ui-nav-link` with `active_class: "ui-nav-link--active"`.
-- `Icon`: `name: IconName`, `size: u16 = 20`, `extra_class: String`. Renders a 24-unit `svg` with RSX attributes `view_box="0 0 24 24"`, `aria_hidden="true"`, `focusable="false"`, `stroke="currentColor"`, `stroke_width="1.5"`, `stroke_linecap="round"`, and `stroke_linejoin="round"`. The DOM output uses `viewBox` and `stroke-width`.
+- `Icon`: `name: IconName`, `size: u16 = 20`, `#[props(default)] extra_class: String`. Renders a 24-unit `svg` with RSX attributes `view_box="0 0 24 24"`, `aria_hidden="true"`, `focusable="false"`, `stroke="currentColor"`, `stroke_width="1.5"`, `stroke_linecap="round"`, and `stroke_linejoin="round"`. The DOM output uses `viewBox` and `stroke-width`.
 - `ButtonVariant`: `Primary`, `Secondary`, `Ghost`, `Danger`. Default `Primary`.
 - `IconName`: `Cross`, `Shield`, `Command`, `Windows`, `Globe`, `Check`, `Close`, `Alert`, `Info`, `Qr`, `ArrowRight`, `Lock`, `Image`. The filled `Cross` uses `fill="currentColor"` and no stroke; every other icon is a line icon.
 

@@ -1,6 +1,6 @@
 # Spec 25 — Phase Y: Legacy CSS removal and docs close
 
-- Source: `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` steps 17–18; `context/architecture.md` §3; `context/sitemap.md` §1.3; `context/PRD.md` §12; `context/Design.md` §§Tokens, Surfaces, Elevation, Layout, Agent Prompt Guide; `persona-sanus/README.md`.
+- Source: `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` steps 17–18; `context/architecture.md` §3; `context/sitemap.md` §1.1; `context/PRD.md` §12; `context/Design.md` §§Tokens, Surfaces, Elevation, Layout, Agent Prompt Guide; `persona-sanus/README.md`.
 - Depends on: 15-O, 16-P, 17-Q, 18-R, 19-S, 20-T, 21-U, 22-V, 23-W, 24-X.
 - Repo root: `/Users/sergiobarba/projects/doctor-prescriptions`. Every path and command below is relative to it.
 - Result carried forward: `persona-sanus/assets/main.css` contains only the token layer, the `.ui-*` component/utility layer, the A4 print projection, and the debug gallery rules; every legacy selector and page-ID width hook is gone; `#navbar` is a semantic id only; the docs name `src/ui` and `/dev/ui`; the full static, release, debug gallery, source-audit, and manual browser gates pass.
@@ -21,8 +21,8 @@ This is the final consolidation gate for the split UI work. It must not add a ne
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Remove the old style system — requirements: in `persona-sanus/assets/main.css`, delete every legacy selector and ID listed in section 8 after no release page emits it. Keep `.a4-*` as the print projection. Keep `#navbar` only as the semantic id on `header.ui-navbar`, never as a style hook. Replace every remaining page-ID width rule with `.ui-page` and `.ui-container`, including the narrow and reading variants. Reduce the `.a4-page` shadow to `var(--shadow-paper)` and replace its literal `#111111` with `var(--color-ink)`; do not change mm sizes, page boxes, pagination, QR layout, or print fonts. Do not add comments. Do not add a replacement page-specific selector; reuse the shared `.ui-*` layer. Keep the focus utility and the one-primary rule intact. Run the section 3 source audits against the section 8 list; commands: `cd persona-sanus && cargo fmt --check`; `cd persona-sanus && cargo check`; `cd persona-sanus && cargo clippy -- -D warnings`; `cd persona-sanus && cargo check --no-default-features --features desktop`.
-- [ ] Update the source-of-truth docs and close the split — requirements: add a `src/ui/` row to the module map in `context/architecture.md` describing a shared client module that owns the design-token contract and reusable UI primitives, and explicitly has no SQL, HTTP handlers, storage, or business rules. Add `/dev/ui` under `context/sitemap.md` §1.3 as a debug-only developer surface, not a product route. Add a short `Component library` section to `persona-sanus/README.md`: shared components live in `src/ui`, styles live in `assets/main.css`, debug builds expose `/dev/ui`, release builds do not expose the gallery. Do not edit `context/PRD.md`, `context/Design.md`, or billing status. When section 3 passes, move this file and every split predecessor from `specs/` to `specs/done/`; if any divergence is open, leave the owning file in `specs/` and record its tracking file; commands: `rg -n 'src/ui/' context/architecture.md`; `rg -n '/dev/ui' context/sitemap.md`; `rg -n 'Component library|/dev/ui|src/ui' persona-sanus/README.md`.
+- [ ] Remove the old style system — requirements: in `persona-sanus/assets/main.css`, delete every legacy selector and ID listed in section 8 after no release page emits it. Keep `.a4-*` as the print projection. Keep `#navbar` only as the semantic id on `header.ui-navbar`, never as a style hook. Replace every remaining page-ID width rule with `.ui-page` and `.ui-container`; `.ui-container--narrow` and `.ui-container--reading` are only for explicit markup and are not exposed by `PageShell`. Reduce the `.a4-page` shadow to `var(--shadow-paper)` and replace its literal `#111111` with `var(--color-ink)`; do not change mm sizes, page boxes, pagination, QR layout, or print fonts. Do not add comments. Do not add a replacement page-specific selector; reuse the shared `.ui-*` layer. Keep the focus utility and the one-primary rule intact. Run the section 3 source audits against the section 8 list; commands: `cd persona-sanus && cargo fmt --check`; `cd persona-sanus && cargo check`; `cd persona-sanus && cargo clippy -- -D warnings`; `cd persona-sanus && cargo check --no-default-features --features desktop`.
+- [ ] Update the source-of-truth docs and close the split — requirements: add a `src/ui/` row to the module map in `context/architecture.md` describing a shared client module that owns the design-token contract and reusable UI primitives, and explicitly has no SQL, HTTP handlers, storage, or business rules. Add `/dev/ui` under `context/sitemap.md` §1.1 Public as a debug-only developer surface, not a product route. Add a short `Component library` section to `persona-sanus/README.md`: shared components live in `src/ui`, styles live in `assets/main.css`, debug builds expose `/dev/ui`, release builds do not expose the gallery. Do not edit `context/PRD.md`, `context/Design.md`, or billing status. When section 3 passes, move this file and every split predecessor from `specs/` to `specs/done/`; if any divergence is open, leave the owning file in `specs/` and record its tracking file; commands: `rg -n 'src/ui/' context/architecture.md`; `rg -n '/dev/ui' context/sitemap.md`; `rg -n 'Component library|/dev/ui|src/ui' persona-sanus/README.md`.
 
 ## 2. No-go
 
@@ -122,12 +122,12 @@ Expected: all five return no matches (exit 1). The first command is checked from
 - [ ] Extra visual/source audits pass:
 ```
 rg -n -P 'box-shadow:\s*(?!none\b|0 0 0 3px var\(--color-mint-halo\)|var\(--shadow-paper\))' persona-sanus/src/ui persona-sanus/assets/main.css
-rg -n 'font-weight: *700|font-weight: *bold' persona-sanus/src/ui persona-sanus/assets/main.css
+rg -n -B1 'font-weight: *700|font-weight: *bold' persona-sanus/src/ui persona-sanus/assets/main.css
 rg -n -i '#000000|#000\b|rgb\(0,\s*0,\s*0\)|color:\s*black' persona-sanus/assets/main.css persona-sanus/src/ui
-rg -n 'animation:' persona-sanus/assets/main.css
+rg -n -B1 'animation:' persona-sanus/assets/main.css
 rg -n '#111111|0 2px 12px rgba\(0, 0, 0, 0\.18\)' persona-sanus/assets/main.css
 ```
-Expected: the first, third, and fifth return no matches; the second returns only `.a4-doctor`; the fourth returns only `.ui-spinner`. No `font-weight: 700` outside the A4 document projection.
+Expected: the first, third, and fifth return no matches; the second prints one block at `.a4-doctor`; the fourth prints only `.ui-spinner` blocks: the base animation and the reduced-motion override. No `font-weight: 700` outside the A4 document projection.
 
 - [ ] Docs checks pass:
 ```
@@ -135,7 +135,7 @@ rg -n 'src/ui/' context/architecture.md
 rg -n '/dev/ui' context/sitemap.md
 rg -n 'Component library|/dev/ui|src/ui' persona-sanus/README.md
 ```
-Expected: architecture has the shared client module row with `no SQL, HTTP handlers, storage, or business rules`; sitemap §1.3 labels `/dev/ui` debug-only and not a product route; README has the `Component library` section with `src/ui`, `assets/main.css`, `/dev/ui`, and release absence. Diff review confirms `context/PRD.md` and `context/Design.md` were not edited, and no billing status or `/settings/billing` surface changed.
+Expected: architecture has the shared client module row with `no SQL, HTTP handlers, storage, or business rules`; sitemap §1.1 Public labels `/dev/ui` debug-only and not a product route; README has the `Component library` section with `src/ui`, `assets/main.css`, `/dev/ui`, and release absence. Diff review confirms `context/PRD.md` and `context/Design.md` were not edited, and no billing status or `/settings/billing` surface changed.
 
 - [ ] Manual browser gate passes with a throwaway database:
 ```
@@ -211,7 +211,7 @@ The docs currently describe `main.rs` as the UI owner and `src/forms.rs` as the 
 | `.a4-*` selectors | Keep every geometry selector. Only the shadow token and Ink literal are allowed to change. |
 | `.ui-*` selectors and tokens | Keep. This spec may not delete a shared class still used by every page. |
 | `format_*`, label helpers | Keep in `src/ui/format.rs`. |
-| Old page-ID width rules | Replace with `.ui-page`/`.ui-container`; do not preserve them under new names. |
+| Old page-ID width rules | Replace with `.ui-page`/`.ui-container`; `.ui-container--narrow` and `.ui-container--reading` are only for explicit markup and are not exposed by `PageShell`; do not preserve the old rules under new names. |
 
 ## 7. Component surface
 
@@ -317,6 +317,8 @@ These are hints; reread before editing.
 
 ---
 
-*Housekeeping: once this spec is fully done with no open divergences, move it
-to `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md`. The tracking-file rule is
-the only exception: leave it in `specs/` until `specs/divergences/` is cleared.*
+*Housekeeping: once this spec is fully done, move it
+to `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md`. Leave this spec in
+`specs/` only if it has its own open divergence; unrelated tracking files
+already in `specs/divergences/` (for example 13-M files) do not block moving
+25-Y to `specs/done/`.*

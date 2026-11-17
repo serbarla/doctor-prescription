@@ -3,7 +3,7 @@
 - Source: `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` step 15 and the Page adoption table; `context/sitemap.md` §§1.1–1.3; `context/PRD.md` FR-010–014, FR-022, FR-030–034, FR-040–043, D-06, D-21; `context/architecture.md` §3; `context/database-design.md` §4.
 - Depends on: 15-O, 16-P, 17-Q, 18-R, 19-S, 20-T, 22-V.
 - Repo root `/Users/sergiobarba/projects/doctor-prescriptions`. Every path and command below is relative to it.
-- Result carried forward: `Prescriptions`, `PrescriptionNew`, `PrescriptionPreview`, and `PrescriptionDetail` render through the UI layer; every query/filter, desktop fallback, outbox update, signing/voiding/superseding dispatch, reorder/upsert/delete call, acknowledge-warnings branch, and role gate is preserved; each page has at most one filled primary action, and the detail page exposes an `allocating` state on its RX block request.
+- Result carried forward: `Prescriptions`, `PrescriptionNew`, `PrescriptionPreview`, and `PrescriptionDetail` render through the UI layer; every query/filter, desktop fallback, outbox update, signing/voiding/superseding dispatch, reorder/upsert/delete call, acknowledge-warnings branch, and role gate is preserved; each page has at most one filled primary action, the list's `Prescriptions` exposes a `loaded` gate, and the detail page exposes an `allocating` state on its RX block request.
 
 ## Before you start
 
@@ -13,7 +13,7 @@ Read the nearest `AGENTS.md` (target workspace, then parents up to repo root) be
 
 If reality diverges from this spec: STOP, append a divergence (section 4), and NEVER improvise outside the objectives.
 
-This is markup adoption plus one UI-only signal (`allocating`). Do not change the signatures, return values, API arguments, local fallbacks, or synchronization effects of the existing dispatch/load/reorder functions.
+This is markup adoption plus UI-only signals (`allocating` and the list's `loaded` gate). Do not change the signatures, return values, API arguments, local fallbacks, or synchronization effects of the existing dispatch/load/reorder functions.
 
 ## 1. Objectives
 
@@ -122,7 +122,7 @@ The page table's primary rule interacts with role gates:
 ### Prescriptions
 
 - `PageShell id="prescriptions-page"`.
-- `PageHeader title="Recetas" subtitle="Historial con filtros por paciente, fecha y estado."`; header Primary `ButtonLink` `Nueva receta` -> `Route::PrescriptionNew { patient_id: None, template_id: None }` when `profile.can_create_prescriptions()`.320
+- `PageHeader title="Recetas" subtitle="Historial con filtros por paciente, fecha y estado."`; header Primary `ButtonLink` `Nueva receta` -> `Route::PrescriptionNew { patient_id: None, template_id: None }` when `profile.can_create_prescriptions()`.
 - `FilterBar`:
   - `SearchField label="Paciente" placeholder="Paciente"` bound to `query`.
   - `SelectField label="Estado"` bound to `status`, options in this order: `Todos los estados` (`""`), `Borradores` (`draft`), `Firmadas` (`signed`), `Reemplazadas` (`superseded`), `Anuladas` (`voided`), `Pendientes de sincronización` (`pending_sync`), `Con error de sincronización` (`failed`).
@@ -130,7 +130,7 @@ The page table's primary rule interacts with role gates:
 - Add `loaded` false; set false at the start of each fetch, true after every success/error/desktop branch resolves. `LoadingState` while `!loaded()`.
 - `ErrorText` for `message` when non-empty.
 - `EmptyState title="Sin recetas" description="No hay recetas para estos filtros."` when `visible.is_empty() && loaded()`.
-- `ListRow` per visible row: title `patient_name`; meta `[status_label, format_date(created_at), "No. {n}" or "Sin número"]`; badge `PrescriptionStatusBadge { status }`; Secondary `Abrir` -> `Route::PrescriptionDetail { id }`.
+- `ListRow` per visible row: title `patient_name`; meta={vec![prescription_status_label(&row.status).to_owned(), format_date(&row.created_at), row.rx_number.map(|n| format!("No. {n}")).unwrap_or_else(|| "Sin número".to_owned())]}; badge `PrescriptionStatusBadge { status }`; Secondary `Abrir` -> `Route::PrescriptionDetail { id }`.
 - When row status is `pending_sync`, add Cream `Badge` `Provisional · PENDIENTE DE SINCRONIZACIÓN` inside the row body.
 - `failed_rows`: when non-empty, `SectionCard title="Errores de sincronización"` with `ListRow title={operation} meta={vec![detail]}`. Keep the desktop branch that fills it.
 - Only Primary: `Nueva receta`.

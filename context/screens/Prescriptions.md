@@ -362,3 +362,13 @@ The smoke script covers `/prescriptions` for an authenticated actor; the pending
 
 - Do not add: a route or endpoint beyond `/prescriptions` and the existing `GET /api/prescriptions/:id/pdf`; any query parameter for patient, date, or the selected status; a sign, void, supersede, edit, delete, reorder, share, LLM, or template control; a second Primary; PDF/print for drafts, provisional rows, failed rows, or unknown statuses; a stored PDF, a PDF preview, an A4 sheet, a QR, a document thumbnail, a patient photo, or a signature/stamp asset; billing, price, trial, plan, entitlement, invoice, or `sync_locked` copy; rich text, a formatting toolbar, `contenteditable`, or a WYSIWYG editor; a sort, result count, pagination, infinite scroll, bulk action, or saved filter; a success toast; a doctor/owner filter or a client-side clinic filter; a synthetic row for an evicted cache entry; or a new field, table, column, role, permission, or API argument.
 
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers (`format_date`, `prescription_status_label`) the rows render.
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `FilterBar`, `SearchField`, `SelectField`, `LoadingState`, and `EmptyState`, the list's filter and result surface.
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds the prescription status badges the rows and filters show.
+| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `Prescriptions`: `FilterBar` filters, the `loaded` gate, one Primary `Nueva receta`.
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes.
+

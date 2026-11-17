@@ -258,3 +258,12 @@ Never `#000000`. Never a chromatic border: row, input, and empty borders use the
 - No query parameter, route variant, endpoint, or API argument is added. `api::fetch_patients(&term)` and `desktop_local::list_patients` keep their current signatures; the local helper remains unfiltered by term. No back link renders: the navbar is the return path, and this is a top-level list.
 - Verify, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/Patients.md --strict`.
 - Do not add: a URL query or history entry for search, a sort or count control, pagination or result totals, a second Primary action, create/edit/delete controls for Administrator, a patient photo or avatar, sex/phone/notes/timestamps in the row, a document or QR preview, a billing or plan surface, a signature or stamp asset, a rich-text affordance, a new endpoint or field, or a success toast that hides the desktop cache error.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers (`format_date`) the list renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SearchField`, `ListRow`, `EmptyState`, and `LoadingState`, the list's whole result surface. |
+| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `Patients`: `PageShell id="patients-page"`, the `loaded` gate, one Primary `Nuevo paciente`. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes. |

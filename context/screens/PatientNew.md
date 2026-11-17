@@ -312,3 +312,12 @@ python3 .blocks/markdown-table-check.py --path context/screens/PatientNew.md --s
 - Do not add: a new endpoint, route, query parameter, table, column, role, or permission.
 - Do not add: raw duplicate UUIDs, another patient's name/cédula, or a claim that the match is by cédula when it is the name warning.
 - Do not add: an "ignore the 409" confirmation; an exact cédula conflict is hard.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the create form uses. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `TextField`, `SelectField`, `TextAreaField`, `FormGrid`, and the warning `Notice` the dedup path renders. |
+| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `PatientNew`: `FormGrid columns: Two`, the duplicate warning with `Crear de todas formas`, one Primary `Guardar paciente`. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes. |

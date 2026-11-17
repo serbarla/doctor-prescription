@@ -338,3 +338,12 @@ The smoke script covers auth, not this Administrator table. A browser pass needs
 - Do not add: rich text, `contenteditable`, HTML rendering, markdown rendering, or `inner_html` of metadata/actions (D-21).
 - Do not add: a second Primary, a filled row action, or a colour-only event status.
 - Do not add: a new route, endpoint, table, column, role, permission, query parameter, or API argument.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the audit table renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `FilterBar`, `DataTable`, `LoadingState`, `EmptyState`, and `ErrorText` the page uses. |
+| `specs/24-X-ui-settings-detail-and-audit.md` | `24-X` adopts `Audit`: admin guard notice, `loaded` gate, filter-driven append-only rows. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted table runs only on `.ui-*` classes. |

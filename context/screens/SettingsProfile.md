@@ -338,3 +338,12 @@ The smoke script covers sign-in/MFA at a high level, not the profile card. A bro
 - Do not add: rich text, WYSIWYG, `contenteditable`, HTML/markdown rendering, or a formatting toolbar (D-21).
 - Do not add: a second Primary, a filled Danger button, a modal, a toast, or an autosave.
 - Do not add: a new route, endpoint, table, column, role, permission, or API argument.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the profile page renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SectionCard`, `FormGrid`, `TextField`, `ErrorText`, and `HintText` the data, MFA, and password cards use. |
+| `specs/24-X-ui-settings-detail-and-audit.md` | `24-X` adopts `SettingsProfile`: profile fields, TOTP enrolment, password change, one Primary `Guardar`. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted page runs only on `.ui-*` classes. |

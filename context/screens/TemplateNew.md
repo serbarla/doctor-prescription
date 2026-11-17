@@ -331,3 +331,12 @@ python3 .blocks/markdown-table-check.py --path context/screens/TemplateNew.md --
 - Do not add: a second Primary, a modal, toast, banner, autosave, client draft store, optimistic row, or advance offline warning.
 - Do not add: a new route, endpoint, query parameter, table, column, role, permission, `client_id` form field, `maxlength`, `required`, or pattern.
 - Do not add: a translation pass or condition-by-condition error rewriting in the client; the service strings remain authoritative.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the create form uses. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the form controls, `Card`/`FormGrid`/`ActionRow`, and `ErrorText` the page renders. |
+| `specs/22-V-ui-templates.md` | `22-V` adopts `TemplateNew`: owner/type hint, `FormGrid` fields, one Primary save action. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes. |

@@ -242,3 +242,13 @@ None. The hub is a text index: no line icons, no logo, no QR glyph, no document 
   - `python3 .blocks/markdown-table-check.py --path context/screens/Settings.md --strict` — every table has a consistent column count.
 - No route-specific `curl`: `/settings` is authenticated and the smoke script does not exercise it.
 - Do not add: a `/settings/billing` card, link, placeholder, price, trial, plan, or `sync_locked` copy (D-04); cards or links for patients, prescriptions, or templates (the Navbar owns them); forms, editable fields, count badges, PHI, clinical content, or clinic, user, profile, or audit data to the hub; a reduced non-administrator hub, denial panel, or local sign-in form; signature or stamp imagery (D-06); rich text, a formatting toolbar, or `contenteditable` (D-21); an icon-only card, decorative image, QR glyph, or A4 mock; a Primary button or any filled Deep Teal action; a release-visible `Sistema de diseño` link; a new route, endpoint, role, permission, table, column, or query parameter; a second header or footer band; client-side role checks presented as authorization; or a `push` in place of either replacement redirect.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, `LinkAction`, and format helpers the settings hub renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the card and link-grid layout primitives the hub's destination tiles compose. |
+| `specs/19-S-ui-gallery-and-dev-route.md` | `19-S` builds the debug-only `/dev/ui` gallery the hub's `Sistema de diseño` link targets. |
+| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `Settings`: `PageShell id="settings-page"`, the `ui-link-grid` destination tiles, preserved role redirects. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted hub runs only on `.ui-*` classes. |

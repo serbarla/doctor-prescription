@@ -212,3 +212,14 @@ Line icons only, 1.5px stroke, monochrome Ink or Deep Teal (Mist for the platfor
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` returns `"ok": true` (its `home` stage covers `/`);
   - `caveman-blocks run markdown-table-check --path context/screens/Home.md` passes.
 - Do not add: a `TrustLogoStrip`, a pricing or trial band, a screenshot carousel, a newsletter form, a verification result on this page, or any second filled teal action.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, `LinkAction`, and format helpers Home's CTA row and copy use. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the `Card`, `ActionRow`, notice, and empty/loading primitives the Home bands compose. |
+| `specs/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `Hero`, `SectionHeader`, `NumberedStepCard`, `A4PreviewCard`, `A4Mock`, `VerificationTag`, and `TrustSecurityRow`, Home's core regions. |
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `VerificationCodeForm`, the form rendered in the `#verificar` band. |
+| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts Home: one filled primary CTA, no partner strip, es-EC copy frozen by the UI plan. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy page-ID width rules in `assets/main.css`, leaving Home's bands on tokens and `.ui-container`. |

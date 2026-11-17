@@ -357,3 +357,13 @@ A browser pass as Administrator and as Doctor is needed for the redirect; an off
 - Do not add: an editable timezone, retention-days input, or computed retention date.
 - Do not add: a public object URL, raw bucket key, or image URL in copy/analytics/logs.
 - Do not add: a new route, endpoint, table, column, role, permission, or API argument.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `LinkAction`, and format helpers the clinic page renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SectionCard`, `FormGrid`, `ActionRow`, `HintText`, and `ErrorText` the four sections use. |
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `ImageLibrary`, `QuotaMeter`, and `format_bytes`, the image library and quota surface. |
+| `specs/24-X-ui-settings-detail-and-audit.md` | `24-X` adopts `SettingsClinic`: sync-gated uploads, extracted upload/delete closures, one Primary `Guardar datos`. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted page runs only on `.ui-*` classes. |

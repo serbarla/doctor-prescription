@@ -26,8 +26,8 @@ Two source ambiguities are resolved here and must be applied consistently:
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Add the domain status, sync, RX, LLM, verification, and image-library components — requirements: create `persona-sanus/src/ui/domain.rs` and implement `SyncStatus`, `SyncStatusIndicator`, `PrescriptionStatusBadge`, `TemplateStatusBadge`, `AccountStatusBadge`, `DeviceStatusBadge`, `RxBlockIndicator`, `LlmExplainLink`, `VerificationSeal`, `VerificationResultCard`, `VerificationCodeForm`, `QuotaMeter`, `ImageLibrary`, and private `format_bytes` exactly as section 7. Move the existing `SyncStatus` out of `main.rs`, make its fields public, keep `Debug, Clone, PartialEq`, and add `Copy, Default`; replace the free `sync_status_label` with `SyncStatus::label` and `SyncStatus::tone`, and remove both old definitions in `main.rs`; also replace the single `sync_status_label(&status)` call in `Navbar` with `status.label()`. Import the moved type where `main.rs` provides the sync context. `VerificationResultCard` reads only `status`, `doctor_name`, `issued_at`, and `rx_number`; it must never accept or render a patient field. Re-export the module from `ui/mod.rs`; commands: `cd persona-sanus && cargo check`; `rg -n '^struct SyncStatus|^fn sync_status_label' persona-sanus/src/main.rs`; `rg -n 'patient_name|patient_id|patient_birth|patient_sex|cedula|cédula|diagnosis|medication' persona-sanus/src/ui/domain.rs`.
-- [ ] Add the presentational billing components — requirements: create `persona-sanus/src/ui/billing.rs` and implement `BillingStatusCard`, `PlanCard`, `PaymentMethodCard`, `BillingBanner`, `BillingTransaction`, `TransactionTable`, and `format_usd_cents` exactly as section 7. Use integer cents only and integer division and remainder for currency. Never render `card_token`, `card_holder_enc`, `ctoken`, `authorization_code`, a PAN, a CVV, or a card number. Declare `billing` under `#[cfg(debug_assertions)]` in `ui/mod.rs`; it has no release surface; commands: `cd persona-sanus && cargo check`; `rg -n -i 'card_token|card_holder|ctoken|authorization_code|card_number|\bcvv_number\b|\bpan_number\b' persona-sanus/src/ui`; `rg -n 'f32|f64' persona-sanus/src/ui/billing.rs`.
+- [x] Add the domain status, sync, RX, LLM, verification, and image-library components — requirements: create `persona-sanus/src/ui/domain.rs` and implement `SyncStatus`, `SyncStatusIndicator`, `PrescriptionStatusBadge`, `TemplateStatusBadge`, `AccountStatusBadge`, `DeviceStatusBadge`, `RxBlockIndicator`, `LlmExplainLink`, `VerificationSeal`, `VerificationResultCard`, `VerificationCodeForm`, `QuotaMeter`, `ImageLibrary`, and private `format_bytes` exactly as section 7. Move the existing `SyncStatus` out of `main.rs`, make its fields public, keep `Debug, Clone, PartialEq`, and add `Copy, Default`; replace the free `sync_status_label` with `SyncStatus::label` and `SyncStatus::tone`, and remove both old definitions in `main.rs`; also replace the single `sync_status_label(&status)` call in `Navbar` with `status.label()`. Import the moved type where `main.rs` provides the sync context. `VerificationResultCard` reads only `status`, `doctor_name`, `issued_at`, and `rx_number`; it must never accept or render a patient field. Re-export the module from `ui/mod.rs`; commands: `cd persona-sanus && cargo check`; `rg -n '^struct SyncStatus|^fn sync_status_label' persona-sanus/src/main.rs`; `rg -n 'patient_name|patient_id|patient_birth|patient_sex|cedula|cédula|diagnosis|medication' persona-sanus/src/ui/domain.rs`.
+- [x] Add the presentational billing components — requirements: create `persona-sanus/src/ui/billing.rs` and implement `BillingStatusCard`, `PlanCard`, `PaymentMethodCard`, `BillingBanner`, `BillingTransaction`, `TransactionTable`, and `format_usd_cents` exactly as section 7. Use integer cents only and integer division and remainder for currency. Never render `card_token`, `card_holder_enc`, `ctoken`, `authorization_code`, a PAN, a CVV, or a card number. Declare `billing` under `#[cfg(debug_assertions)]` in `ui/mod.rs`; it has no release surface; commands: `cd persona-sanus && cargo check`; `rg -n -i 'card_token|card_holder|ctoken|authorization_code|card_number|\bcvv_number\b|\bpan_number\b' persona-sanus/src/ui`; `rg -n 'f32|f64' persona-sanus/src/ui/billing.rs`.
 
 ## 2. No-go
 
@@ -48,18 +48,18 @@ Two source ambiguities are resolved here and must be applied consistently:
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] objective 1: `cd persona-sanus && cargo check` exits 0.
-- [ ] objective 1: `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
-- [ ] objective 1: `rg -n '^struct SyncStatus|^fn sync_status_label' persona-sanus/src/main.rs` returns no matches.
-- [ ] objective 1: `rg -n 'pub struct SyncStatus|fn label|fn tone' persona-sanus/src/ui/domain.rs` returns the public struct and both methods.
-- [ ] objective 1: `rg -n 'patient_name|patient_id|patient_birth|patient_sex|cedula|cédula|diagnosis|medication' persona-sanus/src/ui/domain.rs` returns no matches.
-- [ ] objective 1: `rg -n 'fn (VerificationSeal|VerificationResultCard|VerificationCodeForm|QuotaMeter|ImageLibrary|RxBlockIndicator|LlmExplainLink|SyncStatusIndicator)' persona-sanus/src/ui/domain.rs` returns 8 matches.
-- [ ] objective 2: `rg -n 'fn (BillingStatusCard|PlanCard|PaymentMethodCard|BillingBanner|TransactionTable|format_usd_cents)' persona-sanus/src/ui/billing.rs` returns 6 matches.
-- [ ] objective 2: `rg -n 'struct BillingTransaction' persona-sanus/src/ui/billing.rs` returns 1 match.
-- [ ] objective 2: `rg -n 'f32|f64' persona-sanus/src/ui/billing.rs` returns no matches.
-- [ ] objective 2: `rg -n -i 'card_token|card_holder|ctoken|authorization_code|card_number|\bcvv_number\b|\bpan_number\b' persona-sanus/src/ui` returns no matches.
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] objective 1: `cd persona-sanus && cargo check` exits 0.
+- [x] objective 1: `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
+- [x] objective 1: `rg -n '^struct SyncStatus|^fn sync_status_label' persona-sanus/src/main.rs` returns no matches.
+- [x] objective 1: `rg -n 'pub struct SyncStatus|fn label|fn tone' persona-sanus/src/ui/domain.rs` returns the public struct and both methods.
+- [x] objective 1: `rg -n 'patient_name|patient_id|patient_birth|patient_sex|cedula|cédula|diagnosis|medication' persona-sanus/src/ui/domain.rs` returns no matches.
+- [x] objective 1: `rg -n 'fn (VerificationSeal|VerificationResultCard|VerificationCodeForm|QuotaMeter|ImageLibrary|RxBlockIndicator|LlmExplainLink|SyncStatusIndicator)' persona-sanus/src/ui/domain.rs` returns 8 matches.
+- [x] objective 2: `rg -n 'fn (BillingStatusCard|PlanCard|PaymentMethodCard|BillingBanner|TransactionTable|format_usd_cents)' persona-sanus/src/ui/billing.rs` returns 6 matches.
+- [x] objective 2: `rg -n 'struct BillingTransaction' persona-sanus/src/ui/billing.rs` returns 1 match.
+- [x] objective 2: `rg -n 'f32|f64' persona-sanus/src/ui/billing.rs` returns no matches.
+- [x] objective 2: `rg -n -i 'card_token|card_holder|ctoken|authorization_code|card_number|\bcvv_number\b|\bpan_number\b' persona-sanus/src/ui` returns no matches.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -69,7 +69,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -80,7 +80,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
 
 ## 5. Context
 

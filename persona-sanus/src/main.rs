@@ -40,7 +40,7 @@ mod verify_server;
 use crate::ui::{
     device_name_label, format_date, last_seen_label, optional_date, platform_label,
     prescription_status_label, role_label, sex_label, status_label, template_owner_label,
-    template_status_label, version_status_label,
+    template_status_label, version_status_label, SyncStatus,
 };
 use api::Me;
 use auth::SessionUser;
@@ -122,23 +122,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     Ok(())
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct SyncStatus {
-    online: bool,
-    pending: i64,
-    failed: i64,
-}
-
-fn sync_status_label(status: &SyncStatus) -> &'static str {
-    if !status.online {
-        return "Sin conexión";
-    }
-    if status.pending > 0 || status.failed > 0 {
-        return "Pendientes";
-    }
-    "En línea"
 }
 
 #[cfg(feature = "desktop")]
@@ -1429,7 +1412,7 @@ fn Navbar() -> Element {
                 Link { to: Route::Settings {}, "Configuración" }
                 span {
                     class: "sync-status",
-                    "{sync_status_label(&status)}"
+                    "{status.label()}"
                     if status.pending > 0 {
                         " · {status.pending} pendientes"
                     }

@@ -1,7 +1,12 @@
+#[cfg(debug_assertions)]
+#[allow(dead_code)]
+mod billing;
 #[allow(dead_code)]
 mod brand;
 #[allow(dead_code)]
 mod button;
+#[allow(dead_code)]
+mod domain;
 #[allow(dead_code)]
 mod feedback;
 #[allow(dead_code)]
@@ -14,10 +19,22 @@ mod layout;
 #[allow(dead_code)]
 mod marketing;
 
+#[cfg(debug_assertions)]
+#[allow(unused_imports)]
+pub use billing::{
+    format_usd_cents, BillingBanner, BillingStatusCard, BillingTransaction, PaymentMethodCard,
+    PlanCard, TransactionTable,
+};
 #[allow(unused_imports)]
 pub use brand::{LogoLockup, TrustLogo, TrustLogoStrip, TrustSecurityRow};
 #[allow(unused_imports)]
 pub use button::{Button, ButtonLink, ButtonVariant, LinkAction, NavLink};
+#[allow(unused_imports)]
+pub use domain::{
+    AccountStatusBadge, DeviceStatusBadge, ImageLibrary, LlmExplainLink, PrescriptionStatusBadge,
+    QuotaMeter, RxBlockIndicator, SyncStatus, SyncStatusIndicator, TemplateStatusBadge,
+    VerificationCodeForm, VerificationResultCard, VerificationSeal,
+};
 #[allow(unused_imports)]
 pub use feedback::{
     Badge, BadgeTone, ConfirmPanel, DataTable, EmptyState, ErrorText, HintText, ListRow,

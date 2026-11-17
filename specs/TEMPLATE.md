@@ -4,6 +4,9 @@
   issue, or an audit finding — and what triggered it>.
 - Depends on: <spec IDs this builds on, or "nothing">.
 - Repo root: `<path>`. Every path and command below is relative to it.
+- Owned files: `<comma-separated paths/globs the executing worker may modify>`
+- Gate: `<exact .blocks or cargo command that must exit 0>`
+- Desktop-verify: `<yes|no>`
 - Result carried forward: <one sentence: the observable end state once this spec is done>.
 
 ## Before you start

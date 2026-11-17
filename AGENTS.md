@@ -1,7 +1,5 @@
 <!-- caveman-blocks:start -->
-
 BLOCKS. Scripts in this repo are reusable blocks in .blocks/. Rules:
-
 1. Check the block index below first. If a block fits, run it. If one almost fits, add a param to it.
 2. A script you would run twice, or over ~10 lines, becomes a block, not a heredoc or a /tmp file.
 3. Inputs are params. No hardcoded paths, ids, ports or dates.
@@ -18,9 +16,9 @@ persona-docker-verify [--dir .] [--port 8080] [--email …] [--password VerifyPa
 pdf-probe      --base <str> [--email …] [--password ProbePass123!] Probe PDF: magic, A4 MediaBox, filename, QR payload, draft 422.
 persona-probe --base <str> [--email …] [--password ProbePass123!] [--name "Probe Tester"] [--flow full]…
 persona-smoke [--dir persona-sanus] [--port 8091] [--secret <str>] [--db-path ""] E2E smoke:…
+spec-queue    [--specs-dir specs] [--ready-only] [--fail-if-empty] [--brief] Classify unchecked specs and…
 sqlite-schema-check [--path ""] [--db ""] [--block 0] [--query ""] [--limit 10] Run SQL from a Markdown…
 wait-health   --url <str> [--expect 200] [--timeout 60] [--interval 2] Poll a URL until it answers with the…
-
 <!-- caveman-blocks:end -->
 
 ## Context Docs
@@ -79,4 +77,5 @@ When generating subagents you may first plan the task to be completed into separ
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deepseek flash medium effort`, `meta ember medium effort` | Keep subagent context low; 1 task per agent, then delete. Keep cost low. Try to assign jobs that wont run long, try to keep under 500k context                                                                        |
 | `qwen-single-agent`                                      | Run only 1 agent in it at a time; never more than 1 under any circumstance. May or may not be available; if reachable, it is free its your priority to run it correctly when available, its free but at 200k context. |
-| `meta muse wonder any effort`                            | NEVER use for subagents; not allowed. It orchestrates modular isolated tasks, generating worktrees and subagents.                                                                                                     |
+| `meta muse wonder any effort`                           | NEVER use for subagents; not allowed. It orchestrates modular isolated tasks, generating worktrees and subagents.                                                                                                     |
+| `Orca orchestration worker`                              | DAG-width parallelism supersedes the single-subagent caps for Orca orchestration workers only: one supervised worker per file-disjoint ready slice, as wide as the dependency DAG allows. Per-day cost ceiling: **$5 USD** (user-set 2026-11-17). The coordinator must gate, not dispatch, any pass whose projected spend would exceed it; the hourly automation stays disabled until the user reviews both the ceiling and the automation. |

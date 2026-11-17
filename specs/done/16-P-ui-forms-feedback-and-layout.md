@@ -21,8 +21,8 @@ This spec consumes only `15-O` primitives (`Icon`, `Button`, `ButtonVariant`, `I
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Add the form controls and field shell — requirements: create `persona-sanus/src/ui/form.rs` and implement `TextField`, `TextAreaField`, `SelectField`, `CheckboxField`, `FileField`, `SearchField`, and the private `Field` wrapper exactly as section 7 contracts. Labels wrap their controls; no generated ids. Inputs are controlled. `error: Some(_)` renders `<p class="ui-field-error" role="alert">` and suppresses the hint; hint-only renders `.ui-field-hint`. Text, area, and select set `aria-invalid` from `error.is_some()`. The focus utility from `15-O` applies to every control. Add the form declarations in section 9 to `assets/main.css`. No toolbar, no `contenteditable`, and no rich text; commands: `cd persona-sanus && cargo check`; `rg -n 'contenteditable|execCommand|innerHTML' persona-sanus/src`.
-- [ ] Add feedback and layout primitives — requirements: create `persona-sanus/src/ui/feedback.rs` and `layout.rs` and implement the symbols in section 7 with their exact props and markup. Cards, badges, notices, tables, and rows share Paper, 1px hairline, and 24px radius where contracted. Buttons and cards have no shadow. The spinner is the only animation and `prefers-reduced-motion: reduce` disables it. Re-export both modules from `ui/mod.rs`. Add the declarations in section 9; commands: `cd persona-sanus && cargo check`; `rg -n -P 'box-shadow:\s*(?!none\b|0 0 0 3px var\(--color-mint-halo\)|var\(--shadow-paper\)|0 2px 12px rgba\(0, 0, 0\.18\))' persona-sanus/src/ui persona-sanus/assets/main.css`.
+- [x] Add the form controls and field shell — requirements: create `persona-sanus/src/ui/form.rs` and implement `TextField`, `TextAreaField`, `SelectField`, `CheckboxField`, `FileField`, `SearchField`, and the private `Field` wrapper exactly as section 7 contracts. Labels wrap their controls; no generated ids. Inputs are controlled. `error: Some(_)` renders `<p class="ui-field-error" role="alert">` and suppresses the hint; hint-only renders `.ui-field-hint`. Text, area, and select set `aria-invalid` from `error.is_some()`. The focus utility from `15-O` applies to every control. Add the form declarations in section 9 to `assets/main.css`. No toolbar, no `contenteditable`, and no rich text; commands: `cd persona-sanus && cargo check`; `rg -n 'contenteditable|execCommand|innerHTML' persona-sanus/src`.
+- [x] Add feedback and layout primitives — requirements: create `persona-sanus/src/ui/feedback.rs` and `layout.rs` and implement the symbols in section 7 with their exact props and markup. Cards, badges, notices, tables, and rows share Paper, 1px hairline, and 24px radius where contracted. Buttons and cards have no shadow. The spinner is the only animation and `prefers-reduced-motion: reduce` disables it. Re-export both modules from `ui/mod.rs`. Add the declarations in section 9; commands: `cd persona-sanus && cargo check`; `rg -n -P 'box-shadow:\s*(?!none\b|0 0 0 3px var\(--color-mint-halo\)|var\(--shadow-paper\)|0 2px 12px rgba\(0, 0, 0\.18\))' persona-sanus/src/ui persona-sanus/assets/main.css`.
 
 ## 2. No-go
 
@@ -43,16 +43,16 @@ This spec consumes only `15-O` primitives (`Icon`, `Button`, `ButtonVariant`, `I
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `cd persona-sanus && cargo check` exits 0.
-- [ ] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
-- [ ] objective 1: `rg -n 'contenteditable|execCommand|innerHTML' persona-sanus/src` returns no matches.
-- [ ] objective 1: `rg -n 'fn (TextField|TextAreaField|SelectField|CheckboxField|FileField|SearchField)' persona-sanus/src/ui/form.rs` returns 6 matches.
-- [ ] objective 1: `rg -n 'ui-field-error|ui-field-hint|aria_invalid|accent-color|file-selector-button|webkit-file-upload-button' persona-sanus/src/ui/form.rs persona-sanus/assets/main.css` returns every contracted hook.
-- [ ] objective 2: `rg -n 'fn (Badge|PillBadge|Notice|ErrorText|HintText|EmptyState|LoadingState|ConfirmPanel|DataTable|ListRow|PageShell|PageHeader|Card|SectionCard|FormGrid|DetailGrid|DetailItem|ActionRow|FilterBar|SectionBand)' persona-sanus/src/ui/feedback.rs persona-sanus/src/ui/layout.rs` returns 20 matches.
-- [ ] objective 2: `rg -n -P 'box-shadow:\s*(?!none\b|0 0 0 3px var\(--color-mint-halo\)|var\(--shadow-paper\)|0 2px 12px rgba\(0, 0, 0, 0\.18\))' persona-sanus/src/ui persona-sanus/assets/main.css` returns no matches. The one allowed literal is the pre-existing `.a4-page` shadow, replaced in `25-Y`; any other match is a failure.
-- [ ] objective 2: `rg -n 'prefers-reduced-motion|ui-spin|ui-spinner' persona-sanus/assets/main.css` returns the spinner animation and the reduced-motion override.
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] `cd persona-sanus && cargo check` exits 0.
+- [x] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
+- [x] objective 1: `rg -n 'contenteditable|execCommand|innerHTML' persona-sanus/src` returns no matches.
+- [x] objective 1: `rg -n 'fn (TextField|TextAreaField|SelectField|CheckboxField|FileField|SearchField)' persona-sanus/src/ui/form.rs` returns 6 matches.
+- [x] objective 1: `rg -n 'ui-field-error|ui-field-hint|aria_invalid|accent-color|file-selector-button|webkit-file-upload-button' persona-sanus/src/ui/form.rs persona-sanus/assets/main.css` returns every contracted hook.
+- [x] objective 2: `rg -n 'fn (Badge|PillBadge|Notice|ErrorText|HintText|EmptyState|LoadingState|ConfirmPanel|DataTable|ListRow|PageShell|PageHeader|Card|SectionCard|FormGrid|DetailGrid|DetailItem|ActionRow|FilterBar|SectionBand)' persona-sanus/src/ui/feedback.rs persona-sanus/src/ui/layout.rs` returns 20 matches.
+- [x] objective 2: `rg -n -P 'box-shadow:\s*(?!none\b|0 0 0 3px var\(--color-mint-halo\)|var\(--shadow-paper\)|0 2px 12px rgba\(0, 0, 0, 0\.18\))' persona-sanus/src/ui persona-sanus/assets/main.css` returns the one allowed pre-existing `.a4-page` literal (line 688) and nothing else. The focus ring uses the allowed contract value.
+- [x] objective 2: `rg -n 'prefers-reduced-motion|ui-spin|ui-spinner' persona-sanus/assets/main.css` returns the spinner animation and the reduced-motion override.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -62,7 +62,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -73,7 +73,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
 
 ## 5. Context
 

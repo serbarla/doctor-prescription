@@ -1,11 +1,24 @@
 #[allow(dead_code)]
 mod button;
+#[allow(dead_code)]
+mod feedback;
+#[allow(dead_code)]
+mod form;
 mod format;
 #[allow(dead_code)]
 mod icon;
+#[allow(dead_code)]
+mod layout;
 
 #[allow(unused_imports)]
 pub use button::{Button, ButtonLink, ButtonVariant, LinkAction, NavLink};
+#[allow(unused_imports)]
+pub use feedback::{
+    Badge, BadgeTone, ConfirmPanel, DataTable, EmptyState, ErrorText, HintText, ListRow,
+    LoadingState, Notice, NoticeTone, PillBadge,
+};
+#[allow(unused_imports)]
+pub use form::{CheckboxField, FileField, SearchField, SelectField, TextAreaField, TextField};
 #[allow(unused_imports)]
 pub use format::{
     device_name_label, format_date, format_timestamp, last_seen_label, optional_date,
@@ -14,3 +27,8 @@ pub use format::{
 };
 #[allow(unused_imports)]
 pub use icon::{Icon, IconName};
+#[allow(unused_imports)]
+pub use layout::{
+    ActionRow, Card, DetailGrid, DetailItem, FilterBar, FormColumns, FormGrid, PageHeader,
+    PageShell, SectionBand, SectionCard, SurfaceTone,
+};

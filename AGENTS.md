@@ -34,6 +34,7 @@ Read the matching file in `context/` before changing that area; they are the sou
 | `context/architecture.md`    | System shape, crate/module layout, runtime and deploy topology, feature status — before adding a dependency, route, or service. |
 | `context/database-design.md` | Schema, ids, timestamps, immutability, PHI rules, migrations — before any table, column, or Diesel change.                      |
 | `context/sitemap.md`         | Routes, layout shell, auth guards, status per screen — before adding or moving a page.                                          |
+| `context/screens/INDEX.md`   | Per-screen design specs in `context/screens/` — which exist, which are missing, and the shape each follows — before writing, renaming, or deleting a screen file. |
 | `context/Design.md`          | Colors, typography, spacing tokens, component styling — before writing UI markup or CSS.                                        |
 
 
@@ -67,15 +68,15 @@ Work is planned and executed through numbered spec files in `specs/` (e.g. `01-A
 - **Verify**: all Testing-criteria boxes checked = spec done. Keep every `- [ ]` box unchecked until it passes.
 - **Divergences**: record each at the end of the spec (section 4, `### Divergences`) — what diverged, why, the fix attempts, and the impact. If a divergence stays OPEN because a later spec owns the fix, also create a tracking file in `specs/divergences/<spec-id>-<short-slug>.md` (source spec + the exact criteria it blocks, what's broken, why each fix was fenced, and a "how to clear it" checklist naming the resolving spec and re-verify commands). Link the tracking file from the spec's divergence entry. When the later spec lands and checks pass, mark the criteria `[x]` and delete the tracking file. See `specs/TEMPLATE.md` §4 for the canonical divergence format.
 
-## Subagent Delegation
+## Subagent Delegation Fleet
 
-When generating subagents you may first plan the task to be completed into separate isolated phases independent from other phases, that you will put together after subagents workflows are complete, use the following omp model presets:
-
-
+When generating subagents you may first plan the task to be completed into separate isolated phases independent from other phases, that you will put together after subagents workflows are complete, use the following omp models:
 
 
-| Model preset                                | Policy                                                                                                                                                                               |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `deepflash-medium`, `ember-medium-subagent` | Keep subagent context low; 1 task per agent, then delete. Keep cost under $1 daily.                                                                                                  |
-| `qwen-single-agent`                         | Run only 1 subagent at a time; never more than 1 under any circumstance. May or may not be available; if reachable, it is free its your priority to run it correctly when available. |
-| `muse-wonder-planner`                       | NEVER use for subagents; not allowed. It orchestrates modular isolated tasks, generating worktrees and subagents.                                                                    |
+
+
+| Models                                                   | Policy                                                                                                                                                                                                                |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deepseek flash medium effort`, `meta ember medium effort` | Keep subagent context low; 1 task per agent, then delete. Keep cost low. Try to assign jobs that wont run long, try to keep under 500k context                                                                        |
+| `qwen-single-agent`                                      | Run only 1 agent in it at a time; never more than 1 under any circumstance. May or may not be available; if reachable, it is free its your priority to run it correctly when available, its free but at 200k context. |
+| `meta muse wonder any effort`                            | NEVER use for subagents; not allowed. It orchestrates modular isolated tasks, generating worktrees and subagents.                                                                                                     |

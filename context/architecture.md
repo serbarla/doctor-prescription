@@ -224,7 +224,7 @@ The connection pragmas live in the r2d2 customizer in `db.rs`; `database-design.
 
 Rules and current limits:
 
-- The `#[layout(Navbar)]` on `Home` is never closed with `#[end_layout]`, so `Navbar` wraps every route, including `/` and `/login`. The sitemap separates public routes from the authenticated shell; add `#[end_layout]` and a second layout group when the shell gains nav sections and sync indicators.
+- The `#[layout(Navbar)]` on `Home` (`main.rs:51`) is never closed with `#[end_layout]`, so `Navbar` wraps every route declared after it — `/`, `/login`, and the whole authenticated shell. `Verify` is declared before the marker (`main.rs:49-50`), so `/verify/:code` renders without the band. The sitemap separates public routes from the authenticated shell; add `#[end_layout]` and a second layout group when the shell gains nav sections and sync indicators.
 - The redirect is client-side only. SSR still renders the page shell for an unauthenticated request, and any future PHI load must be authorized in the service layer behind the REST handler. Never rely on the redirect for data protection (PRD §3).
 - The session fetch is a `use_effect`, so the first SSR paint is signed-out and flips after hydration. Data pages load through the authorized `/api/*` endpoints (`use_resource` or SSR-side fetch) so the first render carries the authorized result instead of an unauthenticated stub.
 - UI code must copy signal values before awaiting. Holding `WriteLock` or `GenerationalRef` across `.await` is flagged by the `clippy.toml` configuration.

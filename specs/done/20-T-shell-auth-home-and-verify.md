@@ -21,9 +21,9 @@ This spec adopts existing pages. It does not change session, sign-in, MFA, verif
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Adopt the navbar and auth page — requirements: replace the `#navbar` internals with `header.ui-navbar` > `div.ui-navbar-inner`; brand group uses `LogoLockup` plus `PillBadge`; centre is `nav.ui-navbar-links` of `NavLink` with exactly five guarded destinations `Panel`, `Pacientes`, `Recetas`, `Plantillas`, `Configuración`; remove `Mi perfil`, `Usuarios`, and `Auditoría` from the bar; remove the old text `Home` link; right group uses `SyncStatusIndicator`, the optional `{failed} con error` link to the filtered prescriptions route, `.ui-navbar-user` email, and a Ghost `Button` `Cerrar sesión`; signed-out right uses a Ghost `ButtonLink` `Iniciar sesión`. Keep the router current-route `use_effect`, all contexts, every guard, and the sign-out handler. Rewrite `AuthPage` exactly as section 7 and the es-EC copy table, using a `PageShell id="auth-page"` shell and the no-native-submit rule; commands: `cd persona-sanus && cargo check`; `rg -n 'Welcome back|Create your account|Fill in every field\.|Please wait\.\.\.|The auth server did not return|Signed in|Sign in|Sign out|Sign up' persona-sanus/src/main.rs`; `rg -n 'NavLink \\{' persona-sanus/src/main.rs`.
-- [ ] Rebuild Home as the landing — requirements: root `<div id="home-page">` inside the navbar layout, not `PageShell`, so bands stay full-bleed. Resolve the CTA before RSX in this order: no session -> `Route::AuthPage {}` label `Emitir receta`; session plus profile with `can_create_prescriptions()` -> `Route::PrescriptionNew { patient_id: None, template_id: None }` label `Emitir receta`; session plus profile with a role but no create permission -> `Route::Prescriptions { status: None }` label `Ver recetas`; session with no profile or no role -> `Route::SettingsProfile {}` label `Completar perfil`. Render the `Hero`, steps, and verification band with the fixed copy and links in section 7. Do not render `TrustLogoStrip`; commands: `cd persona-sanus && cargo check`; `rg -n 'TrustLogoStrip' persona-sanus/src/main.rs`; `rg -n 'Recetas claras, verificables y listas para firmar\.' persona-sanus/src/main.rs`.
-- [ ] Adopt Verify to the public shell — requirements: root `div#verify-page.ui-public`; `.ui-public-head` holds `LogoLockup` and `PillBadge`; `.ui-public-main.ui-stack` holds a conditional region with only `LoadingState` `Verificando receta…`, Error `Notice` for fetch failure, and `VerificationResultCard`, then always a `SectionCard` `Verificar otra receta` with `VerificationCodeForm` default Primary and `TrustSecurityRow`. Keep the existing `requested` fetch signal. At the start of each fetch set `loaded` false, clear `message`, and clear the old result. On form submit, trim and uppercase, set `requested`, and call `navigator.replace(Route::Verify { code })`. Preserve the no-auth route and never render a patient name, cédula, diagnosis, or medication field; commands: `cd persona-sanus && cargo check`; `rg -n 'Verificando receta…|Verificar otra receta' persona-sanus/src/main.rs`; `rg -n 'Receta no encontrada' persona-sanus/src/ui/domain.rs`; `rg -n 'patient_name|patient_id|patient_birth|patient_sex|cedula|cédula|diagnosis' persona-sanus/src/ui/domain.rs`.
+- [x] Adopt the navbar and auth page — requirements: replace the `#navbar` internals with `header.ui-navbar` > `div.ui-navbar-inner`; brand group uses `LogoLockup` plus `PillBadge`; centre is `nav.ui-navbar-links` of `NavLink` with exactly five guarded destinations `Panel`, `Pacientes`, `Recetas`, `Plantillas`, `Configuración`; remove `Mi perfil`, `Usuarios`, and `Auditoría` from the bar; remove the old text `Home` link; right group uses `SyncStatusIndicator`, the optional `{failed} con error` link to the filtered prescriptions route, `.ui-navbar-user` email, and a Ghost `Button` `Cerrar sesión`; signed-out right uses a Ghost `ButtonLink` `Iniciar sesión`. Keep the router current-route `use_effect`, all contexts, every guard, and the sign-out handler. Rewrite `AuthPage` exactly as section 7 and the es-EC copy table, using a `PageShell id="auth-page"` shell and the no-native-submit rule; commands: `cd persona-sanus && cargo check`; `rg -n 'Welcome back|Create your account|Fill in every field\.|Please wait\.\.\.|The auth server did not return|Signed in|Sign in|Sign out|Sign up' persona-sanus/src/main.rs`; `rg -n 'NavLink \\{' persona-sanus/src/main.rs`.
+- [x] Rebuild Home as the landing — requirements: root `<div id="home-page">` inside the navbar layout, not `PageShell`, so bands stay full-bleed. Resolve the CTA before RSX in this order: no session -> `Route::AuthPage {}` label `Emitir receta`; session plus profile with `can_create_prescriptions()` -> `Route::PrescriptionNew { patient_id: None, template_id: None }` label `Emitir receta`; session plus profile with a role but no create permission -> `Route::Prescriptions { status: None }` label `Ver recetas`; session with no profile or no role -> `Route::SettingsProfile {}` label `Completar perfil`. Render the `Hero`, steps, and verification band with the fixed copy and links in section 7. Do not render `TrustLogoStrip`; commands: `cd persona-sanus && cargo check`; `rg -n 'TrustLogoStrip' persona-sanus/src/main.rs`; `rg -n 'Recetas claras, verificables y listas para firmar\.' persona-sanus/src/main.rs`.
+- [x] Adopt Verify to the public shell — requirements: root `div#verify-page.ui-public`; `.ui-public-head` holds `LogoLockup` and `PillBadge`; `.ui-public-main.ui-stack` holds a conditional region with only `LoadingState` `Verificando receta…`, Error `Notice` for fetch failure, and `VerificationResultCard`, then always a `SectionCard` `Verificar otra receta` with `VerificationCodeForm` default Primary and `TrustSecurityRow`. Keep the existing `requested` fetch signal. At the start of each fetch set `loaded` false, clear `message`, and clear the old result. On form submit, trim and uppercase, set `requested`, and call `navigator.replace(Route::Verify { code })`. Preserve the no-auth route and never render a patient name, cédula, diagnosis, or medication field; commands: `cd persona-sanus && cargo check`; `rg -n 'Verificando receta…|Verificar otra receta' persona-sanus/src/main.rs`; `rg -n 'Receta no encontrada' persona-sanus/src/ui/domain.rs`; `rg -n 'patient_name|patient_id|patient_birth|patient_sex|cedula|cédula|diagnosis' persona-sanus/src/ui/domain.rs`.
 
 ## 2. No-go
 
@@ -46,15 +46,15 @@ This spec adopts existing pages. It does not change session, sign-in, MFA, verif
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] objective 1: `cd persona-sanus && cargo check` exits 0.
-- [ ] objective 1: `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
-- [ ] objective 1: `rg -n 'Welcome back|Create your account|Fill in every field\.|Please wait\.\.\.|The auth server did not return|Signed in|Sign out|Sign up' persona-sanus/src/main.rs` returns no matches.
-- [ ] objective 1: `rg -n 'NavLink \\{' persona-sanus/src/main.rs` returns 5 matches.
-- [ ] objective 2: `rg -n 'TrustLogoStrip' persona-sanus/src/main.rs` returns no matches.
-- [ ] objective 2: `rg -n 'Recetas claras, verificables y listas para firmar\.' persona-sanus/src/main.rs` returns 1 match.
-- [ ] objective 3: `rg -n 'Verificando receta…|Verificar otra receta' persona-sanus/src/main.rs` returns the loading and repeat strings.
-- [ ] objective 3: `rg -n 'Receta no encontrada' persona-sanus/src/ui/domain.rs` returns the not-found string.
-- [ ] debug static proof:
+- [x] objective 1: `cd persona-sanus && cargo check` exits 0.
+- [x] objective 1: `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
+- [x] objective 1: `rg -n 'Welcome back|Create your account|Fill in every field\.|Please wait\.\.\.|The auth server did not return|Signed in|Sign out|Sign up' persona-sanus/src/main.rs` returns no matches.
+- [x] objective 1: `rg -n 'NavLink \{' persona-sanus/src/main.rs` returns 5 matches.
+- [x] objective 2: `rg -n 'TrustLogoStrip' persona-sanus/src/main.rs` returns no matches.
+- [x] objective 2: `rg -n 'Recetas claras, verificables y listas para firmar\.' persona-sanus/src/main.rs` returns 1 match.
+- [x] objective 3: `rg -n 'Verificando receta…|Verificar otra receta' persona-sanus/src/main.rs` returns the loading and repeat strings.
+- [x] objective 3: `rg -n 'Receta no encontrada' persona-sanus/src/ui/domain.rs` returns the not-found string.
+- [x] debug static proof:
 ```
 set -euo pipefail
 cd persona-sanus
@@ -79,15 +79,15 @@ grep -q 'Verificar' "${tmpdir}/verify.html"
 test "$(grep -oE '<(a|button)[^>]*class="[^"]*ui-button--primary[^"]*"' "${tmpdir}/verify.html" | wc -l | tr -d ' ')" = "1"
 ! grep -qiE 'paciente|c[eé]dula|diagn[oó]stico|medicamento' "${tmpdir}/verify.html"
 ```
-- [ ] Browser pass on `http://127.0.0.1:8097/` after `cd persona-sanus && dx serve --fullstack --port 8097`: centered hero, serif headline, one filled primary CTA, one outlined secondary `Verificar una receta` that scrolls to `#verificar`; three steps on wide and one column below 900; no trust logo strip; entering a code in the verification band navigates to `/verify/<code>`.
-- [ ] Browser pass on `http://127.0.0.1:8097/login`: the two modes switch by keyboard, labels are visible, empty submit shows `Completa todos los campos.`, one filled submit exists, and the signed-in card shows `Sesión iniciada`.
-- [ ] MFA browser pass: with an MFA ticket present, the page shows only `Código de verificación`, a Primary `Verificar código`, and a Secondary `Volver`; `Volver` clears the ticket and error; no email, password, or name field is visible.
-- [ ] Browser pass on `http://127.0.0.1:8097/verify/NO-EXISTE`: `Receta no encontrada`; no patient, cédula, diagnosis, or medication label; the repeat form exists. With a valid signed code, the card shows only `Médico`, `Fecha de emisión`, and `No. de receta`.
-- [ ] Home CTA branch pass: signed out -> login; can create -> new prescription with both ids absent; role without create -> prescription history; no profile or no role -> profile completion. No branch falls through.
-- [ ] Login state pass: sign in and sign up switch, the incomplete-field error, and post-signup dashboard load.
-- [ ] Focus pass: Tab through auth, Home, and `/verify`; every focused control shows the visible ring and no trapped focus.
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] Browser pass on `http://127.0.0.1:8097/` after `cd persona-sanus && dx serve --fullstack --port 8097`: centered hero, serif headline, one filled primary CTA, one outlined secondary `Verificar una receta` that scrolls to `#verificar`; three steps on wide and one column below 900; no trust logo strip; entering a code in the verification band navigates to `/verify/<code>`.
+- [x] Browser pass on `http://127.0.0.1:8097/login`: the two modes switch by keyboard, labels are visible, empty submit shows `Completa todos los campos.`, one filled submit exists, and the signed-in card shows `Sesión iniciada`.
+- [x] MFA browser pass: with an MFA ticket present, the page shows only `Código de verificación`, a Primary `Verificar código`, and a Secondary `Volver`; `Volver` clears the ticket and error; no email, password, or name field is visible.
+- [x] Browser pass on `http://127.0.0.1:8097/verify/NO-EXISTE`: `Receta no encontrada`; no patient, cédula, diagnosis, or medication label; the repeat form exists. With a valid signed code, the card shows only `Médico`, `Fecha de emisión`, and `No. de receta`.
+- [x] Home CTA branch pass: signed out -> login; can create -> new prescription with both ids absent; role without create -> prescription history; no profile or no role -> profile completion. No branch falls through.
+- [x] Login state pass: sign in and sign up switch, the incomplete-field error, and post-signup dashboard load.
+- [x] Focus pass: Tab through auth, Home, and `/verify`; every focused control shows the visible ring and no trapped focus.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -97,7 +97,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -108,7 +108,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
 
 ## 5. Context
 

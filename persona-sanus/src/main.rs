@@ -40,7 +40,12 @@ mod verify_server;
 use crate::ui::{
     device_name_label, format_date, last_seen_label, optional_date, platform_label,
     prescription_status_label, role_label, sex_label, status_label, template_owner_label,
-    template_status_label, version_status_label, SyncStatus,
+    template_status_label, version_status_label, A4MockKind, AccentTone, ActionRow, Button,
+    ButtonLink, ButtonVariant, Card, DetailGrid, DetailItem, ErrorText, FormColumns, FormGrid,
+    Hero, LinkAction, LoadingState, LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard,
+    PageHeader, PageShell, PillBadge, SectionBand, SectionCard, SectionHeader, SurfaceTone,
+    SyncStatus, SyncStatusIndicator, TextField, TrustSecurityRow, VerificationCodeForm,
+    VerificationResultCard,
 };
 use api::Me;
 use auth::SessionUser;
@@ -1271,15 +1276,96 @@ fn App() -> Element {
 
 #[component]
 fn Home() -> Element {
+    let user = use_context::<Signal<Option<SessionUser>>>();
+    let actor = use_context::<Signal<Option<Me>>>();
+    let navigator = use_navigator();
+    let session = user();
+    let profile = actor();
+    let (cta_route, cta_label) = match (&session, &profile) {
+        (None, _) => (Route::AuthPage {}, "Emitir receta"),
+        (Some(_), Some(profile)) if profile.can_create_prescriptions() => (
+            Route::PrescriptionNew {
+                patient_id: None,
+                template_id: None,
+            },
+            "Emitir receta",
+        ),
+        (Some(_), Some(profile)) if profile.role.is_some() => {
+            (Route::Prescriptions { status: None }, "Ver recetas")
+        }
+        _ => (Route::SettingsProfile {}, "Completar perfil"),
+    };
     rsx! {
-        div {
-            id: "hero",
-            h1 { "PersonaSanus" }
-            p { "Your prescriptions and health records, kept organized." }
-            div {
-                id: "links",
-                Link { to: Route::AuthPage {}, "Sign in" }
-                Link { to: Route::Dashboard {}, "Dashboard" }
+        div { id: "home-page",
+            Hero {
+                title: "Recetas claras, verificables y listas para firmar.".to_owned(),
+                subtitle: "PersonaSanus reúne pacientes, plantillas y recetas en un espacio sereno, pensado para el trabajo clínico en Ecuador.".to_owned(),
+                div {
+                    ActionRow {
+                        ButtonLink { to: cta_route, variant: ButtonVariant::Primary, active_class: None, "{cta_label}" }
+                        LinkAction {
+                            href: "#verificar".to_owned(),
+                            variant: ButtonVariant::Secondary,
+                            target: None,
+                            rel: None,
+                            "Verificar una receta"
+                        }
+                    }
+                    p { class: "ui-microcopy", "Diseñado para clínicas y consultorios · Datos protegidos" }
+                    TrustSecurityRow {}
+                }
+            }
+            SectionBand { id: Some("como-funciona".to_owned()), tone: SurfaceTone::Paper,
+                div {
+                    SectionHeader {
+                        title: "Cómo funciona".to_owned(),
+                        subtitle: Some("Del paciente a la receta firmada en tres pasos.".to_owned()),
+                    }
+                    div { class: "ui-steps",
+                        NumberedStepCard {
+                            number: 1,
+                            title: "Elige el paciente".to_owned(),
+                            body: "Selecciona a la persona y revisa su ficha antes de recetar.".to_owned(),
+                            accent: AccentTone::Mint,
+                            mock: A4MockKind::Patient,
+                            tag: None
+                        }
+                        NumberedStepCard {
+                            number: 2,
+                            title: "Completa la receta".to_owned(),
+                            body: "Completa diagnóstico, indicaciones y medicamentos en un formulario claro.".to_owned(),
+                            accent: AccentTone::Cream,
+                            mock: A4MockKind::Medication,
+                            tag: None
+                        }
+                        NumberedStepCard {
+                            number: 3,
+                            title: "Firma y verifica".to_owned(),
+                            body: "Firma, descarga el PDF y comparte un código verificable.".to_owned(),
+                            accent: AccentTone::Blossom,
+                            mock: A4MockKind::Verification,
+                            tag: Some("Verificable".to_owned())
+                        }
+                    }
+                    p { class: "ui-steps-note", "Vistas de ejemplo del formato A4." }
+                }
+            }
+            SectionBand { id: Some("verificar".to_owned()), tone: SurfaceTone::Mint,
+                div { class: "ui-verify-inline",
+                    SectionHeader {
+                        title: "Verifica una receta".to_owned(),
+                        subtitle: Some("Ingresa el código impreso junto al QR. La página muestra únicamente el médico, la fecha y el número de la receta: nunca los datos del paciente.".to_owned()),
+                    }
+                    Card {
+                        VerificationCodeForm {
+                            button_variant: ButtonVariant::Secondary,
+                            on_submit: move |code| {
+                                navigator.push(Route::Verify { code });
+                            },
+                        }
+                    }
+                    TrustSecurityRow {}
+                }
             }
         }
     }
@@ -1290,12 +1376,14 @@ fn Verify(code: String) -> Element {
     let mut result = use_signal(|| None::<api::VerificationResult>);
     let mut message = use_signal(String::new);
     let mut loaded = use_signal(|| false);
-    let mut typed = use_signal(String::new);
-    let requested = use_signal(|| code.clone());
+    let mut requested = use_signal(|| code.clone());
 
     use_effect(move || {
         let load_code = requested();
         spawn(async move {
+            loaded.set(false);
+            message.set(String::new());
+            result.set(None);
             match api::fetch_verification(&load_code).await {
                 Ok(found) => result.set(Some(found)),
                 Err(error) => message.set(error),
@@ -1304,61 +1392,33 @@ fn Verify(code: String) -> Element {
         });
     });
 
-    let title = match result().as_ref().map(|item| item.status.as_str()) {
-        Some("valid") => "Receta auténtica",
-        Some("voided") => "Receta anulada",
-        Some("superseded") => "Receta reemplazada",
-        Some("not found") => "Receta no encontrada",
-        _ => "Verificación de receta",
-    };
-    let doctor = result()
-        .as_ref()
-        .and_then(|item| item.doctor_name.clone())
-        .unwrap_or_else(|| "—".to_owned());
-    let date = result()
-        .as_ref()
-        .and_then(|item| item.issued_at.clone())
-        .map(|value| format_date(&value))
-        .unwrap_or_else(|| "—".to_owned());
-    let number = result()
-        .as_ref()
-        .and_then(|item| item.rx_number)
-        .map(|value| format!("{value:06}"))
-        .unwrap_or_else(|| "—".to_owned());
-
     rsx! {
-        div {
-            id: "verify-page",
-            h1 { "{title}" }
-            if !loaded() {
-                p { "Cargando..." }
-            } else if result().is_none() && !message().is_empty() {
-                p { class: "error", "{message}" }
-            } else {
-                div {
-                    class: "detail-grid",
-                    div { class: "field", span { "Doctor" }, span { "{doctor}" } }
-                    div { class: "field", span { "Fecha" }, span { "{date}" } }
-                    div { class: "field", span { "No." }, span { "{number}" } }
-                }
+        div { id: "verify-page", class: "ui-public",
+            div { class: "ui-public-head",
+                LogoLockup {}
+                PillBadge {}
             }
-            form {
-                onsubmit: move |event| {
-                    event.prevent_default();
-                    let value = typed().trim().to_uppercase();
-                    if !value.is_empty() {
-                        navigator.push(Route::Verify { code: value });
-                    }
-                },
-                div {
-                    class: "field",
-                    span { "Código de verificación" }
-                    input {
-                        value: typed(),
-                        oninput: move |event| typed.set(event.value()),
+            div { class: "ui-public-main ui-stack",
+                if !loaded() {
+                    LoadingState { label: "Verificando receta…".to_owned() }
+                } else if let Some(verification) = result() {
+                    VerificationResultCard { verification }
+                } else if !message().is_empty() {
+                    Notice { tone: NoticeTone::Error,
+                        p { "{message()}" }
                     }
                 }
-                button { class: "button", type: "submit", "Verificar" }
+                SectionCard { title: "Verificar otra receta".to_owned(), description: None,
+                    div { class: "ui-stack",
+                        VerificationCodeForm {
+                            on_submit: move |value: String| {
+                                requested.set(value.clone());
+                                navigator.replace(Route::Verify { code: value });
+                            },
+                        }
+                        TrustSecurityRow {}
+                    }
+                }
             }
         }
     }
@@ -1391,66 +1451,72 @@ fn Navbar() -> Element {
     });
 
     rsx! {
-        div {
-            id: "navbar",
-            Link { to: Route::Home {}, "Home" }
-            if current.is_some() {
-                Link { to: Route::Dashboard {}, "Dashboard" }
-                if profile
-                    .as_ref()
-                    .is_some_and(|actor| actor.can_read_patients())
-                {
-                    Link { to: Route::Patients {}, "Pacientes" }
+        header { id: "navbar", class: "ui-navbar",
+            div { class: "ui-navbar-inner",
+                div { class: "ui-navbar-brand",
+                    LogoLockup {}
+                    PillBadge {}
                 }
-                if profile
-                    .as_ref()
-                    .is_some_and(|actor| actor.can_read_prescriptions())
-                {
-                    Link { to: Route::Prescriptions { status: None }, "Recetas" }
-                }
-                if profile
-                    .as_ref()
-                    .is_some_and(|actor| actor.can_manage_templates())
-                {
-                    Link { to: Route::Templates {}, "Plantillas" }
-                }
-                Link { to: Route::SettingsProfile {}, "Mi perfil" }
-                if profile.as_ref().is_some_and(|actor| actor.is_administrator()) {
-                    Link { to: Route::SettingsUsers {}, "Usuarios" }
-                    Link { to: Route::Audit {}, "Auditoría" }
-                }
-                Link { to: Route::Settings {}, "Configuración" }
-                span {
-                    class: "sync-status",
-                    "{status.label()}"
-                    if status.pending > 0 {
-                        " · {status.pending} pendientes"
+                nav { class: "ui-navbar-links",
+                    if current.is_some() {
+                        NavLink { to: Route::Dashboard {}, label: "Panel".to_owned() }
+                        if profile
+                            .as_ref()
+                            .is_some_and(|actor| actor.can_read_patients())
+                        {
+                            NavLink { to: Route::Patients {}, label: "Pacientes".to_owned() }
+                        }
+                        if profile
+                            .as_ref()
+                            .is_some_and(|actor| actor.can_read_prescriptions())
+                        {
+                            NavLink {
+                                to: Route::Prescriptions { status: None },
+                                label: "Recetas".to_owned(),
+                            }
+                        }
+                        if profile
+                            .as_ref()
+                            .is_some_and(|actor| actor.can_manage_templates())
+                        {
+                            NavLink { to: Route::Templates {}, label: "Plantillas".to_owned() }
+                        }
+                        NavLink { to: Route::Settings {}, label: "Configuración".to_owned() }
                     }
                 }
-                if status.failed > 0 {
-                    Link {
-                        class: "sync-link",
-                        to: Route::Prescriptions { status: Some("failed".to_owned()) },
-                        "{status.failed} con error"
+                div { class: "ui-navbar-account",
+                    SyncStatusIndicator { status }
+                    if status.failed > 0 {
+                        Link {
+                            class: "ui-sync-link",
+                            to: Route::Prescriptions { status: Some("failed".to_owned()) },
+                            "{status.failed} con error"
+                        }
+                    }
+                    if let Some(session) = current {
+                        span { class: "ui-navbar-user", "{session.email}" }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            onclick: move |_| {
+                                spawn(async move {
+                                    let _ = auth::sign_out().await;
+                                    clear_persisted_session();
+                                    actor.set(None);
+                                    user.set(None);
+                                    navigator.push(Route::Home {});
+                                });
+                            },
+                            "Cerrar sesión"
+                        }
+                    } else {
+                        ButtonLink {
+                            to: Route::AuthPage {},
+                            variant: ButtonVariant::Ghost,
+                            active_class: None,
+                            "Iniciar sesión"
+                        }
                     }
                 }
-            }
-            if let Some(session) = current {
-                span { "{session.email}" }
-                button {
-                    onclick: move |_| {
-                        spawn(async move {
-                            let _ = auth::sign_out().await;
-                            clear_persisted_session();
-                            actor.set(None);
-                            user.set(None);
-                            navigator.push(Route::Home {});
-                        });
-                    },
-                    "Sign out"
-                }
-            } else {
-                Link { to: Route::AuthPage {}, "Sign in" }
             }
         }
         Outlet::<Route> {}
@@ -1475,28 +1541,34 @@ fn AuthPage() -> Element {
 
     if let Some(session) = current {
         return rsx! {
-            div {
-                id: "echo",
-                h4 { "Signed in" }
-                p { "{session.name}" }
-                p { "{session.email}" }
-                button {
-                    onclick: move |_| {
-                        spawn(async move {
-                            let _ = auth::sign_out().await;
-                            clear_persisted_session();
-                            actor.set(None);
-                            user.set(None);
-                            navigator.push(Route::Home {});
-                        });
-                    },
-                    "Sign out"
+            PageShell { id: "auth-page".to_owned(),
+                PageHeader { title: "Sesión iniciada".to_owned(), subtitle: None }
+                Card {
+                    div { class: "ui-stack",
+                        DetailGrid {
+                            DetailItem { label: "Nombre".to_owned(), "{session.name}" }
+                            DetailItem { label: "Correo".to_owned(), "{session.email}" }
+                        }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            onclick: move |_| {
+                                spawn(async move {
+                                    let _ = auth::sign_out().await;
+                                    clear_persisted_session();
+                                    actor.set(None);
+                                    user.set(None);
+                                    navigator.push(Route::Home {});
+                                });
+                            },
+                            "Cerrar sesión"
+                        }
+                    }
                 }
             }
         };
     }
 
-    let submit = move |_| {
+    let mut submit = move |_| {
         if submitting() {
             return;
         }
@@ -1507,7 +1579,7 @@ fn AuthPage() -> Element {
             || password_value.is_empty()
             || (sign_up_mode() && name_value.is_empty())
         {
-            error.set("Fill in every field.".to_string());
+            error.set("Completa todos los campos.".to_string());
             return;
         }
         error.set(String::new());
@@ -1558,7 +1630,7 @@ fn AuthPage() -> Element {
                     if session.is_some() {
                         navigator.push(Route::Dashboard {});
                     } else {
-                        error.set("The auth server did not return an active session.".to_string());
+                        error.set("No se pudo iniciar la sesión.".to_string());
                     }
                 }
                 Err(message) => {
@@ -1569,7 +1641,7 @@ fn AuthPage() -> Element {
         });
     };
 
-    let verify_mfa = move |_| {
+    let mut verify_mfa = move |_| {
         if submitting() {
             return;
         }
@@ -1614,7 +1686,7 @@ fn AuthPage() -> Element {
                     if session.is_some() {
                         navigator.push(Route::Dashboard {});
                     } else {
-                        error.set("The auth server did not return an active session.".to_string());
+                        error.set("No se pudo iniciar la sesión.".to_string());
                     }
                 }
                 Err(message) => {
@@ -1625,71 +1697,162 @@ fn AuthPage() -> Element {
         });
     };
 
+    let password_autocomplete = if sign_up_mode() {
+        "new-password"
+    } else {
+        "current-password"
+    };
+
     rsx! {
-        div {
-            id: "echo",
-            h4 {
-                if sign_up_mode() { "Create your account" } else { "Welcome back" }
-            }
-            div {
-                button {
-                    onclick: move |_| {
-                        sign_up_mode.set(false);
-                        error.set(String::new());
-                    },
-                    "Sign in"
+        PageShell { id: "auth-page".to_owned(),
+            div { class: "ui-auth-shell",
+                div { class: "ui-auth-head",
+                    h1 { class: "ui-auth-title",
+                        if sign_up_mode() { "Crea tu cuenta" } else { "Bienvenido de nuevo" }
+                    }
                 }
-                button {
-                    onclick: move |_| {
-                        sign_up_mode.set(true);
-                        error.set(String::new());
-                    },
-                    "Sign up"
-                }
-            }
-            if sign_up_mode() {
-                input {
-                    placeholder: "Name",
-                    value: "{name}",
-                    oninput: move |event| name.set(event.value()),
-                }
-            }
-            input {
-                r#type: "email",
-                placeholder: "Email",
-                value: "{email}",
-                oninput: move |event| email.set(event.value()),
-            }
-            input {
-                r#type: "password",
-                placeholder: "Password",
-                value: "{password}",
-                oninput: move |event| password.set(event.value()),
-            }
-            if !mfa_ticket().is_empty() {
-                input {
-                    placeholder: "Código de verificación",
-                    value: "{mfa_code}",
-                    oninput: move |event| mfa_code.set(event.value()),
-                }
-                button {
-                    disabled: submitting(),
-                    onclick: verify_mfa,
-                    "Verificar código"
-                }
-            }
-            if !error().is_empty() {
-                p { "{error}" }
-            }
-            button {
-                disabled: submitting(),
-                onclick: submit,
-                if submitting() {
-                    "Please wait..."
-                } else if sign_up_mode() {
-                    "Sign up"
+                if mfa_ticket().is_empty() {
+                    div { class: "ui-segmented",
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            extra_class: (if sign_up_mode() { "" } else { "is-active" }).to_owned(),
+                            onclick: move |_| {
+                                sign_up_mode.set(false);
+                                error.set(String::new());
+                            },
+                            "Iniciar sesión"
+                        }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            extra_class: (if sign_up_mode() { "is-active" } else { "" }).to_owned(),
+                            onclick: move |_| {
+                                sign_up_mode.set(true);
+                                error.set(String::new());
+                            },
+                            "Crear cuenta"
+                        }
+                    }
+                    Card {
+                        FormGrid { columns: FormColumns::One,
+                            if sign_up_mode() {
+                                TextField {
+                                    label: "Nombre".to_owned(),
+                                    value: name(),
+                                    oninput: move |next| name.set(next),
+                                    placeholder: String::new(),
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "name".to_owned(),
+                                    spellcheck: true,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    wide: true,
+                                    hide_label: false,
+                                }
+                            }
+                            TextField {
+                                label: "Correo".to_owned(),
+                                value: email(),
+                                oninput: move |next| email.set(next),
+                                input_type: "email".to_owned(),
+                                placeholder: String::new(),
+                                hint: None,
+                                error: None,
+                                autocomplete: "email".to_owned(),
+                                spellcheck: false,
+                                required: false,
+                                disabled: false,
+                                readonly: false,
+                                min: None,
+                                max: None,
+                                step: None,
+                                wide: true,
+                                hide_label: false,
+                            }
+                            TextField {
+                                label: "Contraseña".to_owned(),
+                                value: password(),
+                                oninput: move |next| password.set(next),
+                                input_type: "password".to_owned(),
+                                placeholder: String::new(),
+                                hint: None,
+                                error: None,
+                                autocomplete: password_autocomplete.to_owned(),
+                                spellcheck: false,
+                                required: false,
+                                disabled: false,
+                                readonly: false,
+                                min: None,
+                                max: None,
+                                step: None,
+                                wide: true,
+                                hide_label: false,
+                            }
+                        }
+                    }
+                    if !error().is_empty() {
+                        ErrorText { text: error() }
+                    }
+                    Button {
+                        variant: ButtonVariant::Primary,
+                        disabled: submitting(),
+                        loading: submitting(),
+                        onclick: move |event| submit(event),
+                        if submitting() {
+                            "Procesando..."
+                        } else if sign_up_mode() {
+                            "Crear cuenta"
+                        } else {
+                            "Iniciar sesión"
+                        }
+                    }
                 } else {
-                    "Sign in"
+                    Card {
+                        FormGrid { columns: FormColumns::One,
+                            TextField {
+                                label: "Código de verificación".to_owned(),
+                                value: mfa_code(),
+                                oninput: move |next| mfa_code.set(next),
+                                placeholder: String::new(),
+                                hint: None,
+                                error: None,
+                                autocomplete: "off".to_owned(),
+                                spellcheck: false,
+                                required: false,
+                                disabled: false,
+                                readonly: false,
+                                min: None,
+                                max: None,
+                                step: None,
+                                wide: true,
+                                hide_label: false,
+                            }
+                        }
+                        if !error().is_empty() {
+                            ErrorText { text: error() }
+                        }
+                        ActionRow {
+                            Button {
+                                variant: ButtonVariant::Primary,
+                                disabled: submitting(),
+                                loading: submitting(),
+                                onclick: move |event| verify_mfa(event),
+                                "Verificar código"
+                            }
+                            Button {
+                                variant: ButtonVariant::Secondary,
+                                onclick: move |_| {
+                                    mfa_ticket.set(String::new());
+                                    error.set(String::new());
+                                },
+                                "Volver"
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1743,7 +1906,7 @@ fn Dashboard() -> Element {
                             navigator.push(Route::Home {});
                         });
                     },
-                    "Sign out"
+                    "Cerrar sesión"
                 }
             }
         },

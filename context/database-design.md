@@ -19,7 +19,7 @@
 | Enums | `TEXT` + `CHECK` | SQLite has no enum type. |
 | Booleans | `INTEGER 0/1` (`plans.active`, `subscriptions.cancel_at_period_end`; v1.1 only) | SQLite has no boolean type. |
 | Foreign keys | enabled via `PRAGMA foreign_keys = ON` | **Required per connection** — the r2d2 connection customizer in `src/db.rs` sets it on every acquire. |
-| Immutability | enforced in the authorized service layer | Signed/published prescriptions immutable; no DB triggers (PRD §3). The `canceled` asset purge never updates prescription rows. |
+| Immutability | authorized service layer; `audit_log` by DB trigger | Signed/published prescriptions immutable in the service layer (PRD §3); `audit_log_no_update`/`audit_log_no_delete` triggers make the audit table append-only in the DB. The `canceled` asset purge never updates prescription rows. |
 | PHI | never in URLs, QR, or `code` | `code` is an opaque random value printed on the PDF; store it plus `code_hash` for lookup. Neither carries PHI. |
 | Money (v1.1) | `INTEGER` cents, USD only | PayPhone expects integer cents (`$5 = 500`, `$50 = 5000`). No floats. Prices are tax-inclusive; the IVA rate lives in `tax_rates` (seeded 15%) and the net/tax split is computed at checkout, then snapshotted into `payment_transactions`. |
 | Billing unit (v1.1) | one `subscriptions` row per `clinics` row | The clinic is the tenant; all members inherit sync entitlement. The Administrator pays. `clinic_id` is `UNIQUE`. |
@@ -39,7 +39,7 @@
 
 ## 2. Table overview
 
-Auth module owns: `users` (`id`, `email`, `password_hash`, `display_name`, `created_at`, `updated_at`) and `sessions` (`id`, `token_hash`, `user_id`, `expires_at`, `created_at`, `device_id`). The initial Diesel migration drops the previous RustAuth `users`, `sessions`, `accounts`, and `verifications` tables and creates these two; `sessions.device_id` is nullable and added by `20261112000001_add_session_device` once `devices` exists.
+Auth module owns: `users` (`id`, `email`, `password_hash`, `display_name`, `created_at`, `updated_at`), `sessions` (`id`, `token_hash`, `user_id`, `expires_at`, `created_at`, `device_id`, `mfa_pending`), and `user_mfa` (`user_id`, `secret`, `enabled`, `created_at`, `updated_at`). The initial Diesel migration drops the previous RustAuth `users`, `sessions`, `accounts`, and `verifications` tables and creates the first two; `sessions.device_id` is nullable and added by `20261112000001_add_session_device` once `devices` exists; `20261113000000_hardening_mfa_audit` creates `user_mfa`, adds `sessions.mfa_pending`, and installs the `audit_log` append-only triggers.
 
 App-owned tables (this design):
 
@@ -127,7 +127,7 @@ Auth relationship: `profiles.auth_user_id` → `users.id` (1:1). `sessions.devic
 | `assets.content_type` | `image/jpeg`, `image/png` |
 | `devices.platform` | `macos`, `windows`, `web` |
 | `outbox.operation` | `create_patient`, `update_patient`, `create_template`, `publish_template_version`, `create_prescription`, `update_prescription`, `upsert_prescription_item`, `sign_prescription`, `void_prescription`, `supersede_prescription` |
-| `outbox.status` | `pending`, `failed` |
+| `outbox.status` | `pending`, `failed`, `synced` (`synced` set client-side on server ack; kept as history) |
 | `tax_rates.name` | `IVA` |
 | `plans.code` | `monthly`, `yearly` |
 | `subscriptions.status` | `trialing`, `active`, `past_due`, `locked`, `canceled` |
@@ -519,7 +519,7 @@ CREATE INDEX idx_payment_events_tx ON payment_events (transaction_id, created_at
 - **Block-allocated `rx_number` (FR-014, D-02):** a device requests a block inside `BEGIN IMMEDIATE`: insert the `rx_counters` row if absent, `UPDATE rx_counters SET last_rx_number = last_rx_number + N`, then insert `rx_blocks(start_number, end_number)`. A web client registers a `devices` row with `platform='web'` before its first allocation; desktop installs use their own row. Offline signing increments `consumed` locally; on sync the server accepts the number only when it lies inside a block issued to that device and is unused. Unused tails stay burned (recorded in `rx_blocks`), so numbering is unique and monotonic per clinic but not contiguous; `uq_prescriptions_rx` makes a duplicate fail loudly. Block size comes from `clinics.rx_block_size` (default 50, configurable per clinic).
 - **Corrections (FR-013, FR-024):** a supersede creates a new `prescriptions` row with its own `rx_number` from a block and its own `verification_codes` row; the replaced row keeps its number and becomes `superseded`. The old code stays resolvable and reports `superseded`.
 - **Draft attribution (FR-010):** `prescriptions.doctor_id` is NULL on a nursing draft and `created_by` records the author; the table CHECK blocks any non-draft row without a doctor. Signing sets `doctor_id` and `signed_at`.
-- **Idempotency (FR-041):** `prescriptions.client_id` is client-generated and `UNIQUE`; `patients.client_id` and `templates.client_id` follow the same rule (nullable UNIQUE columns added by spec 11-K). A replayed upload matches on `client_id` and is a no-op/return of the existing row — never a duplicate. `template_versions.id` is client-minted, so a publish replay conflicts on the primary key and returns the existing version; updates carry full state and are naturally idempotent.
+- **Idempotency (FR-041):** `prescriptions.client_id` is client-generated and `UNIQUE`; `patients.client_id` and `templates.client_id` follow the same rule (nullable UNIQUE columns shipped directly in `create_app_schema`; spec 11-K needed no separate migration). A replayed upload matches on `client_id` and is a no-op/return of the existing row — never a duplicate. `template_versions.id` is client-minted, so a publish replay conflicts on the primary key and returns the existing version; updates carry full state and are naturally idempotent.
 - **Image quota (FR-080–082):** v1 allows 1 non-deleted `assets` row with `kind='image'` per clinic; the v1.1 tiers are `active`/`past_due` = 5, `trialing`/`locked` = 1, `canceled` = 0. Each `size_bytes <= 10485760`. The service counts and inserts in one `BEGIN IMMEDIATE` transaction; a `pending` row reserves the slot, and a failed upload deletes it. Exceeding the quota returns `409 image_quota_exceeded`.
 - **Image upload entitlement (v1.1, FR-080):** uploads require `trialing`, `active`, or `past_due` before `grace_ends_at`; `locked` and `canceled` return `402 image_upload_requires_plan`. Reads of retained images stay allowed. v1 has no gate: uploads are limited only by the 1-image quota and the Administrator/Doctor role. The logo never counts against the library quota.
 - **Image rendering on lapse (v1.1):** from `past_due`, only the logo and the single free `kind='image'` asset render; additional library images render a built-in placeholder. `locked` behaves the same. On `canceled`, every asset is soft-deleted (`deleted_at`), objects are removed, and all references render placeholders — including the logo (D-05); `template_version_assets` rows are kept so published versions stay structurally intact.
@@ -559,7 +559,7 @@ CREATE TABLE outbox (
   entity_type   TEXT NOT NULL,
   entity_id     TEXT NOT NULL,
   payload_json  TEXT NOT NULL,
-  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','failed')),
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','failed','synced')),
   attempts      INTEGER NOT NULL DEFAULT 0,
   next_retry_at TEXT,
   last_error    TEXT,
@@ -586,7 +586,7 @@ CREATE TABLE asset_cache (
 - **Retention (FR-042):** cache evicts **server-backed** prescriptions older than `clinics.retention_days` (default 30). Eviction removes only local rows, never server data; re-download on demand. Rows with no server copy (local `synced_at IS NULL` or still in `outbox`) are never evicted — they are the only copy.
 - **Entitlement cache (v1.1):** `sync_meta` stores `entitlement_status`, `entitlement_checked_at`, `trial_ends_at`, `server_retention_until`, `image_quota`, `image_render_limit`, and `sync_locked_reason` for offline UI. v1 caches only `last_synced_at`, the active `rx_block`, and `image_quota=1`; there is no entitlement to cache.
 - **Session persistence (offline restart):** `sync_meta` stores `session_token`, `session_user`, `session_profile`, `session_expires_at`. Token is the server opaque token (30-day expiry), stored plaintext in the app-data dir (`0700`); the client resends it as the `persona_session` cookie and restores user + profile at startup without network. Server acceptance is authoritative: a reachable server returning no session, sign-out, or local expiry clears all four keys.
-- **`pending_sync` is client-derived**, not a server column: a prescription whose sign/upload still sits in `outbox` renders as `pending_sync` (FR-043, `/prescriptions?status=pending_sync`). Its PDF carries `PENDIENTE DE SINCRONIZACIÓN` and the QR is inactive until the upload succeeds.
+- **`pending_sync` is client-derived**, not a server column: a prescription whose sign/upload still sits in `outbox` (`status` `pending` or `failed`) renders as `pending_sync` (FR-043, `/prescriptions?status=pending_sync`); an acked row flips to `synced` and stays as sync history. Its PDF carries `PENDIENTE DE SINCRONIZACIÓN` and the QR is inactive until the upload succeeds.
 - **PDFs are not stored** on the server or in the local cache: `printpdf` renders bytes on demand from the pinned `template_versions.doc_json` + items + variables (PRD FR-030). No `pdf_blob`/`pdf_path` column exists; desktop renders in-process through the same module, so an offline reprint needs no cached PDF file.
 - **`sync_locked` (v1.1):** the outbox keeps growing while billing is locked; rows are never discarded. After renewal, drain oldest-first with the existing `client_id` idempotency; show size/count so the user knows what is pending. v1 never locks sync.
 - **Conflict rule (PRD §4 flow 2):** server wins for signed data; only an in-progress draft prompts for a choice.
@@ -596,7 +596,8 @@ CREATE TABLE asset_cache (
 - Diesel migrations live under `persona-sanus/migrations/` and are embedded in the server binary with `embed_migrations!`.
 - `src/db.rs` runs `run_pending_migrations` on startup, before the pool serves requests.
 - The initial migration (`20261111000000_create_auth`) replaces the previous RustAuth schema with the app-owned `users` and `sessions` tables.
-- `20261112000001_add_session_device` adds nullable `sessions.device_id` after `devices` exists (spec 04-D); the sync migration (spec 11-K) adds nullable UNIQUE `client_id` columns to `patients` and `templates`.
+- `20261112000001_add_session_device` adds nullable `sessions.device_id` after `devices` exists (spec 04-D); the nullable UNIQUE `client_id` columns on `patients` and `templates` (spec 11-K) shipped directly in `create_app_schema`, so no separate sync migration exists.
+- `20261113000000_hardening_mfa_audit` (spec 12-L) creates `user_mfa`, adds `sessions.mfa_pending`, and installs the `audit_log_no_update`/`audit_log_no_delete` triggers.
 - The app-schema migration creates every non-billing table from §2 in FK-safe order: `profiles`, `clinics` (created with `logo_asset_id = NULL`), `assets`, `clinic_members`, `devices`, `doctors`, `patients`, `templates`, `template_versions`, `template_version_assets`, `rx_counters`, `rx_blocks`, `prescriptions`, `prescription_items`, `verification_codes`, and `audit_log`. The circular `clinics` ↔ `assets` logo reference follows the §6 insertion order. MinIO runs as a Compose service and the bucket is created at server startup, holding no SQLite data.
 - **v1.1:** a dedicated `*_create_billing` migration runs after the app-schema migration: `tax_rates` (with the 15% seed), `plans` (tax-inclusive amounts only), `billing_accounts`, `payment_methods`, `subscriptions`, `payment_transactions`, `payment_events`, and the partial indexes. It also backfills one `trialing` subscription per existing clinic. v1 does not create these tables.
 - **Backfill policy (v1.1):** existing clinics get `trial_ends_at = migration_time + 3 calendar months` (grandfathering) so the migration never locks a live clinic. New clinics use `created_at + 3 calendar months`. Retention boundaries remain on `clinics` (`server_retention_until`, `data_grace_ends_at`); the migration clears `clinics.data_grace_ends_at` for backfilled `trialing` clinics so no trim runs while they are active.

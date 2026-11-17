@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | Source | `context/PRD.md` (Draft v0.8 — 2026-11-12) §5.4, §5.8, §7–§9, `context/database-design.md`, `context/sitemap.md` |
-| Baseline | Working tree 2026-11-11 — M0 auth implemented on the Dioxus fullstack base |
+| Baseline | Working tree 2026-11-17 — specs 01-A–12-L and 14-N done; 13-M shipped with open divergences in `specs/divergences/` |
 | Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `qrcode-generator` 6.1.2 (`std`, `qr`, `image`) for QR PNG output · `printpdf` 0.12.9 (`default-features = false`, `text_layout`, `jpeg`, `png`) |
 | Topology | One fullstack node: server binary + wasm bundle; one SQLite file on local disk |
 | Datastore | `app.db` locally · `/data/app.db` in Docker (`persona-data` volume) |
-| Public surface | `:8080` — Dioxus pages, `/api/auth/*`, `/health`; `⬜ /verify/:code`, ✅ `/api/prescriptions/:id/pdf`, ✅ `/api/prescriptions/:id/preview` |
+| Public surface | `:8080` — Dioxus pages incl. ✅ `/verify/:code`, `/api/auth/*` (incl. `mfa/*`), `/health`, ✅ `/api/patients*`, `/api/templates*`, `/api/prescriptions*` (incl. `:id/pdf`, `:id/preview`), `/api/assets*`, `/api/clinic*`, `/api/verify/:code`, `/api/sync/*` (SSE), `/api/rx/*`, `/api/devices*`, `/api/settings/*`, `/api/audit`, `/api/me`, `/api/updates/manifest` |
 | Build | `dx build --release --fullstack` → `target/dx/persona-sanus/release/web/{server,public}` |
 | Status key | ✅ Implemented · 🟡 Partial · ⬜ Planned |
 
@@ -31,11 +31,11 @@ The server process is the unit of deployment. There is no separate API service, 
 | Prescriptions, items, verification | ✅ | PRD §5.4–§5.6 |
 | Templates forms and inputs (forms on web + desktop, online and offline, D-21) | ✅ | `src/forms.rs` |
 | A4 PDF + QR | ✅ | `src/pdf.rs`, `src/pdf_server.rs`, PRD §5.4 |
-| Desktop cache + outbox + sync | ⬜ | PRD §5.5 |
+| Desktop cache + outbox + sync | ✅ | `src/desktop_local.rs`, `src/sync_server.rs`, specs 10-J/11-K |
 | Billing + scheduler (v1.1) | ⬜ | PRD §5.7, D-04 |
 | Image library (1 image in v1; MinIO, 15-min signed URLs) | ✅ | `src/assets.rs`, `/api/assets*` |
 | Branding asset upload (logo only) | ✅ | `/api/clinic/logo`, `/settings/clinic` |
-| Audit, MFA, rate limiting, backups | ⬜ | PRD §9, §11 M3 |
+| Audit, MFA, rate limiting, backups | ✅ | `src/jobs.rs`, `src/verify_server.rs`, `migrations/20261113000000_hardening_mfa_audit`, specs 12-L/13-M; proxy-trust gap in `specs/divergences/12-L-rate-limit-proxy.md` |
 
 ```mermaid
 flowchart LR
@@ -49,13 +49,13 @@ flowchart LR
         SSR["Dioxus SSR + hydration<br/>App · Router"]
         AUTH["/api/auth/*<br/>Argon2 · opaque sessions"]
         HEALTH["/health"]
-        SVC["Authorized service layer<br/>⬜ M0"]
-        JOBS["In-process scheduler<br/>⬜ M3"]
+        SVC["Authorized service layer<br/>✅"]
+        JOBS["In-process scheduler<br/>✅"]
         POOL["Diesel r2d2 pool<br/>max_size = 8"]
     end
 
     DB[("SQLite<br/>app.db")]
-    OBJ[["MinIO private bucket<br/>images · 15-min signed URLs<br/>⬜ M1"]]
+    OBJ[["MinIO private bucket<br/>images · 15-min signed URLs<br/>✅"]]
     PAY["PayPhone Tokenization<br/>⬜ v1.1"]
 
     WEB -->|HTTPS| ROUTER
@@ -78,9 +78,9 @@ flowchart LR
 | Feature | Pulls in | Produces | Used by |
 |---|---|---|---|
 | `default = ["web", "server"]` | both below | fullstack dev/prod build | `dx serve`, Docker |
-| `web` | `dioxus/web`, `dioxus-motion` (`web`) | wasm client | browser |
-| `server` | `dioxus/server`, `axum`, `tokio` (`macros`, `rt-multi-thread`, `net`), `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `anyhow`, `qrcode-generator`, `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`) | native server binary | node |
-| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`), `qrcode-generator`, `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`); ⬜ M2 adds `diesel` (`sqlite`, `r2d2`) + `libsqlite3-sys` (`bundled`) + `reqwest` (`cookies`) for the local cache and sync | native WebView app | macOS/Windows |
+| `web` | `dioxus/web`, `dioxus-motion` (`web`), `chrono` (`clock`), `uuid` | wasm client | browser |
+| `server` | `dioxus/server`, `axum` (`multipart`), `tokio` (`macros`, `rt-multi-thread`, `net`, `time`, `sync`), `tokio-stream`, `diesel` (`sqlite`, `r2d2`), `diesel_migrations`, `libsqlite3-sys` (`bundled`), `dioxus-motion` (`dioxus`, no `web`), `argon2`, `sha2`, `hex`, `uuid` (`v4`, `v7`), `chrono` (`clock`), `unicode-casefold`, `unicode-normalization`, `anyhow`, `qrcode-generator`, `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`), `tower-http` (`cors`, `set-header`), `image` (`jpeg`, `png`), `ed25519-dalek`, `base64` | native server binary | node |
+| `desktop` | `dioxus/desktop`, `dioxus-motion` (`desktop`), `qrcode-generator`, `printpdf` (`default-features = false`, `text_layout`, `jpeg`, `png`), `diesel` (`sqlite`, `r2d2`), `libsqlite3-sys` (`bundled`), `sha2`, `hex`, `ed25519-dalek`, `base64`, `chrono`, `uuid`, `tokio`; `reqwest` (`cookies`) is unconditional — the local cache, outbox, and update channel ship (spec 10-J) | native WebView app | macOS/Windows |
 | `mobile` | `dioxus/mobile` | declared, not v1 | — |
 
 `reqwest` and `serde_json` are unconditional and compile on both sides.
@@ -110,21 +110,33 @@ Rules:
 | `src/pdf.rs` | server + desktop | `printpdf` renderer: layout model → page ops, fonts, images, QR PNG via `qrcode-generator`, A4 page boxes; pure, deterministic, no I/O | SQL, HTTP, UI, `from_html` |
 | `src/pdf_server.rs` | server | `GET /api/prescriptions/:id/pdf`, authorization, `Content-Disposition` filename, load pinned version + variables | layout or drawing logic |
 | `src/schema.rs` | server | Diesel `table!` definitions | drift from migrations |
-| `src/server.rs` | server | axum composition, `AppState`, `/health` | query the database directly |
+| `src/server.rs` | server | axum composition, `AppState`, `/health`, origin guard, security headers, CORS | query the database directly |
+| `src/service.rs` | server | authorized service layer: role and clinic scoping, mutation invariants, audit writes | be bypassed by a handler; hold network I/O in a transaction |
+| `src/api.rs` + `src/api_server.rs` | client + server | typed REST calls for the app pages; `/api/*` handlers (patients, templates, prescriptions, assets, clinic, settings, devices, audit, rx blocks, me) | contain SQL or layout logic |
+| `src/sync_server.rs` | server | `GET /api/sync/state`, `GET /api/sync/events` SSE; idempotent outbox drain | duplicate service logic |
+| `src/verify_server.rs` | server | public `/api/verify/:code`, per-IP limiter | return PHI |
+| `src/device.rs` | client + server | device registration and revocation flow | skip `sessions.device_id` checks |
+| `src/jobs.rs` | server | scheduler: session purge, stale pending-asset cleanup, retention trim, daily backup; serves the signed update manifest | run on the reactor; discard job errors |
+| `src/update.rs` | desktop + server | desktop update check, manifest signature and version verification, staged apply with `.prev` rollback | carry clinical data |
+| `src/http.rs` | client | base-URL split (relative wasm / configured native origin) and shared transport errors | hardcode an origin |
+| `src/desktop_local.rs` | desktop | local SQLite cache, outbox, rx-block consumption, asset cache | act as the authority; the server reconciles |
+| `src/dev_db.rs` | server | loopback-only SQLite browser in debug builds (`/dev/db`, spec 14-N) | ship in release |
 | `migrations/` | server | schema history | be edited after release |
 
-Dependency direction: UI/`auth` → HTTP; `server` → `auth_server` → `db` → `schema`. No upward imports. Extend this seam rather than adding ad-hoc pools, routers, or SQL from handlers: `server::router` wires state, `auth_server` speaks HTTP, `db` is the only place with SQL.
+Dependency direction: UI/`auth` → HTTP; `server` → `auth_server`/`api_server` → `service` → `db` → `schema`. No upward imports. Extend this seam rather than adding ad-hoc pools, routers, or SQL from handlers: `server::router` wires state, `auth_server`/`api_server` speak HTTP, `service` owns the invariants, `db` is the only place with server SQL; on the desktop side `desktop_local` is the only place with local-cache SQL.
 
-Planned server components keep the same split rather than new top-level patterns:
+Server components shipped with the same split rather than new top-level patterns:
 
-| Component | Responsibility | Gate |
-|---|---|---|
-| Authorized service layer | mutations/reads with session, role, clinic membership (entitlement is v1.1) | every app write |
-| Sync API | idempotent outbox drain, cache reconciliation, push channel | v1: none; v1.1: `can_sync` |
-| Billing (v1.1) | PayPhone tokenization client (`ctoken` capture, `/api/transaction/web` charges), consent, entitlement transitions | administrator |
-| Jobs | v1: retention (on in v1, D-12), session purge, asset cleanup; v1.1: trial, renewal, polling, dunning | server-only, single node |
-| Assets | image library 1 per clinic in v1 (5/1/0 in v1.1), logo excluded, validation, quota, 15-min signed URLs | role + quota (v1); clinic state (v1.1) |
-| PDF renderer | `printpdf` A4 rendering from the pinned `doc_json` + variables, shared by server and desktop | server + desktop |
+| Component | Module | Responsibility | Gate | Status |
+|---|---|---|---|---|
+| Authorized service layer | `src/service.rs` | mutations/reads with session, role, clinic membership (entitlement is v1.1) | every app write | ✅ |
+| Sync API | `src/sync_server.rs` | idempotent outbox drain, cache reconciliation, SSE push | v1: none; v1.1: `can_sync` | ✅ |
+| Billing (v1.1) | — | PayPhone tokenization client (`ctoken` capture, `/api/transaction/web` charges), consent, entitlement transitions | administrator | ⬜ v1.1 |
+| Jobs | `src/jobs.rs` | v1: retention (on in v1, D-12), session purge, asset cleanup, daily backup; v1.1: trial, renewal, polling, dunning | server-only, single node | ✅ (gaps in `specs/divergences/13-M-*`) |
+| Assets | `src/assets.rs`, `src/api_server.rs` | image library 1 per clinic in v1 (5/1/0 in v1.1), logo excluded, validation, quota, 15-min signed URLs | role + quota (v1); clinic state (v1.1) | ✅ |
+| PDF renderer | `src/pdf.rs`, `src/pdf_server.rs` | `printpdf` A4 rendering from the pinned `doc_json` + variables, shared by server and desktop | server + desktop | ✅ |
+| Public verification | `src/verify_server.rs` | opaque code → minimal public record, per-IP limit | public | ✅ |
+| Update channel | `src/update.rs`, `src/jobs.rs` | signed manifest issuance and client verification/staging | desktop | ✅ (gaps in `13-M-update-channel.md`) |
 
 ## 4. Startup and request lifecycle
 
@@ -152,6 +164,8 @@ Per request:
 | `POST` | `/api/auth/sign-in/email` | none | `email`, `password` | `200 {token, user}` + `Set-Cookie`; `401` |
 | `GET` | `/api/auth/get-session` | `persona_session` cookie | — | `200 {session, user}` or `null` |
 | `POST` | `/api/auth/sign-out` | `persona_session` cookie | — | `200 {success:true}` + expired cookie |
+| `POST` | `/api/auth/mfa/enroll` · `mfa/confirm` · `mfa/disable` · `mfa/verify` · `GET mfa/status` | `persona_session` cookie (enroll/confirm/disable/status); `mfaTicket` (verify) | TOTP setup or `code` | enrollment in `user_mfa`; verify clears `sessions.mfa_pending` and sets the real session cookie |
+| `POST` | `/api/auth/change-password` | `persona_session` cookie | current + new password | `200` after verifying the current password; the session rotates to a new token |
 | `GET` | `/health` | none | — | `200 {"ok":true,"foreign_keys":true,"journal_mode":"wal"}` |
 
 ```mermaid
@@ -180,14 +194,14 @@ Rules:
 - Passwords require at least 8 characters and are hashed with Argon2 defaults. `user_json` omits `password_hash`; the hash never leaves the server.
 - A session token is two concatenated UUID v4 values (64 hex characters). Only `SHA-256(token)` is stored, under a unique index, so a database leak yields no usable token.
 - Sessions expire after 30 days. The cookie is `persona_session; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`, plus `Secure` when `PERSONA_COOKIE_SECURE` is true.
-- Sign-out deletes only the presented session. There is no all-device revocation, session rotation on password change, email verification, password reset, MFA, lockout, or rate limiting (M0; M3 in PRD §11).
+- Sign-out deletes only the presented session; revoking a device invalidates the sessions carrying its `sessions.device_id`. TOTP MFA (`user_mfa`, `sessions.mfa_pending`) gates doctor/administrator sign-in once enrolled; `/api/auth/change-password` rotates the session. Email verification, self-service password reset, and account lockout do not exist. Auth and verification traffic carry per-IP limits (`AUTH_RATE_LIMIT_PER_MINUTE`, `VERIFY_RATE_LIMIT_PER_MINUTE`); the proxy-trust gap is tracked in `specs/divergences/12-L-rate-limit-proxy.md`.
 
 Security findings in the current implementation:
 
 | Finding | Evidence | Impact | Action |
 |---|---|---|---|
 | Token returned in the JSON body as well as the cookie | `session_response` | an XSS can read a credential that `HttpOnly` otherwise protects | closed: `session_response` returns the user only and sets the `HttpOnly` cookie; the desktop client reads the token from `Set-Cookie` |
-| Account enumeration | sign-up returns `409`; sign-in skips Argon2 for unknown emails | email discovery and timing signal | uniform sign-in errors plus a dummy hash and rate limiting (spec 12-L); sign-up keeps `409` — enumeration is inherent in account creation (accepted residual) |
+| Account enumeration | sign-up returns `409`; sign-in skipped Argon2 for unknown emails | email discovery and timing signal | closed: sign-in burns a dummy Argon2 hash for unknown emails with a uniform `401`, and `AUTH_RATE_LIMIT_PER_MINUTE` limits the endpoints (spec 12-L); sign-up keeps `409` — enumeration is inherent to account creation (accepted residual); proxy-trust gap in `specs/divergences/12-L-rate-limit-proxy.md` |
 | No CSRF token or `Origin` check | cookie auth with JSON `POST` | `SameSite=Lax` mitigates, but lacks defense in depth | closed: `server::origin_guard` rejects state-changing `Origin` headers outside `PERSONA_WEB_ORIGINS`, `x-forwarded-host`/`Host`, or the `dx serve` proxy's loopback devserver origin (spec 12-L) |
 | No security headers or CORS layer | router composition | no CSP/HSTS surface; a browser-served second origin would fail without CORS | closed: CSP, `nosniff`, `Referrer-Policy`, `X-Frame-Options`, optional HSTS, and credentialed CORS (spec 12-L) |
 
@@ -220,7 +234,7 @@ The connection pragmas live in the r2d2 customizer in `db.rs`; `database-design.
 | `/templates*` | `Navbar` | doctor or administrator (sitemap §1.2) | ✅ |
 | `/settings*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (clinic image library in spec 06-F) |
 | `/prescriptions*` | `Navbar` | role- and session-dependent (sitemap §1.2) | ✅ (forms and inputs, items, sign, void, supersede, A4 preview, PDF) |
-| `/audit`, `/verify/:code` | target shell | role- and session-dependent (sitemap §1.2) | ⬜ |
+| `/audit`, `/verify/:code` | shell / standalone | role- and session-dependent (sitemap §1.2); `/verify/:code` public | ✅ |
 
 Rules and current limits:
 
@@ -245,14 +259,14 @@ Decision: application data is exposed as REST under `/api/*` with the session co
 
 | Domain | Server contract | Stores | Gate | Status | PRD |
 |---|---|---|---|---|---|
-| Profile and membership | session → profile, role, clinic membership, doctor details | `users`, `sessions`, `profiles`, `clinic_members`, `doctors` | session | 🟡 identity only | §3, DB §2 |
+| Profile and membership | session → profile, role, clinic membership, doctor details | `users`, `sessions`, `profiles`, `clinic_members`, `doctors` | session | ✅ | §3, DB §2 |
 | Patients | CRUD, cédula dedupe, soft delete | `patients` | role + clinic | ✅ | FR-001–003 |
-| Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | 🟡 forms and inputs + publish; asset pinning spec 06-F | FR-020–024 |
-| Images | upload/delete, v1 quota (1), 15-min signed URLs, template pinning, placeholder rendering (v1.1) | `assets`, `template_version_assets` | role + quota | ⬜ | FR-080–085 |
+| Templates | draft, publish immutable version, pin assets | `templates`, `template_versions`, `template_version_assets`, `assets` | doctor owner or administrator | ✅ | FR-020–024 |
+| Images | upload/delete, v1 quota (1), 15-min signed URLs, template pinning; placeholder rendering is v1.1 | `assets`, `template_version_assets` | role + quota | ✅ | FR-080–085 |
 | Prescriptions | draft→signed→superseded/voided, ordered items, block-allocated number | `prescriptions`, `prescription_items`, `rx_counters`, `rx_blocks` | doctor signs; nursing drafts; secretary reads/reprints; administrator reads clinic-wide | ✅ | FR-010–014 |
-| Verification | opaque code → public status, no PHI | `verification_codes` | public, rate limited | ⬜ | FR-050 |
-| Audit | append-only actor/action/entity and sensitive reads | `audit_log` | administrator read | ⬜ | PRD §6 |
-| Sync | idempotent mutations, block reconciliation, push | client cache + outbox | v1: none; v1.1: `can_sync` | ⬜ | FR-040–043 |
+| Verification | opaque code → public status, no PHI | `verification_codes` | public, rate limited | ✅ | FR-050 |
+| Audit | append-only actor/action/entity and sensitive reads (DB triggers block update/delete) | `audit_log` | administrator read | ✅ | PRD §6 |
+| Sync | idempotent mutations, block reconciliation, SSE push | client cache + outbox | v1: none; v1.1: `can_sync` | ✅ | FR-040–043 |
 | Billing (v1.1) | plan, trial, subscription, transactions, events | billing tables (not in v1) | administrator | ⬜ v1.1 | FR-060–070 |
 
 `users` is auth-owned. The app profile is `profiles`, linked by `auth_user_id`, because the two names collide in PRD §6 (DB §1). UI labels such as "Users" map to profiles plus `clinic_members`, not to the auth table.
@@ -399,14 +413,14 @@ sequenceDiagram
 
 | Job | Trigger | Writes | Idempotency | Status |
 |---|---|---|---|---|
-| Asset cleanup | periodic | delete `pending` assets older than one hour and their objects | age + object key | ⬜ |
+| Asset cleanup | `JOBS_INTERVAL_SECONDS` (default 3600) | delete `pending` assets older than one hour and their objects | age + object key | ✅ (object-failure atomicity gap: `specs/divergences/13-M-stale-asset-cleanup.md`) |
 | Trial expiry (v1.1) | scheduler | `subscriptions` trialing→locked, audit | compare timestamps | ⬜ v1.1 |
 | Renewal request (v1.1) | `next_charge_at` | pending transaction + tokenized charge (`/api/transaction/web`) | one pending per subscription | ⬜ v1.1 |
 | Payment confirmation (v1.1) | 60 s while pending | `payment_events`, activation | event hash + status | ⬜ v1.1 |
 | Dunning (v1.1) | days 0/+2/+4, then lock | `past_due` → `locked` | status transitions | ⬜ v1.1 |
-| Retention trim | after `data_grace_ends_at` | delete beyond the 3-month window | recompute deadline | ⬜ (on in v1, D-12) |
-| Session purge | periodic | delete expired sessions | by `expires_at` | 🟡 lazy on get-session |
-| Backup | daily | encrypted SQLite copy | date-stamped | ⬜ ops |
+| Retention trim | after `data_grace_ends_at` | delete beyond the 3-month window; `clinics` export offered first at `/settings/clinic` | recompute deadline | ✅ (on in v1, D-12; `RETENTION_TRIM_ENABLED`) |
+| Session purge | `JOBS_INTERVAL_SECONDS` | delete expired sessions | by `expires_at` | ✅ (plus lazy reject on get-session) |
+| Backup | `BACKUP_INTERVAL_SECONDS` (default 86400) | `VACUUM INTO` snapshot encrypted with `age`, plus MinIO `mc` mirror | date-stamped | ✅ (file-safety and mirror-check gaps: `13-M-backup-file-safety.md`, `13-M-backup-minio-mirror.md`) |
 
 Single-node invariant: in-process scheduler + SQLite + a filesystem volume means exactly one writer replica. Two replicas would split the database and could double-charge a clinic. Horizontal scaling requires an external database and job locking, which is out of v1 scope. Compose restarts the container (`unless-stopped`) and probes `/health` every 5 seconds; TLS must terminate outside the container and is not shipped in Compose.
 
@@ -418,12 +432,21 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `PERSONA_COOKIE_SECURE` | `false` | server | `1` or `true`; enable behind TLS |
 | `IP` | `127.0.0.1` | server | Compose sets `0.0.0.0` |
 | `PORT` | `8080` | server | Compose maps `8080:8080` |
-| `PUBLIC_BASE_URL` | — | server | ⬜ absolute base for QR/verification links, e.g. `https://rx.example.com` (specs 08-H, 09-I) |
+| `PUBLIC_BASE_URL` | `http://127.0.0.1:8080` fallback | server | ✅ absolute base for QR/verification links, e.g. `https://rx.example.com`; the loopback fallback must be overridden for any real deployment (`specs/divergences/13-M-compose-production-config.md`) |
 | `PAYPHONE_TOKEN` | — | server | ⬜ v1.1 secret, never shipped to clients |
 | `PAYPHONE_STORE_ID` | — | server | ⬜ v1.1 |
 | `PAYPHONE_CODING_PASSWORD` | — | server | ⬜ v1.1 AES-256-CBC key for `cardHolder` |
-| `RETENTION_TRIM_ENABLED` | `true` | server | enforced in v1 (D-12); counsel sign-off before production |
-| `UPDATE_MANIFEST_URL` | — | desktop | signed auto-update manifest (D-08) |
+| `RETENTION_TRIM_ENABLED` | `true` | server | ✅ enforced in v1 (D-12); counsel sign-off before production |
+| `UPDATE_MANIFEST_URL` | — | desktop | ✅ signed auto-update manifest (D-08); staging/HTTPS gaps in `specs/divergences/13-M-update-channel.md` |
+| `UPDATE_PUBLIC_KEY` | — | desktop | ✅ base64 ed25519 public key that verifies the manifest |
+| `UPDATE_SIGNING_KEY` | — | server | ✅ base64 ed25519 seed that signs the served manifest (`GET /api/updates/manifest`) |
+| `UPDATE_MANIFEST_VERSION` · `UPDATE_MANIFEST_DOWNLOAD_URL` · `UPDATE_MANIFEST_ROLLOUT` | — / — / `0` | server | ✅ the manifest the server serves |
+| `JOBS_INTERVAL_SECONDS` | `3600` | server | ✅ session purge, stale asset cleanup, retention trim cadence |
+| `BACKUP_INTERVAL_SECONDS` | `86400` | server | ✅ daily backup cadence |
+| `BACKUP_DIR` | — | server | Compose mounts `./backups:/backups`; `VACUUM INTO` + `mc mirror` targets |
+| `BACKUP_AGE_RECIPIENT` | — | server | `age1…` recipient that encrypts each snapshot; unset skips the backup |
+| `PERSONA_DEVICE_ID` | — | desktop | override for the rollout-bucket identity read by `update.rs`; nothing sets it today — empty-input gap tracked in `specs/divergences/13-M-update-channel.md` |
+| `PERSONA_LOCAL_DATA_DIR` | app-data dir | desktop | local cache SQLite + asset cache location |
 | `ASSETS_BUCKET` | — | server | ✅ private bucket name |
 | `ASSETS_ENDPOINT` | — | server | ✅ S3-compatible endpoint |
 | `ASSETS_REGION` | `us-east-1` | server | ✅ |
@@ -433,8 +456,8 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `ASSETS_PUBLIC_ENDPOINT` | `ASSETS_ENDPOINT` | server | ✅ browser-reachable base for signed URLs (Compose: host-published MinIO port, not `http://minio:9000`) |
 | `PERSONA_WEB_ORIGINS` | `` (same-origin only) | server | ✅ comma-separated web origins allowed by credentialed CORS (spec 04-D); the same-origin fallback compares the request `Origin` against `x-forwarded-host`/`Host` (proxy-aware, so a TLS terminator that rewrites `Host` still passes), and a request proxied by `dx serve` may carry a loopback `Origin` on `DIOXUS_DEVSERVER_PORT` because the dev proxy rewrites `Host` to the backend's ephemeral port |
 | `PERSONA_SERVER_ORIGIN` | `http://127.0.0.1:8080` | client | native API origin; the wasm client always uses relative paths (spec 04-D) |
-| `VERIFY_RATE_LIMIT_PER_MINUTE` | `10` | server | ⬜ public verification per-IP limit (spec 09-I) |
-| `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ⬜ auth-endpoint per-IP limit (spec 12-L) |
+| `VERIFY_RATE_LIMIT_PER_MINUTE` | `10` | server | ✅ public verification per-IP limit (spec 09-I); proxy trust tracked in `specs/divergences/12-L-rate-limit-proxy.md` |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ✅ auth-endpoint per-IP limit (spec 12-L); proxy trust tracked in the same divergence |
 
 
 MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket stays private. The LLM URL is per clinic in `clinics.llm_url_template` (DB §5), not a process environment variable. PRD FR-012 agrees (`clinics.llm_url_template`); seed it from configuration if an environment default is wanted.
@@ -447,14 +470,14 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | Browser ↔ node | TLS outside the container; `Secure` cookie flag | 🟡 flag configurable, TLS is external and absent from Compose |
 | Session | `HttpOnly`, `SameSite=Lax`, SHA-256 token hash | ✅ |
 | CSRF | `SameSite=Lax` + JSON handlers + `Origin` guard on `POST`/`PUT`/`PATCH`/`DELETE` (`PERSONA_WEB_ORIGINS`, forwarded `Host`, or the `dx serve` loopback devserver origin) | ✅ |
-| Authorization | server-side clinic/role checks in the service layer | ⬜ |
-| PHI minimization | no PHI in URLs, QR, logs, or provider payloads | 🟡 design only |
+| Authorization | server-side clinic/role checks in the service layer | ✅ (`src/service.rs`; route guards stay UX) |
+| PHI minimization | no PHI in URLs, QR, logs, or provider payloads | ✅ (verify returns status/doctor/date/number only; object keys and QR carry no PHI) |
 | PHI at rest | SQLite file and desktop cache; OS disk encryption required (D-07) | ⬜ ops |
 | Secrets | `PAYPHONE_TOKEN`, `PAYPHONE_STORE_ID`, `PAYPHONE_CODING_PASSWORD` (v1.1) | ⬜ |
 | Card token | `ctoken` stored after consent; AES-256-CBC `cardHolder`; no PAN/CVV; revoked on cancel (v1.1) | ⬜ |
-| Audit | sensitive reads; billing transitions are v1.1 | ⬜ |
-| Abuse controls | rate limits on auth and `/verify/:code`; PayPhone polling is v1.1 | ⬜ |
-| Device control and MFA | `devices` registered and revocable through `sessions.device_id`; MFA in M3 | 🟡 |
+| Audit | sensitive reads; append-only enforced by DB triggers; billing transitions are v1.1 | ✅ |
+| Abuse controls | rate limits on auth and `/verify/:code`; PayPhone polling is v1.1 | ✅ (proxy-trust gap: `specs/divergences/12-L-rate-limit-proxy.md`) |
+| Device control and MFA | `devices` registered and revocable through `sessions.device_id`; TOTP MFA for enrolled doctors/administrators | ✅ |
 
 ## 16. Invariants
 
@@ -463,16 +486,16 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | Images: v1 1 per clinic; v1.1 5 `active`/`past_due`, 1 `trialing`/`locked`, 0 `canceled`; ≤10 MiB each; logo excluded | service + DB CHECK (✅) |
 | Assets pinned by published versions are never deleted while referenced; the v1.1 cancellation purge soft-deletes and leaves pins | service + `template_version_assets` (✅) |
 | One node, one SQLite file; the desktop cache is a replica, not an authority | deployment + `db.rs` |
-| The server authorizes; client guards are UX only | service layer (⬜) |
-| Replayed client mutations are no-ops | `client_id` / request keys (⬜) |
+| The server authorizes; client guards are UX only | service layer (✅) |
+| Replayed client mutations are no-ops | `client_id` UNIQUE on `patients`, `templates`, `prescriptions` (✅) |
 | Signed prescriptions are immutable; only void/supersede transition them | service layer (✅) |
 | A supersede gets a new `rx_number` and verification code; the replaced row keeps its own and becomes `superseded` | transaction + `uq_prescriptions_rx` (✅) |
-| The printed/QR verification code is recoverable for reprints (`code` + `code_hash`) | schema (⬜) |
-| A nursing draft may lack a doctor; any non-draft row requires one | table CHECK + service layer (⬜) |
-| `rx_number` is unique and monotonically increasing per clinic, assigned from a server-issued block and validated on sync; burned tails are recorded gaps | transaction + partial unique index + `rx_blocks` (⬜) |
+| The printed/QR verification code is recoverable for reprints (`code` + `code_hash`) | schema (✅) |
+| A nursing draft may lack a doctor; any non-draft row requires one | table CHECK + service layer (✅) |
+| `rx_number` is unique and monotonically increasing per clinic, assigned from a server-issued block and validated on sync; burned tails are recorded gaps | transaction + partial unique index + `rx_blocks` (✅) |
 | Money is integer cents; transactions snapshot the plan amounts (v1.1) | schema + service layer (⬜) |
-| PHI never appears in a URL, QR, log, or provider payload | service/output layer (⬜) |
-| The outbox is never discarded; only server-backed cache rows expire | desktop cache (⬜) |
+| PHI never appears in a URL, QR, log, or provider payload | service/output layer (✅) |
+| The outbox is never discarded; only server-backed cache rows expire | desktop cache (✅ — acked rows flip to `synced` and stay as history) |
 | Foreign keys are enabled per connection; blocking work stays off the reactor | pool customizer ✅ |
 | Migrations are append-only, embedded, and applied before serving | `db.rs` ✅ |
 
@@ -481,26 +504,26 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | # | Risk | Evidence | Severity | Action |
 |---|---|---|---|---|
 | 1 | ~~Auth client targets loopback and does not carry cookies on desktop~~ resolved | `src/http.rs`, `PERSONA_SERVER_ORIGIN` | — | relative base on wasm, configurable native origin, cookie jar, and credentialed CORS (spec 04-D) |
-| 2 | No server-side authorization; only a client redirect | `Dashboard` | P0 | authorize every read/write in the service layer before PHI pages |
+| 2 | ~~No server-side authorization; only a client redirect~~ resolved | `src/service.rs`, `src/api_server.rs` (spec 02-B) | — | every read/write authorized in the service layer; route guards remain UX |
 | 3 | SQLite concurrency was unconfigured | ~~no WAL or busy timeout~~ resolved | — | pool customizer sets WAL/busy timeout/synchronous; `db` write helpers retry `database is locked` |
 | 4 | Sync push transport | ~~undefined~~ resolved | — | SSE + 30 s polling fallback (PRD D-11); no second socket server |
-| 5 | Idempotency exists only for prescriptions | `prescriptions.client_id` | P1 | add keys for patients/templates before sync |
+| 5 | ~~Idempotency exists only for prescriptions~~ resolved | nullable UNIQUE `client_id` on `patients`, `templates`, `prescriptions` (`create_app_schema`, spec 11-K) | — | replays match on `client_id` and return the existing row |
 | 6 | PDF rendering location | ~~undecided~~ resolved | — | `printpdf` in the server and desktop binaries (PRD D-01); shared `src/pdf.rs`; no `from_html` |
 | 7 | Scheduler and SQLite assume one replica | in-process jobs | P1 | keep one node; document the scale-out prerequisites |
 | 8 | Retention trim conflicts with health-record law | PRD §9 | P1 | enforced in v1 (D-12); export before trim; counsel sign-off before production |
-| 9 | Account enumeration and no auth rate limiting | auth handlers | P2 | uniform errors, dummy hash, limits in M3 |
-| 10 | No backups or observability | no job/backup code, no tracing layer | P2 | daily encrypted backup, structured logs, metrics |
-| 11 | Destructive initial migration drops legacy auth tables | `20261111000000_create_auth/up.sql` | P2 | document that pre-existing accounts must sign up again |
-| 12 | `users` name collision resolved as `profiles` | DB §1 | P1 | apply the rename in the first app-schema migration |
-| 13 | Image quota race or orphaned objects | upload path not built | P1 | `BEGIN IMMEDIATE`, pending cleanup, bucket lifecycle |
-| 14 | Malicious/oversized image or EXIF/GPS leakage | upload path not built | P1 | magic-byte/decode limits, EXIF strip, reject WebP/SVG, 10 MiB cap |
-| 15 | Bucket credentials or public object exposure | no storage config yet | P1 | private MinIO bucket, least privilege, 15-minute signed URLs |
-| 16 | Image deletion or cancellation breaks an issued PDF | template pinning not implemented | P2 | reference checks in v1; v1.1 cancellation accepts placeholders (PRD D-05) |
+| 9 | ~~Account enumeration and no auth rate limiting~~ resolved | dummy Argon2 hash, uniform `401`, `AUTH_RATE_LIMIT_PER_MINUTE` (spec 12-L) | — | proxy-trust remainder tracked in `specs/divergences/12-L-rate-limit-proxy.md` |
+| 10 | No observability layer; backup failure paths have tracked gaps | no tracing/metrics layer; `13-M-backup-file-safety.md`, `13-M-backup-minio-mirror.md` | P2 | structured logs, metrics; fix the backup divergences |
+| 11 | Destructive initial migration drops legacy auth tables | `20261111000000_create_auth/up.sql` | P2 | documented in DB §8: pre-existing accounts must sign up again |
+| 12 | ~~`users` name collision resolved as `profiles`~~ resolved | applied in `create_app_schema` | — | `profiles.auth_user_id` links the identity |
+| 13 | ~~Image quota race or orphaned objects~~ resolved | `BEGIN IMMEDIATE` reserve + pending row, hourly stale cleanup (`src/assets.rs`, `src/jobs.rs`, spec 06-F) | — | cleanup audit atomicity tracked in `13-M-stale-asset-cleanup.md` |
+| 14 | ~~Malicious/oversized image or EXIF/GPS leakage~~ resolved | magic-byte JPEG/PNG, decode limits, EXIF strip, 10 MiB stream cap (`src/assets.rs`) | — | reject WebP/SVG; `asset-probe` covers the path |
+| 15 | ~~Bucket credentials or public object exposure~~ resolved | private MinIO bucket, 15-minute signed GET URLs | — | checked-in dev credentials + published ports are a production-config gap: `13-M-compose-production-config.md` |
+| 16 | ~~Image deletion or cancellation breaks an issued PDF~~ resolved | `template_version_assets` pin + reference guard in `delete_asset` (spec 06-F) | — | v1.1 cancellation accepts placeholders (PRD D-05) |
 | 17 | IVA changes misstate historical charges (v1.1) | `tax_rates` effective-dated | P2 | snapshot `tax_rate_bps`, `net_cents`, and `tax_cents` per transaction |
-| 18 | Device revocation not enforceable until `sessions.device_id` lands | `devices` modeled, auth schema unchanged | P1 | add the nullable column in the auth migration before M3 |
-| 19 | Preallocated numbering gaps or block exhaustion | `rx_blocks` not built | P1 | block allocation, server validation on sync, remaining-count UI before signing |
-| 20 | `printpdf` layout fidelity with manual page ops (no CSS engine), and an upstream crate whose HTML layout is experimental | no renderer module yet | P1 | golden A4 fixture diffed per PR; explicit ops only, never `from_html`; pin `printpdf` 0.12 and re-run the fixture on upgrade |
-| 21 | Auto-update key compromise or bad release | no updater yet | P1 | signed manifest, key custody, staged rollout, rollback (PRD D-08) |
+| 18 | ~~Device revocation not enforceable until `sessions.device_id` lands~~ resolved | `20261112000001_add_session_device`, `src/device.rs` (spec 04-D) | — | revocation rejects the session's device on load |
+| 19 | ~~Preallocated numbering gaps or block exhaustion~~ resolved | `rx_counters`/`rx_blocks`, `allocate_rx_block`, block-status UI (spec 07-G/11-K) | — | gaps stay by design (D-02); exhaustion blocks signing with a visible count |
+| 20 | `printpdf` layout fidelity with manual page ops (no CSS engine), and an upstream crate whose HTML layout is experimental | `src/pdf.rs` shipped; no golden A4 fixture in the repo yet | P1 | golden A4 fixture diffed per PR; explicit ops only, never `from_html`; pin `printpdf` `=0.12.9` and re-run the fixture on upgrade |
+| 21 | Auto-update key compromise or bad release | channel ships (`src/update.rs`, signed manifest), but rollout identity is empty, artifact transport lacks HTTPS/digest, and installers are unsigned | P1 | fix per `specs/divergences/13-M-update-channel.md`; signing credentials per `13-M-signed-installers.md` (key custody in runbook §3) |
 | 22 | PayPhone tokenization gated on merchant authorization; 10% of tokenized balances held 6 months; Visa/Mastercard only; `ctoken` is a bearer secret | `docs.payphone.app/tokenizacion` | P1 | apply before M4; consent + encrypted `cardHolder`; revoke on cancel; dunning on declines |
 
 ## 18. Verification
@@ -515,13 +538,14 @@ Repository policy is end-to-end and integration testing; unit tests are not requ
 | Server reachability | `wait-health` |
 | Schema design or migration SQL | `sqlite-schema-check` |
 | Image upload, quota, signed URL | `asset-probe` |
-| PDF route and A4 output | end-to-end probe on `GET /api/prescriptions/:id/pdf`: `200`, `application/pdf`, `%PDF-` magic, `MediaBox` floats within ±1 pt of 595.28×841.89 (A4 in points), sanitized `Content-Disposition`, QR decodes to `/verify/`; promote to a block when implemented |
+| PDF route and A4 output | `pdf-probe`: `200`, `application/pdf`, `%PDF-` magic, `MediaBox` floats within ±1 pt of 595.28×841.89 (A4 in points), sanitized `Content-Disposition`, QR decodes to `/verify/`, draft 422 |
 
 ```bash
 python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091
 python3 .blocks/persona-docker-verify.py --dir . --port 8080
 python3 .blocks/persona-probe.py --base http://127.0.0.1:8080 --flow full
 python3 .blocks/asset-probe.py --base http://127.0.0.1:8080
+python3 .blocks/pdf-probe.py --base http://127.0.0.1:8080
 python3 .blocks/wait-health.py --url http://127.0.0.1:8080/health --expect 200 --timeout 60
 python3 .blocks/sqlite-schema-check.py --path context/database-design.md --query "select name from sqlite_master where type = 'table' order by name"
 ```
@@ -543,6 +567,6 @@ Known drift to reconcile in implementation:
 
 1. The sitemap places `/` and `/login` outside the authenticated shell; the current `Route` enum applies `Navbar` to all routes.
 2. The `/dashboard` guard is client-side only, with no server middleware; server-side authorization is the service layer's job (spec 02-B).
-3. The database design describes the full app and billing schema; only the auth migration exists, and billing is v1.1.
+3. The database design describes the full app and billing schema; the auth, app-schema, session-device, and hardening migrations exist and match it; billing is v1.1.
 4. The PRD decision log (§14) supersedes earlier statements in this document and in the DB/sitemap about PDF rendering, billing scope, numbering, roles, image quota, verification codes, asset kinds, and the editing model (D-21); where they differ, the PRD decision log wins.
 5. The v1.1 provider is PayPhone **Tokenization** (`ctoken` + `/api/transaction/web`), not API Sale; PRD §5.7/FR-063–072 and DB §1/§5 are authoritative.

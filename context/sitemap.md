@@ -70,8 +70,8 @@ flowchart TD
 | Route | Name | Roles | PRD | Status | Purpose |
 |---|---|---|---|---|---|
 | `/` | Home | Public verifier, unauthenticated visitor | §7 | ✅ | Landing; entry to `/login` and explanation of `/verify/:code`. No authenticated-user redirect yet (⬜). |
-| `/login` | AuthPage | All staff (pre-auth) | §4 flow 1, §7 | ✅ | Sign in / sign up (Diesel-backed auth module). MFA step for doctors/administrators and device registration for desktop/web clients (`devices`, §9) are M3 and ⬜. |
-| `/verify/:code` | Public verification | Public verifier (no account) | §3, §4 flow 4, §5.6 FR-050, FR-033/034 | ⬜ | Scan QR target `https://<domain>/verify/{code}`. Shows "Receta auténtica — issued by Dr. …, date …, No. …" + status (`valid` / `voided` / `superseded` / `not found`). No PHI. Rate-limited per IP. Also supports re-typing the printed verification code (FR-034). Only the path form is routed; Dioxus does not match `#/verify/:code`. |
+| `/login` | AuthPage | All staff (pre-auth) | §4 flow 1, §7 | ✅ | Sign in / sign up (Diesel-backed auth module). MFA (TOTP) for enrolled doctors/administrators and silent device registration for desktop/web clients (`devices`, §9) ship (specs 04-D, 12-L). |
+| `/verify/:code` | Public verification | Public verifier (no account) | §3, §4 flow 4, §5.6 FR-050, FR-033/034 | ✅ | Scan QR target `https://<domain>/verify/{code}`. Shows "Receta auténtica — issued by Dr. …, date …, No. …" + status (`valid` / `voided` / `superseded` / `not found`). No PHI. Rate-limited per IP. Also supports re-typing the printed verification code (FR-034). Only the path form is routed; Dioxus does not match `#/verify/:code`. |
 
 ### 1.2 Authenticated shell
 
@@ -92,12 +92,12 @@ All routes below sit under `#[layout(Navbar)]`: persistent nav (Dashboard, Patie
 | `/templates/new` | Template create | Doctor, Administrator | §4 flow 3, FR-020 | ✅ | Create template: letterhead (clinic logo via `asset_id`, doctor/clinic details, colors) + body + footer (printed signature line, QR, contact). Clinics can insert the 1 library image (v1 quota; 5 in v1.1). No signature or stamp images (D-06). |
 | `/templates/:id/edit` | Template forms | Owner doctor; Administrator for master | FR-020/021/023, FR-080–085 | ✅ | Forms and inputs only (no rich text — D-21): letterhead fields, body text (textarea), footer fields, variable insertion, image slots, medication blocks — plain-text values, online and offline. Insert images from the clinic library; the upload prompt appears when the v1 quota (1 image) blocks an upload. Variables: `patient.{name,national_id,age}`, `doctor.{name,specialty,national_id,contact}`, `clinic.{name,address,phone}`, `prescription.{number,date,diagnosis}`, `medications[]`. Unknown variables warn pre-signing. Stored as versioned `doc_json` built from form fields, never HTML. *Publish* pins every referenced `asset_id` and creates an immutable version (FR-024). |
 | `/templates/:id/preview` | Template A4 preview | Owner doctor, Administrator | FR-022 | ✅ | True-scale A4 preview with sample variable values, repeated header/footer, margins/page breaks, and the pinned images before publishing. |
-| `/settings` | Settings — index | All authenticated | §3, §5.5 | ⬜ | Hub linking clinic, users, profile, and (Administrator, v1.1) billing. Redirects to `/settings/profile` for non-admin roles. |
+| `/settings` | Settings — index | All authenticated | §3, §5.5 | ✅ | Hub linking clinic, users, profile, and (Administrator, v1.1) billing. Redirects to `/settings/profile` for non-admin roles. |
 | `/settings/clinic` | Clinic settings | Administrator | §6 `clinics`, FR-042, FR-080–085 | ✅ | Clinic name/address/phone/logo, timezone, `llm_url_template`, local retention days (default 30). Image library: upload/delete 1 image (10 MB; 5 only in v1.1), quota/usage, clinic logo (does not consume the slot). |
-| `/settings/users` | Users & roles | Administrator | §3, §6 `profiles`/`clinic_members` | ⬜ | Invite/manage users, assign roles (Administrator/Doctor/Nursing/Secretary), revoke access, manage registered devices (`devices` + `sessions.device_id`, §9). |
-| `/settings/profile` | My profile | Doctor, all staff | §6 `doctors` | ⬜ | Display name, specialty, license no. (`license_no`), cédula (`national_id`), phone/email. No signature/stamp asset (D-06). Doctors: default template and branding. |
+| `/settings/users` | Users & roles | Administrator | §3, §6 `profiles`/`clinic_members` | ✅ | Manage staff, change roles (Administrator/Doctor/Nursing/Secretary), disable/remove, revoke access, manage registered devices (`devices` + `sessions.device_id`, §9). |
+| `/settings/profile` | My profile | Doctor, all staff | §6 `doctors` | ✅ | Display name, specialty, license no. (`license_no`), cédula (`national_id`), phone/email. TOTP enrolment and password change (spec 12-L). No signature/stamp asset (D-06). |
 | `/settings/billing` (v1.1) | Subscription & billing | Administrator | §5.7 FR-060–072, §5.8 FR-080–085, §6 `plans`/`tax_rates`/`payment_methods`/`subscriptions`/`payment_transactions` | ⬜ v1.1 | Not in v1. Trial/status (`trialing`/`active`/`past_due`/`locked`/`canceled`), trial end, next charge, plan picker ($5 monthly / $50 yearly), consent + redirect to the PayPhone payment button (Visa/Mastercard), saved card-token status, transaction history, cancel/reactivate, image-library availability and usage (5 `active`/`past_due`, 1 `trialing`/`locked`, 0 `canceled`). Stores the `ctoken` after consent; later charges use the token; shows the 7-day grace before sync locks. Never blocks clinical work. |
-| `/audit` | Audit log | Administrator | §3, §6 `audit_log`, §8 | ⬜ | Actor/action/entity audit trail, sensitive-read log (who/when/what on patients/prescriptions), verification log (FR-050). Retained 5 years, append-only (§8). |
+| `/audit` | Audit log | Administrator | §3, §6 `audit_log`, §8 | ✅ | Filters by action/entity/query; actor/action/entity audit trail, sensitive-read log (who/when/what on patients/prescriptions), verification log (FR-050). Retained 5 years; append-only enforced by DB triggers (§8). |
 
 ### 1.3 Non-routes (actions, external, print)
 
@@ -164,17 +164,17 @@ flowchart LR
 
 ## 4. Current vs. target
 
-Current Dioxus `Route` enum (`src/main.rs`): `/`, `/login`, `/dashboard`, `/patients`, `/patients/new`, `/patients/:id`, `/patients/:id/edit`, `/settings*`, matching the PRD's M0 progress (Diesel-backed auth, roles, authorized service layer, patient CRUD, and Docker Compose deployment implemented). Everything else is the PRD target IA, sequenced by roadmap (§11):
+Current Dioxus `Route` enum (`src/main.rs`) carries every v1 route: `/`, `/verify/:code`, `/login`, `/dashboard`, `/patients*`, `/settings*`, `/audit`, `/templates*`, `/prescriptions*` (`?status` filter, `new?patient_id&template_id`, `:id`, `:id/preview`). Only `/settings/billing` is unrouted (v1.1). Delivery against the PRD roadmap (§11):
 
-Spec phases (`specs/01`–`13`) are the execution order and may deliver roadmap items earlier than their milestone label.
+Spec phases (`specs/01`–`14`) are the execution order and may deliver roadmap items earlier than their milestone label.
 
 | Milestone | Sitemap delivered |
 |---|---|
-| M0 — foundation | `/login` ✅, `/dashboard` ✅ (auth check only; role-aware content ⬜), `/patients*` ✅ (Rx history spec 07), `/settings/users` ✅, roles + authorized service layer ✅, Docker Compose deployment ✅ |
-| M1 — forms + PDF | `/templates*`, `/prescriptions/new`, `/prescriptions/:id`, `/prescriptions/:id/preview`, `/verify/:code`, `printpdf` A4 renderer + QR, logo/one-image upload |
-| M2 — offline | Same routes on desktop cache/outbox, preallocated number blocks + provisional PDFs, SSE/polling sync indicators, 30-day retention states in `/prescriptions` |
-| M3 — hardening | `/audit`, MFA on `/login`, signed installers + auto-update; device registration/revocation ships with spec 04-D, `/settings/clinic` with spec 06-F, and verification rate limiting on `/verify/:code` with spec 09-I |
-| M4 — beta release | Retention/export job (on in v1, D-12), session purge, orphan cleanup, runbook, beta telemetry |
+| M0 — foundation | `/login` ✅, `/dashboard` ✅ (auth check only; role-aware content ⬜), `/patients*` ✅ (Rx history spec 07-G), `/settings/users` ✅, roles + authorized service layer ✅, Docker Compose deployment ✅ |
+| M1 — forms + PDF | `/templates*` ✅, `/prescriptions/new` ✅, `/prescriptions/:id` ✅, `/prescriptions/:id/preview` ✅, `/verify/:code` ✅, `printpdf` A4 renderer + QR ✅, logo/one-image upload ✅ (specs 05-E–08-H) |
+| M2 — offline | Same routes on desktop cache/outbox ✅, preallocated number blocks + provisional PDFs ✅, SSE/polling sync indicators ✅, 30-day retention states in `/prescriptions` ✅ (specs 10-J/11-K) |
+| M3 — hardening | `/audit` ✅, MFA on `/login` ✅, device registration/revocation ✅ (spec 04-D), `/settings/clinic` ✅ (spec 06-F), verification rate limiting ✅ (spec 09-I); auto-update channel ships, signed installers OPEN (`specs/divergences/13-M-signed-installers.md`) |
+| M4 — beta release | Retention/export job ✅ (on in v1, D-12), session purge ✅, orphan cleanup ✅ (audit-atomicity gap in `13-M-stale-asset-cleanup.md`), runbook ✅; beta telemetry ⬜ |
 | v1.1 — billing (deferred) | `/settings/billing`, trial + `sync_locked` state in the shell, PayPhone Tokenization (payment button, `ctoken`, renewals), renewal/dunning jobs, image library (5/1 tiers × 10 MB), `tax_rates`-based IVA snapshot, quota + signed URLs |
 
 ## 5. Conventions

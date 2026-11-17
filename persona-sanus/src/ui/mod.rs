@@ -1,4 +1,6 @@
 #[allow(dead_code)]
+mod brand;
+#[allow(dead_code)]
 mod button;
 #[allow(dead_code)]
 mod feedback;
@@ -9,7 +11,11 @@ mod format;
 mod icon;
 #[allow(dead_code)]
 mod layout;
+#[allow(dead_code)]
+mod marketing;
 
+#[allow(unused_imports)]
+pub use brand::{LogoLockup, TrustLogo, TrustLogoStrip, TrustSecurityRow};
 #[allow(unused_imports)]
 pub use button::{Button, ButtonLink, ButtonVariant, LinkAction, NavLink};
 #[allow(unused_imports)]
@@ -31,4 +37,9 @@ pub use icon::{Icon, IconName};
 pub use layout::{
     ActionRow, Card, DetailGrid, DetailItem, FilterBar, FormColumns, FormGrid, PageHeader,
     PageShell, SectionBand, SectionCard, SurfaceTone,
+};
+#[allow(unused_imports)]
+pub use marketing::{
+    A4Mock, A4MockKind, A4PreviewCard, AccentTone, Hero, NumberedStepCard, SectionHeader,
+    VerificationTag,
 };

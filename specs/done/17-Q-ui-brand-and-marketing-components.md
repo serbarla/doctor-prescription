@@ -21,8 +21,8 @@ This spec consumes `15-O` actions and `16-P` layout. It does not adopt `Home` or
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Add the brand components — requirements: create `persona-sanus/src/ui/brand.rs` with `LogoLockup`, `TrustSecurityRow`, `TrustLogoStrip`, `TrustLogo`, and the `TrustLogo` props exactly as section 7. The logo cross is the only decorative mark. `LogoLockup` links Home with `aria-label="PersonaSanus — inicio"` and marks the glyph `aria-hidden`. `TrustSecurityRow` uses Shield, Command, Windows, and Globe and adds the visually hidden platform label. `TrustLogoStrip` uses text logos at 18px mint 500 Ink or images max-height 28px with grayscale; no borders and no cards. Add the brand declarations in section 9; commands: `cd persona-sanus && cargo check`.
-- [ ] Add the marketing components — requirements: create `persona-sanus/src/ui/marketing.rs` with `Hero`, `SectionHeader`, `NumberedStepCard`, `A4PreviewCard`, `A4Mock`, `VerificationTag`, and the `AccentTone` and `A4MockKind` enums exactly as section 7. Headings use grenette 400 and are never bold. `A4Mock` is static and uses only the fictional sample values in section 7. `A4PreviewCard` has no border and no shadow. `VerificationTag` has a 6px triangular tail. Add the marketing declarations in section 9; commands: `cd persona-sanus && cargo check`; `rg -n 'font-weight: *700|font-weight: *bold' persona-sanus/src/ui/brand.rs persona-sanus/src/ui/marketing.rs`.
+- [x] Add the brand components — requirements: create `persona-sanus/src/ui/brand.rs` with `LogoLockup`, `TrustSecurityRow`, `TrustLogoStrip`, `TrustLogo`, and the `TrustLogo` props exactly as section 7. The logo cross is the only decorative mark. `LogoLockup` links Home with `aria-label="PersonaSanus — inicio"` and marks the glyph `aria-hidden`. `TrustSecurityRow` uses Shield, Command, Windows, and Globe and adds the visually hidden platform label. `TrustLogoStrip` uses text logos at 18px mint 500 Ink or images max-height 28px with grayscale; no borders and no cards. Add the brand declarations in section 9; commands: `cd persona-sanus && cargo check`.
+- [x] Add the marketing components — requirements: create `persona-sanus/src/ui/marketing.rs` with `Hero`, `SectionHeader`, `NumberedStepCard`, `A4PreviewCard`, `A4Mock`, `VerificationTag`, and the `AccentTone` and `A4MockKind` enums exactly as section 7. Headings use grenette 400 and are never bold. `A4Mock` is static and uses only the fictional sample values in section 7. `A4PreviewCard` has no border and no shadow. `VerificationTag` has a 6px triangular tail. Add the marketing declarations in section 9; commands: `cd persona-sanus && cargo check`; `rg -n 'font-weight: *700|font-weight: *bold' persona-sanus/src/ui/brand.rs persona-sanus/src/ui/marketing.rs`.
 
 ## 2. No-go
 
@@ -44,17 +44,17 @@ This spec consumes `15-O` actions and `16-P` layout. It does not adopt `Home` or
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `cd persona-sanus && cargo check` exits 0.
-- [ ] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
-- [ ] objective 1: `rg -n 'fn (LogoLockup|TrustSecurityRow|TrustLogoStrip)' persona-sanus/src/ui/brand.rs` returns 3 matches.
-- [ ] objective 1: `rg -n 'TrustLogo' persona-sanus/src/ui/brand.rs` shows the struct and its `name` plus `src` fields and `Clone, PartialEq`.
-- [ ] objective 1: `rg -n 'PersonaSanus — inicio|macOS, Windows, Web|Con la confianza de' persona-sanus/src/ui/brand.rs` returns the three fixed labels.
-- [ ] objective 1: `rg -n 'TrustLogoStrip' persona-sanus/src/main.rs` returns no matches.
-- [ ] objective 2: `rg -n 'fn (Hero|SectionHeader|NumberedStepCard|A4PreviewCard|A4Mock|VerificationTag)' persona-sanus/src/ui/marketing.rs` returns 6 matches.
-- [ ] objective 2: `rg -n 'font-weight: *700|font-weight: *bold' persona-sanus/src/ui/brand.rs persona-sanus/src/ui/marketing.rs` returns no matches.
-- [ ] objective 2: `rg -n 'María Fernanda Ruiz|FICHA DEL PACIENTE|Faringitis aguda|Amoxicilina 500 mg|PS-7K2F-9Q' persona-sanus/src/ui/marketing.rs` returns every fixed fictional sample.
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] `cd persona-sanus && cargo check` exits 0.
+- [x] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
+- [x] objective 1: `rg -n 'fn (LogoLockup|TrustSecurityRow|TrustLogoStrip)' persona-sanus/src/ui/brand.rs` returns 3 matches.
+- [x] objective 1: `rg -n 'TrustLogo' persona-sanus/src/ui/brand.rs` shows the struct and its `name` plus `src` fields and `Clone, PartialEq`.
+- [x] objective 1: `rg -n 'PersonaSanus — inicio|macOS, Windows, Web|Con la confianza de' persona-sanus/src/ui/brand.rs` returns the three fixed labels.
+- [x] objective 1: `rg -n 'TrustLogoStrip' persona-sanus/src/main.rs` returns no matches.
+- [x] objective 2: `rg -n 'fn (Hero|SectionHeader|NumberedStepCard|A4PreviewCard|A4Mock|VerificationTag)' persona-sanus/src/ui/marketing.rs` returns 6 matches.
+- [x] objective 2: `rg -n 'font-weight: *700|font-weight: *bold' persona-sanus/src/ui/brand.rs persona-sanus/src/ui/marketing.rs` returns no matches.
+- [x] objective 2: `rg -n 'María Fernanda Ruiz|FICHA DEL PACIENTE|Faringitis aguda|Amoxicilina 500 mg|PS-7K2F-9Q' persona-sanus/src/ui/marketing.rs` returns every fixed fictional sample.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -64,7 +64,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -75,7 +75,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
 
 ## 5. Context
 

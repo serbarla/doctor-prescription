@@ -31,11 +31,17 @@ mod server;
 mod service;
 #[cfg(feature = "server")]
 mod sync_server;
+mod ui;
 #[cfg(any(feature = "server", feature = "desktop"))]
 #[allow(dead_code)]
 mod update;
 #[cfg(feature = "server")]
 mod verify_server;
+use crate::ui::{
+    device_name_label, format_date, last_seen_label, optional_date, platform_label,
+    prescription_status_label, role_label, sex_label, status_label, template_owner_label,
+    template_status_label, version_status_label,
+};
 use api::Me;
 use auth::SessionUser;
 use dioxus::prelude::*;
@@ -4223,120 +4229,8 @@ fn TemplatePreview(id: String) -> Element {
     }
 }
 
-fn template_status_label(status: &str) -> &'static str {
-    match status {
-        "draft" => "Borrador",
-        "published" => "Publicada",
-        "archived" => "Archivada",
-        _ => "Desconocido",
-    }
-}
-
-fn version_status_label(status: &str) -> &'static str {
-    match status {
-        "draft" => "Borrador",
-        "published" => "Publicada",
-        "archived" => "Archivada",
-        _ => "Desconocido",
-    }
-}
-
-fn template_owner_label(owner_type: &str) -> &'static str {
-    match owner_type {
-        "doctor" => "Plantilla del médico",
-        "clinic" => "Maestra de la clínica",
-        _ => "Plantilla",
-    }
-}
-
 fn valid_birth_date(value: &str) -> bool {
     chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
-}
-
-fn optional_date(value: Option<&str>) -> String {
-    match value {
-        Some(date) => format_date(date),
-        None => "—".to_string(),
-    }
-}
-
-fn sex_label(sex: Option<&str>) -> &'static str {
-    match sex {
-        Some("female") => "Femenino",
-        Some("male") => "Masculino",
-        Some("other") => "Otro",
-        Some("unspecified") => "Prefiere no decir",
-        _ => "Sin especificar",
-    }
-}
-
-fn role_label(role: Option<&str>) -> &'static str {
-    match role {
-        Some("administrator") => "Administrador",
-        Some("doctor") => "Doctor",
-        Some("nursing") => "Enfermería",
-        Some("secretary") => "Secretaría",
-        _ => "Sin rol",
-    }
-}
-
-fn status_label(status: &str) -> &'static str {
-    if status == "active" {
-        "Activo"
-    } else {
-        "Deshabilitado"
-    }
-}
-
-fn platform_label(platform: &str) -> &'static str {
-    match platform {
-        "macos" => "macOS",
-        "windows" => "Windows",
-        "web" => "Web",
-        _ => "Desconocido",
-    }
-}
-
-fn device_name_label(device: &api::DeviceRow) -> String {
-    device
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| platform_label(&device.platform).to_owned())
-}
-
-fn last_seen_label(value: Option<&str>) -> String {
-    match value {
-        Some(value) => format_timestamp(value),
-        None => "Nunca".to_owned(),
-    }
-}
-
-fn format_timestamp(value: &str) -> String {
-    match chrono::DateTime::parse_from_rfc3339(value) {
-        Ok(parsed) => parsed.format("%d-%m-%Y %H:%M").to_string(),
-        Err(_) => value.to_owned(),
-    }
-}
-
-fn format_date(value: &str) -> String {
-    let date = value.get(..10).unwrap_or(value);
-    match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-        Ok(parsed) => parsed.format("%d-%m-%Y").to_string(),
-        Err(_) => value.to_owned(),
-    }
-}
-
-fn prescription_status_label(status: &str) -> &'static str {
-    match status {
-        "draft" => "Borrador",
-        "signed" => "Firmada",
-        "superseded" => "Reemplazada",
-        "voided" => "Anulada",
-        _ => "Desconocida",
-    }
 }
 
 fn llm_explain_url(template: Option<&str>, medication: &str) -> Option<String> {

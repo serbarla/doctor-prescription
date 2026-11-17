@@ -21,9 +21,9 @@ This is the foundation spec for the split UI library work. Specs `16-P` through 
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] 1. Establish tokens and layout rhythm — requirements: in `persona-sanus/assets/main.css`, keep every existing token name. Add `--leading-caption: 1.5`, `--leading-body-sm: 1.5`, `--leading-body: 1.5`, `--leading-body-lg: 1.5`, `--leading-subheading: 1.25`, `--leading-heading-sm: 1.22`, `--leading-heading: 1.22`, `--leading-heading-lg: 1.15`, and `--leading-display: 1.05`. Keep `--font-weight-regular` and `--font-weight-medium`. Add `--content-display: 720px`, `--content-copy: 560px`, `--section-gap: 80px`, `--section-gap-compact: 64px`, `--element-gap: 8px`, `--element-gap-lg: 16px`, `--radius-pill: 9999px`, `--color-mint-halo: rgba(185, 255, 232, 0.55)`, `--shadow-paper: 0 1px 2px rgba(6, 29, 41, 0.06)`, and `--navbar-height: 64px`. Replace the invalid declarations `--section-gap: 64-80px` and `--element-gap: 8-16px`; never leave an invalid length. Add `*, *::before, *::after { box-sizing: border-box; }`. Add `.ui-page`, `.ui-container`, `.ui-container--narrow`, `.ui-container--reading`, `.ui-stack`, `.ui-visually-hidden`, `.ui-mono`, `.ui-break`, `.ui-notes`, `.ui-text-caption`, `.ui-text-body-sm`, `.ui-text-body`, `.ui-text-body-lg`, and `.ui-text-subheading` exactly as section 9 contracts. No pure black, no new stylesheet, and no CSS framework; commands: `cd persona-sanus && cargo check`; `rg -n -- '--section-gap:\s*64-80px|--element-gap:\s*8-16px' persona-sanus/assets/main.css`.
-- [ ] 2. Add icon and action primitives — requirements: create `persona-sanus/src/ui/mod.rs`, `icon.rs`, and `button.rs`, and add `mod ui;` to `persona-sanus/src/main.rs`. Implement `Icon`, `IconName`, `Button`, `ButtonVariant`, `ButtonLink`, `LinkAction`, and `NavLink` exactly as section 7 contracts. Use inline SVG path data only; `Cross` is the one filled icon. Never inline style and never JavaScript. Add the shared focus utility to `assets/main.css`; commands: `cd persona-sanus && cargo check`; `rg -n 'style:' persona-sanus/src/ui/button.rs persona-sanus/src/ui/icon.rs`.
-- [ ] 3. Extract formatting helpers — requirements: add `persona-sanus/src/ui/format.rs` and move the thirteen helpers named in section 7 from `main.rs` verbatim, changing only visibility so `ui/mod.rs` can re-export them. Replace their definitions and call sites in `main.rs` with one explicit `use crate::ui::{...}` import list that names every moved helper `main.rs` uses. Keep `valid_birth_date`, `llm_explain_url`, `new_prescription_item_form`, `probe_sync_status`, the desktop count helpers, and every dispatch or submit function in `main.rs`; commands: `cd persona-sanus && cargo check`; `rg -n '^fn (format_date|format_timestamp|last_seen_label|role_label|status_label|platform_label|device_name_label|sex_label|optional_date|prescription_status_label|template_status_label|version_status_label|template_owner_label)' persona-sanus/src/main.rs`.
+- [x] 1. Establish tokens and layout rhythm — requirements: in `persona-sanus/assets/main.css`, keep every existing token name. Add `--leading-caption: 1.5`, `--leading-body-sm: 1.5`, `--leading-body: 1.5`, `--leading-body-lg: 1.5`, `--leading-subheading: 1.25`, `--leading-heading-sm: 1.22`, `--leading-heading: 1.22`, `--leading-heading-lg: 1.15`, and `--leading-display: 1.05`. Keep `--font-weight-regular` and `--font-weight-medium`. Add `--content-display: 720px`, `--content-copy: 560px`, `--section-gap: 80px`, `--section-gap-compact: 64px`, `--element-gap: 8px`, `--element-gap-lg: 16px`, `--radius-pill: 9999px`, `--color-mint-halo: rgba(185, 255, 232, 0.55)`, `--shadow-paper: 0 1px 2px rgba(6, 29, 41, 0.06)`, and `--navbar-height: 64px`. Replace the invalid declarations `--section-gap: 64-80px` and `--element-gap: 8-16px`; never leave an invalid length. Add `*, *::before, *::after { box-sizing: border-box; }`. Add `.ui-page`, `.ui-container`, `.ui-container--narrow`, `.ui-container--reading`, `.ui-stack`, `.ui-visually-hidden`, `.ui-mono`, `.ui-break`, `.ui-notes`, `.ui-text-caption`, `.ui-text-body-sm`, `.ui-text-body`, `.ui-text-body-lg`, and `.ui-text-subheading` exactly as section 9 contracts. No pure black, no new stylesheet, and no CSS framework; commands: `cd persona-sanus && cargo check`; `rg -n -- '--section-gap:\s*64-80px|--element-gap:\s*8-16px' persona-sanus/assets/main.css`.
+- [x] 2. Add icon and action primitives — requirements: create `persona-sanus/src/ui/mod.rs`, `icon.rs`, and `button.rs`, and add `mod ui;` to `persona-sanus/src/main.rs`. Implement `Icon`, `IconName`, `Button`, `ButtonVariant`, `ButtonLink`, `LinkAction`, and `NavLink` exactly as section 7 contracts. Use inline SVG path data only; `Cross` is the one filled icon. Never inline style and never JavaScript. Add the shared focus utility to `assets/main.css`; commands: `cd persona-sanus && cargo check`; `rg -n 'style:' persona-sanus/src/ui/button.rs persona-sanus/src/ui/icon.rs`.
+- [x] 3. Extract formatting helpers — requirements: add `persona-sanus/src/ui/format.rs` and move the thirteen helpers named in section 7 from `main.rs` verbatim, changing only visibility so `ui/mod.rs` can re-export them. Replace their definitions and call sites in `main.rs` with one explicit `use crate::ui::{...}` import list that names every moved helper `main.rs` uses. Keep `valid_birth_date`, `llm_explain_url`, `new_prescription_item_form`, `probe_sync_status`, the desktop count helpers, and every dispatch or submit function in `main.rs`; commands: `cd persona-sanus && cargo check`; `rg -n '^fn (format_date|format_timestamp|last_seen_label|role_label|status_label|platform_label|device_name_label|sex_label|optional_date|prescription_status_label|template_status_label|version_status_label|template_owner_label)' persona-sanus/src/main.rs`.
 
 ## 2. No-go
 
@@ -45,20 +45,20 @@ This is the foundation spec for the split UI library work. Specs `16-P` through 
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `cd persona-sanus && cargo check` exits 0.
-- [ ] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
-- [ ] objective 1: `rg -n -- '--section-gap:\s*64-80px|--element-gap:\s*8-16px' persona-sanus/assets/main.css` returns no matches.
-- [ ] objective 1: `rg -n -- '--leading-(caption|body-sm|body|body-lg|subheading|heading-sm|heading|heading-lg|display):' persona-sanus/assets/main.css` returns 9 matches.
-- [ ] objective 1: `rg -n -- '--content-display:\s*720px|--content-copy:\s*560px|--section-gap:\s*80px|--section-gap-compact:\s*64px|--element-gap:\s*8px|--element-gap-lg:\s*16px|--radius-pill:\s*9999px|--color-mint-halo|--shadow-paper|--navbar-height:\s*64px' persona-sanus/assets/main.css` returns 10 matches.
-- [ ] objective 1: `rg -n 'box-sizing: border-box|^\.ui-(page|container|stack|visually-hidden|mono|break|notes|text-caption|text-body-sm|text-body|text-body-lg|text-subheading)' persona-sanus/assets/main.css` returns the reset and every utility.
-- [ ] objective 1: no pure black token appears in `persona-sanus/assets/main.css`.
-- [ ] objective 2: `rg -n '^mod ui;' persona-sanus/src/main.rs` returns 1 match.
-- [ ] objective 2: `rg -n 'style:' persona-sanus/src/ui/button.rs persona-sanus/src/ui/icon.rs` returns no matches.
-- [ ] objective 3: `rg -n '^fn (format_date|format_timestamp|last_seen_label|role_label|status_label|platform_label|device_name_label|sex_label|optional_date|prescription_status_label|template_status_label|version_status_label|template_owner_label)' persona-sanus/src/main.rs` returns no matches.
-- [ ] objective 3: `rg -n 'fn (format_date|format_timestamp|last_seen_label|role_label|status_label|platform_label|device_name_label|sex_label|optional_date|prescription_status_label|template_status_label|version_status_label|template_owner_label)' persona-sanus/src/ui/format.rs` returns 13 matches.
-- [ ] objective 3: `rg -n 'fn (valid_birth_date|llm_explain_url|new_prescription_item_form)' persona-sanus/src/main.rs` still returns 3 matches.
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] `cd persona-sanus && cargo check` exits 0.
+- [x] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
+- [x] objective 1: `rg -n -- '--section-gap:\s*64-80px|--element-gap:\s*8-16px' persona-sanus/assets/main.css` returns no matches.
+- [x] objective 1: `rg -n -- '--leading-(caption|body-sm|body|body-lg|subheading|heading-sm|heading|heading-lg|display):' persona-sanus/assets/main.css` returns 9 matches.
+- [x] objective 1: `rg -n -- '--content-display:\s*720px|--content-copy:\s*560px|--section-gap:\s*80px|--section-gap-compact:\s*64px|--element-gap:\s*8px|--element-gap-lg:\s*16px|--radius-pill:\s*9999px|--color-mint-halo|--shadow-paper|--navbar-height:\s*64px' persona-sanus/assets/main.css` returns 10 matches.
+- [x] objective 1: `rg -n 'box-sizing: border-box|^\.ui-(page|container|stack|visually-hidden|mono|break|notes|text-caption|text-body-sm|text-body|text-body-lg|text-subheading)' persona-sanus/assets/main.css` returns the reset and every utility.
+- [x] objective 1: no pure black token appears in `persona-sanus/assets/main.css`.
+- [x] objective 2: `rg -n '^mod ui;' persona-sanus/src/main.rs` returns 1 match.
+- [x] objective 2: `rg -n 'style:' persona-sanus/src/ui/button.rs persona-sanus/src/ui/icon.rs` returns no matches.
+- [x] objective 3: `rg -n '^fn (format_date|format_timestamp|last_seen_label|role_label|status_label|platform_label|device_name_label|sex_label|optional_date|prescription_status_label|template_status_label|version_status_label|template_owner_label)' persona-sanus/src/main.rs` returns no matches.
+- [x] objective 3: `rg -n 'fn (format_date|format_timestamp|last_seen_label|role_label|status_label|platform_label|device_name_label|sex_label|optional_date|prescription_status_label|template_status_label|version_status_label|template_owner_label)' persona-sanus/src/ui/format.rs` returns 13 matches.
+- [x] objective 3: `rg -n 'fn (valid_birth_date|llm_explain_url|new_prescription_item_form)' persona-sanus/src/main.rs` still returns 3 matches.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -68,7 +68,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -79,7 +79,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
 
 ## 5. Context
 

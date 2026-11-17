@@ -21,7 +21,7 @@ services:
       JOBS_INTERVAL_SECONDS: ${JOBS_INTERVAL_SECONDS:-3600}
     volumes:
       - persona-data:/data
-      - ${PERSONA_BACKUP_DIR:-./backups}:/backups
+      - ./backups:/backups
     depends_on:
       minio:
         condition: service_healthy

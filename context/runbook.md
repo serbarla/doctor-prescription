@@ -20,8 +20,7 @@ External prerequisites (not provided by this repo): TLS termination in front of 
 
 The in-process scheduler runs the daily backup job (`BACKUP_INTERVAL_SECONDS`, default 86400):
 
-- `VACUUM INTO` writes a WAL-consistent snapshot to `$BACKUP_DIR/app-YYYYMMDD.db`. The compose file bind-mounts a host directory outside the `persona-data` volume: `${PERSONA_BACKUP_DIR:-./backups}:/backups`.
-- `$BACKUP_DIR` is PHI space: the MinIO mirror holds raw clinical images and a failed encryption step can leave a plaintext SQLite snapshot. Create the host directory with mode `0700` before the first backup, keep it outside any synced or backed-up-as-code directory (git checkout, dotfiles repo, cloud-sync folders), and never commit it. The default `./backups` is excluded by the root `.gitignore` (`/backups/`, `*.db.age`). If you set `PERSONA_BACKUP_DIR` to another path, it carries the same rules: inside the checkout it must satisfy `git check-ignore -v "$PERSONA_BACKUP_DIR"`; outside the repo it still needs mode `0700` and exclusion from host backup/sync tooling.
+- `VACUUM INTO` writes a WAL-consistent snapshot to `$BACKUP_DIR/app-YYYYMMDD.db`. The compose file bind-mounts a host directory outside the `persona-data` volume: `./backups:/backups`.
 - The snapshot is encrypted with `age` to `$BACKUP_AGE_RECIPIENT` (an `age1…` recipient) and the plaintext file is deleted. If the recipient is unset or `age` fails, no plaintext is left on disk and the failure is recorded in `audit_log` (`backup_daily`).
 - The same cadence mirrors the MinIO bucket with `mc mirror` into `$BACKUP_DIR/minio-YYYYMMDD`. A DB-only backup breaks reprints because `template_version_assets` pins objects; the mirror is required, not optional.
 - RPO ≤ 24 h, RTO ≤ 4 h. Restore: stop the app, decrypt with the age key, place the file at the `DATABASE_URL` path, restart, verify `/health` and a sign-in.

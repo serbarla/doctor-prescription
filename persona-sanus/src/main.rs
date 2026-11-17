@@ -2383,7 +2383,10 @@ fn SettingsProfile() -> Element {
         Some(clinic) => format!("Clínica: {}", clinic.name),
         None => "Sin clínica asignada. Un administrador debe asignarte un rol.".to_string(),
     };
-    let subtitle = format!("{clinic_label} · Rol: {}", role_label(profile.role.as_deref()));
+    let subtitle = format!(
+        "{clinic_label} · Rol: {}",
+        role_label(profile.role.as_deref())
+    );
 
     rsx! {
         div {

@@ -127,13 +127,14 @@ pub fn RxBlockIndicator(
     let can_reserve = !status.active || status.exhausted;
     rsx! {
         div { class: "ui-rx-block",
-            span {
-                if !status.active {
-                    "Sin bloque de números activo."
-                } else {
-                    "Números disponibles: {status.remaining} de {status.limit}"
-                }
-            }
+            {match status.active {
+                false => rsx! {
+                    span { "Sin bloque de números activo." }
+                },
+                true => rsx! {
+                    span { "Números disponibles: {status.remaining} de {status.limit}" }
+                },
+            }}
             if status.active && status.exhausted {
                 span { "Bloque agotado. Reserva otro antes de firmar." }
             }

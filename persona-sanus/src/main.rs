@@ -54,6 +54,8 @@ use serde_json::Value;
 enum Route {
     #[route("/verify/:code")]
     Verify { code: String },
+    #[route("/dev/ui")]
+    DevUi {},
     #[layout(Navbar)]
     #[route("/")]
     Home {},
@@ -1363,6 +1365,14 @@ fn Verify(code: String) -> Element {
 }
 
 #[component]
+fn DevUi() -> Element {
+    #[cfg(debug_assertions)]
+    return ui::DevUiGallery();
+    #[cfg(not(debug_assertions))]
+    return rsx! { div { class: "ui-card", "Esta vista solo existe en compilaciones de desarrollo." } };
+}
+
+#[component]
 fn Navbar() -> Element {
     let mut user = use_context::<Signal<Option<SessionUser>>>();
     let mut actor = use_context::<Signal<Option<Me>>>();
@@ -1746,6 +1756,18 @@ fn Dashboard() -> Element {
     }
 }
 
+#[cfg(debug_assertions)]
+fn gallery_settings_link() -> Element {
+    rsx! {
+        Link { to: Route::DevUi {}, "Sistema de diseño" }
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn gallery_settings_link() -> Element {
+    rsx! {}
+}
+
 #[component]
 fn Settings() -> Element {
     let actor = use_context::<Signal<Option<Me>>>();
@@ -1781,6 +1803,7 @@ fn Settings() -> Element {
                 Link { to: Route::SettingsUsers {}, "Usuarios y roles" }
                 Link { to: Route::SettingsClinic {}, "Clínica y biblioteca" }
                 Link { to: Route::SettingsProfile {}, "Mi perfil" }
+                {gallery_settings_link()}
             }
         },
         _ => rsx! {

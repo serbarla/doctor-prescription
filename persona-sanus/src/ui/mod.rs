@@ -12,6 +12,9 @@ mod feedback;
 #[allow(dead_code)]
 mod form;
 mod format;
+#[cfg(debug_assertions)]
+#[allow(dead_code)]
+mod gallery;
 #[allow(dead_code)]
 mod icon;
 #[allow(dead_code)]
@@ -48,6 +51,9 @@ pub use format::{
     platform_label, prescription_status_label, role_label, sex_label, status_label,
     template_owner_label, template_status_label, version_status_label,
 };
+#[cfg(debug_assertions)]
+#[allow(unused_imports)]
+pub use gallery::DevUiGallery;
 #[allow(unused_imports)]
 pub use icon::{Icon, IconName};
 #[allow(unused_imports)]

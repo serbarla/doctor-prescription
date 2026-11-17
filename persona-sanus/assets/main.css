@@ -1482,6 +1482,11 @@ button.danger:hover {
   margin-top: 16px;
 }
 
+.ui-confirm-message {
+  margin: 8px 0 0;
+  color: var(--color-ink);
+}
+
 .ui-list {
   display: flex;
   flex-direction: column;
@@ -2452,4 +2457,114 @@ input[type="file"]:focus-visible {
   .ui-code-form {
     grid-template-columns: 1fr;
   }
+}
+
+.ui-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.ui-gallery-head {
+  text-align: center;
+}
+
+.ui-gallery-head h1 {
+  font-family: var(--font-mint);
+  font-weight: var(--font-weight-medium);
+  font-size: 26px;
+  line-height: 1.22;
+  color: var(--color-ink);
+  margin: 16px 0 8px;
+}
+
+.ui-gallery-head p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-mist);
+  margin: 0 0 16px;
+}
+
+.ui-gallery-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ui-gallery-section h2 {
+  font-family: var(--font-mint);
+  font-weight: var(--font-weight-medium);
+  font-size: 20px;
+  line-height: 1.25;
+  color: var(--color-ink);
+  margin: 0;
+}
+
+.ui-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.ui-gallery-frame {
+  background-color: var(--color-paper);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-cards);
+  padding: 20px;
+}
+
+.ui-gallery-label {
+  font-family: var(--font-mint);
+  font-weight: var(--font-weight-medium);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-mist);
+  margin: 0 0 8px;
+}
+
+.ui-gallery-icons {
+  display: grid;
+  gap: 8px;
+}
+
+.ui-gallery-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ui-swatch {
+  height: 48px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-images);
+  margin-bottom: 8px;
+}
+
+.ui-gallery-radii,
+.ui-gallery-surfaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ui-radius-sample {
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--color-hairline);
+  background-color: var(--color-cream);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--color-mist);
+}
+
+.ui-surface-sample {
+  padding: 16px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-images);
+  font-size: 12px;
+  color: var(--color-mist);
 }

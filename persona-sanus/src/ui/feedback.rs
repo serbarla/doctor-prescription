@@ -131,6 +131,7 @@ pub fn ConfirmPanel(
     rsx! {
         div { class: "ui-confirm",
             {children}
+            p { class: "ui-confirm-message", "{message}" }
             div { class: "ui-actions",
                 Button {
                     variant: ButtonVariant::Secondary,

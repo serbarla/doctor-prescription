@@ -40,11 +40,12 @@ mod verify_server;
 use crate::ui::{
     device_name_label, format_date, last_seen_label, optional_date, platform_label,
     prescription_status_label, role_label, sex_label, status_label, template_owner_label,
-    template_status_label, version_status_label, A4MockKind, AccentTone, ActionRow, Button,
-    ButtonLink, ButtonVariant, Card, DetailGrid, DetailItem, ErrorText, FormColumns, FormGrid,
-    Hero, LinkAction, LoadingState, LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard,
-    PageHeader, PageShell, PillBadge, SectionBand, SectionCard, SectionHeader, SurfaceTone,
-    SyncStatus, SyncStatusIndicator, TextField, TrustSecurityRow, VerificationCodeForm,
+    template_status_label, version_status_label, A4MockKind, AccentTone, ActionRow, Badge,
+    BadgeTone, Button, ButtonLink, ButtonVariant, Card, ConfirmPanel, DetailGrid, DetailItem,
+    EmptyState, ErrorText, FormColumns, FormGrid, Hero, LinkAction, ListRow, LoadingState,
+    LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard, PageHeader, PageShell, PillBadge,
+    SearchField, SectionBand, SectionCard, SectionHeader, SelectField, SurfaceTone, SyncStatus,
+    SyncStatusIndicator, TextAreaField, TextField, TrustSecurityRow, VerificationCodeForm,
     VerificationResultCard,
 };
 use api::Me;
@@ -1861,8 +1862,8 @@ fn AuthPage() -> Element {
 
 #[component]
 fn Dashboard() -> Element {
-    let mut user = use_context::<Signal<Option<SessionUser>>>();
-    let mut actor = use_context::<Signal<Option<Me>>>();
+    let user = use_context::<Signal<Option<SessionUser>>>();
+    let actor = use_context::<Signal<Option<Me>>>();
     let checked = use_context::<Signal<bool>>();
     let navigator = use_navigator();
 
@@ -1874,55 +1875,64 @@ fn Dashboard() -> Element {
 
     if !checked() {
         return rsx! {
-            div {
-                id: "echo",
-                p { "Loading..." }
+            PageShell { id: "dashboard-page".to_owned(),
+                PageHeader { title: "Panel".to_owned(), subtitle: None }
+                LoadingState {}
             }
         };
     }
 
-    match user() {
-        Some(session) => rsx! {
-            div {
-                id: "echo",
-                h4 { "Dashboard" }
-                p { "{session.name}" }
-                p { "{session.email}" }
-                if let Some(profile) = actor() {
-                    p { "Rol: {role_label(profile.role.as_deref())}" }
-                    if let Some(clinic) = profile.clinic {
-                        p { "Clínica: {clinic.name}" }
-                    } else {
-                        p { "Sin clínica asignada." }
+    let Some(session) = user() else {
+        return rsx! {
+            PageShell { id: "dashboard-page".to_owned(),
+                PageHeader { title: "Panel".to_owned(), subtitle: None }
+            }
+        };
+    };
+    let profile = actor();
+    let subtitle = format!("{} · {}", session.name, session.email);
+
+    rsx! {
+        PageShell { id: "dashboard-page".to_owned(),
+            PageHeader { title: "Panel".to_owned(), subtitle: Some(subtitle) }
+            SectionCard { title: "Sesión".to_owned(), description: None,
+                DetailGrid {
+                    DetailItem { label: "Nombre".to_owned(), "{session.name}" }
+                    DetailItem { label: "Correo".to_owned(), "{session.email}" }
+                    DetailItem { label: "Rol".to_owned(),
+                        if let Some(profile) = &profile {
+                            if profile.role.is_some() {
+                                Badge { tone: BadgeTone::Mint, "{role_label(profile.role.as_deref())}" }
+                            } else {
+                                Badge { tone: BadgeTone::Neutral, "Sin rol" }
+                            }
+                        } else {
+                            Badge { tone: BadgeTone::Neutral, "Sin rol" }
+                        }
+                    }
+                    DetailItem { label: "Clínica".to_owned(),
+                        if let Some(clinic) = profile.as_ref().and_then(|profile| profile.clinic.as_ref()) {
+                            "{clinic.name}"
+                        } else {
+                            "Sin clínica asignada."
+                        }
                     }
                 }
-                button {
-                    onclick: move |_| {
-                        spawn(async move {
-                            let _ = auth::sign_out().await;
-                            clear_persisted_session();
-                            actor.set(None);
-                            user.set(None);
-                            navigator.push(Route::Home {});
-                        });
-                    },
-                    "Cerrar sesión"
-                }
             }
-        },
-        None => rsx! {
-            div {
-                id: "echo",
-                p { "Redirecting to sign in..." }
-            }
-        },
+        }
     }
 }
 
 #[cfg(debug_assertions)]
 fn gallery_settings_link() -> Element {
     rsx! {
-        Link { to: Route::DevUi {}, "Sistema de diseño" }
+        ButtonLink {
+            to: Route::DevUi {},
+            variant: ButtonVariant::Secondary,
+            active_class: None,
+            extra_class: "ui-link-card".to_owned(),
+            "Sistema de diseño"
+        }
     }
 }
 
@@ -1954,23 +1964,62 @@ fn Settings() -> Element {
     let profile = actor();
     if !checked() || profile.is_none() {
         return rsx! {
-            div { id: "echo", p { "Cargando..." } }
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader {
+                    title: "Configuración".to_owned(),
+                    subtitle: Some("Administra el acceso del personal y tu perfil.".to_owned()),
+                }
+                LoadingState {}
+            }
         };
     }
     match profile {
         Some(profile) if profile.is_administrator() => rsx! {
-            div {
-                id: "echo",
-                h4 { "Configuración" }
-                p { "Administra el acceso del personal y tu perfil." }
-                Link { to: Route::SettingsUsers {}, "Usuarios y roles" }
-                Link { to: Route::SettingsClinic {}, "Clínica y biblioteca" }
-                Link { to: Route::SettingsProfile {}, "Mi perfil" }
-                {gallery_settings_link()}
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader {
+                    title: "Configuración".to_owned(),
+                    subtitle: Some("Administra el acceso del personal y tu perfil.".to_owned()),
+                }
+                div { class: "ui-link-grid",
+                    ButtonLink {
+                        to: Route::SettingsUsers {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: "ui-link-card".to_owned(),
+                        "Usuarios y roles"
+                    }
+                    ButtonLink {
+                        to: Route::SettingsClinic {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: "ui-link-card".to_owned(),
+                        "Clínica y biblioteca"
+                    }
+                    ButtonLink {
+                        to: Route::SettingsProfile {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: "ui-link-card".to_owned(),
+                        "Mi perfil"
+                    }
+                    if profile.is_administrator() {
+                        ButtonLink {
+                            to: Route::Audit {},
+                            variant: ButtonVariant::Secondary,
+                            active_class: None,
+                            extra_class: "ui-link-card".to_owned(),
+                            "Auditoría"
+                        }
+                    }
+                    {gallery_settings_link()}
+                }
             }
         },
         _ => rsx! {
-            div { id: "echo", p { "Redirigiendo..." } }
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader { title: "Configuración".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         },
     }
 }
@@ -2941,6 +2990,7 @@ fn Patients() -> Element {
     let mut query = use_signal(String::new);
     let mut patients = use_signal(Vec::<api::Patient>::new);
     let mut message = use_signal(String::new);
+    let mut loaded = use_signal(|| false);
 
     use_effect(move || {
         if !checked() {
@@ -2973,79 +3023,106 @@ fn Patients() -> Element {
                     }
                 }
             }
+            loaded.set(true);
         });
     });
 
     if !checked() {
         return rsx! {
-            div { id: "patients-page", p { "Cargando..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Pacientes".to_owned(),
+                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
+                }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "patients-page", p { "Redirigiendo..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Pacientes".to_owned(),
+                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
+                }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_read_patients() {
         return rsx! {
-            div {
-                id: "patients-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Pacientes".to_owned(),
+                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Necesitas un rol en la clínica para consultar pacientes." }
                 }
             }
         };
     }
+    if !loaded() {
+        return rsx! {
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Pacientes".to_owned(),
+                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
+                }
+                LoadingState {}
+            }
+        };
+    }
 
     rsx! {
-        div {
-            id: "patients-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Pacientes" }
-                    p { "Busca por nombre o cédula dentro de tu clínica." }
-                }
+        PageShell { id: "patients-page".to_owned(),
+            PageHeader {
+                title: "Pacientes".to_owned(),
+                subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
                 if profile.can_write_patients() {
-                    Link { class: "button", to: Route::PatientNew {}, "Nuevo paciente" }
+                    ButtonLink {
+                        to: Route::PatientNew {},
+                        variant: ButtonVariant::Primary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Nuevo paciente"
+                    }
                 }
             }
-            div {
-                class: "search-row",
-                input {
-                    r#type: "search",
-                    placeholder: "Nombre o cédula",
-                    value: "{query}",
-                    oninput: move |event| query.set(event.value()),
-                }
+            SearchField {
+                label: "Buscar paciente".to_owned(),
+                placeholder: "Nombre o cédula".to_owned(),
+                value: query(),
+                oninput: move |next| query.set(next),
+                wide: true,
             }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
-            div {
-                class: "patient-list",
-                if patients().is_empty() {
-                    p { class: "hint", "No hay pacientes para esta búsqueda." }
+            if patients().is_empty() {
+                EmptyState {
+                    title: "Sin pacientes".to_owned(),
+                    description: "No hay pacientes para esta búsqueda.".to_owned(),
                 }
-                for patient in patients() {
-                    div {
-                        key: "{patient.id}",
-                        class: "patient-row",
-                        div {
-                            p { class: "patient-name", "{patient.full_name}" }
-                            p {
-                                class: "patient-meta",
-                                "Cédula: {patient.national_id.clone().unwrap_or_else(|| \"—\".to_string())}"
+            } else {
+                div { class: "ui-list",
+                    for patient in patients() {
+                        ListRow {
+                            key: "{patient.id}",
+                            title: patient.full_name.clone(),
+                            meta: vec![
+                                format!("Cédula {}", patient.national_id.clone().unwrap_or_else(|| "—".to_owned())),
+                                format!("Nacimiento {}", patient.birth_date.as_deref().map(format_date).unwrap_or_else(|| "—".to_owned())),
+                            ],
+                            badge: None,
+                            ButtonLink {
+                                to: Route::PatientDetail { id: patient.id.clone() },
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Ver ficha"
                             }
-                            if let Some(birth_date) = patient.birth_date.clone() {
-                                p { class: "patient-meta", "Nacimiento: {format_date(&birth_date)}" }
-                            }
-                        }
-                        Link {
-                            class: "button secondary",
-                            to: Route::PatientDetail { id: patient.id.clone() },
-                            "Ver ficha"
                         }
                     }
                 }
@@ -3153,22 +3230,64 @@ fn PatientNew() -> Element {
 
     if !checked() {
         return rsx! {
-            div { id: "patients-page", p { "Cargando..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Nuevo paciente".to_owned(),
+                    subtitle: None,
+                    ButtonLink {
+                        to: Route::Patients {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Cancelar"
+                    }
+                }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "patients-page", p { "Redirigiendo..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Nuevo paciente".to_owned(),
+                    subtitle: None,
+                    ButtonLink {
+                        to: Route::Patients {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Cancelar"
+                    }
+                }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_write_patients() {
         return rsx! {
-            div {
-                id: "patients-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Nuevo paciente".to_owned(),
+                    subtitle: None,
+                    ButtonLink {
+                        to: Route::Patients {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Cancelar"
+                    }
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Solo doctor, enfermería y secretaría pueden crear pacientes." }
-                    Link { to: Route::Patients {}, "Volver a pacientes" }
+                }
+                ButtonLink {
+                    to: Route::Patients {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver a pacientes"
                 }
             }
         };
@@ -3186,116 +3305,170 @@ fn PatientNew() -> Element {
     let profile_for_duplicate = profile.clone();
 
     rsx! {
-        div {
-            id: "patients-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Nuevo paciente" }
-                    p { "Los datos se guardan en la clínica actual." }
+        PageShell { id: "patients-page".to_owned(),
+            PageHeader {
+                title: "Nuevo paciente".to_owned(),
+                subtitle: Some("Los datos se guardan en la clínica actual.".to_owned()),
+                ButtonLink {
+                    to: Route::Patients {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Cancelar"
                 }
-                Link { class: "button secondary", to: Route::Patients {}, "Cancelar" }
             }
-            div {
-                class: "form-grid",
-                label {
-                    class: "field",
-                    span { "Nombres y apellidos" }
-                    input {
-                        value: "{full_name}",
-                        oninput: move |event| full_name.set(event.value()),
+            Card {
+                FormGrid { columns: FormColumns::Two,
+                    TextField {
+                        label: "Nombres completos".to_owned(),
+                        value: full_name(),
+                        oninput: move |next| full_name.set(next),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "name".to_owned(),
+                        spellcheck: true,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: true,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Cédula" }
-                    input {
-                        value: "{national_id}",
-                        oninput: move |event| national_id.set(event.value()),
+                    TextField {
+                        label: "Cédula".to_owned(),
+                        value: national_id(),
+                        oninput: move |next| national_id.set(next),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "off".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: false,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Fecha de nacimiento" }
-                    input {
-                        r#type: "date",
-                        value: "{birth_date}",
-                        oninput: move |event| birth_date.set(event.value()),
+                    TextField {
+                        label: "Fecha de nacimiento".to_owned(),
+                        value: birth_date(),
+                        oninput: move |next| birth_date.set(next),
+                        input_type: "date".to_owned(),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "bday".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: Some("1".to_owned()),
+                        wide: false,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Sexo" }
-                    select {
-                        value: "{sex}",
-                        onchange: move |event| sex.set(event.value()),
+                    SelectField {
+                        label: "Sexo".to_owned(),
+                        value: sex(),
+                        onchange: move |next| sex.set(next),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
                         option { value: "", "Sin especificar" }
                         option { value: "female", "Femenino" }
                         option { value: "male", "Masculino" }
                         option { value: "other", "Otro" }
                         option { value: "unspecified", "Prefiere no decir" }
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Teléfono" }
-                    input {
-                        r#type: "tel",
-                        value: "{phone}",
-                        oninput: move |event| phone.set(event.value()),
+                    TextField {
+                        label: "Teléfono".to_owned(),
+                        value: phone(),
+                        oninput: move |next| phone.set(next),
+                        input_type: "tel".to_owned(),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "tel".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: false,
+                        hide_label: false,
+                    }
+                    TextAreaField {
+                        label: "Notas".to_owned(),
+                        value: notes(),
+                        oninput: move |next| notes.set(next),
+                        placeholder: String::new(),
+                        wide: true,
+                        hint: None,
+                        error: None,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        hide_label: false,
+                        rows: None,
                     }
                 }
-                label {
-                    class: "field wide",
-                    span { "Notas" }
-                    textarea {
-                        value: "{notes}",
-                        oninput: move |event| notes.set(event.value()),
-                    }
-                }
-            }
-            if !message().is_empty() {
-                p { class: "error", "{message}" }
             }
             if !warning_ids().is_empty() {
-                div {
-                    class: "notice",
-                    p { "Posible duplicado por nombre. Coincidencias: {warning_ids().join(\", \")}" }
-                    button {
-                        disabled: saving(),
-                        onclick: move |_| {
-                            submit_new_patient(
-                                saving,
-                                message,
-                                warning_ids,
-                                navigator,
-                                sync,
-                                form(),
-                                true,
-                                profile_for_duplicate.clone(),
-                            );
-                        },
-                        "Crear de todas formas"
+                Notice { tone: NoticeTone::Warning,
+                    div {
+                        p { "{message()}" }
+                        p { "Coincidencias: {warning_ids().join(\", \")}" }
+                        Button {
+                            variant: ButtonVariant::Danger,
+                            disabled: saving(),
+                            onclick: move |_| {
+                                submit_new_patient(
+                                    saving,
+                                    message,
+                                    warning_ids,
+                                    navigator,
+                                    sync,
+                                    form(),
+                                    true,
+                                    profile_for_duplicate.clone(),
+                                );
+                            },
+                            "Crear de todas formas"
+                        }
                     }
                 }
             }
-            div {
-                class: "actions",
-                button {
+            if warning_ids().is_empty() && !message().is_empty() {
+                ErrorText { text: message() }
+            }
+            ActionRow {
+                Button {
+                    variant: ButtonVariant::Primary,
                     disabled: saving(),
                     onclick: move |_| {
-                    submit_new_patient(
-                        saving,
-                        message,
-                        warning_ids,
-                        navigator,
-                        sync,
-                        form(),
-                        false,
-                        profile.clone(),
-                    );
+                        submit_new_patient(
+                            saving,
+                            message,
+                            warning_ids,
+                            navigator,
+                            sync,
+                            form(),
+                            false,
+                            profile.clone(),
+                        );
                     },
-                    if saving() { "Guardando..." } else { "Guardar paciente" }
+                    "Guardar paciente"
                 }
             }
         }
@@ -3353,20 +3526,26 @@ fn PatientDetail(id: String) -> Element {
 
     if !checked() {
         return rsx! {
-            div { id: "patients-page", p { "Cargando..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader { title: "Paciente".to_owned(), subtitle: None }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "patients-page", p { "Redirigiendo..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader { title: "Paciente".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_read_patients() {
         return rsx! {
-            div {
-                id: "patients-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader { title: "Paciente".to_owned(), subtitle: None }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Necesitas un rol en la clínica para consultar pacientes." }
                 }
             }
@@ -3374,121 +3553,128 @@ fn PatientDetail(id: String) -> Element {
     }
     let Some(patient) = patient() else {
         return rsx! {
-            div {
-                id: "patients-page",
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader { title: "Paciente".to_owned(), subtitle: None }
                 if message().is_empty() {
-                    p { "Cargando..." }
+                    LoadingState {}
                 } else {
-                    p { class: "error", "{message}" }
-                    Link { to: Route::Patients {}, "Volver a pacientes" }
+                    Notice { tone: NoticeTone::Error,
+                        p { "{message()}" }
+                    }
+                    ButtonLink {
+                        to: Route::Patients {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Volver a pacientes"
+                    }
                 }
             }
         };
     };
 
     rsx! {
-        div {
-            id: "patients-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "{patient.full_name}" }
-                    p { "Ficha del paciente" }
-                }
-                div {
-                    class: "actions",
-                    if profile.can_write_patients() {
-                        Link {
-                            class: "button secondary",
-                            to: Route::PatientEdit { id: patient.id.clone() },
-                            "Editar"
-                        }
-                    } else {
-                        span { class: "badge", "Solo lectura" }
+        PageShell { id: "patients-page".to_owned(),
+            PageHeader {
+                title: patient.full_name.clone(),
+                subtitle: Some("Ficha del paciente".to_owned()),
+                if profile.can_write_patients() {
+                    ButtonLink {
+                        to: Route::PatientEdit { id: patient.id.clone() },
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Editar"
                     }
+                } else {
+                    Badge { tone: BadgeTone::Neutral, "Solo lectura" }
                 }
-            }
-            div {
-                class: "detail-grid",
-                div { class: "field", span { "Cédula" }, span { "{patient.national_id.clone().unwrap_or_else(|| \"—\".to_string())}" } }
-                div { class: "field", span { "Fecha de nacimiento" }, span { "{optional_date(patient.birth_date.as_deref())}" } }
-                div { class: "field", span { "Sexo" }, span { "{sex_label(patient.sex.as_deref())}" } }
-                div { class: "field", span { "Teléfono" }, span { "{patient.phone.clone().unwrap_or_else(|| \"—\".to_string())}" } }
-                div { class: "field wide", span { "Notas" }, span { class: "notes", "{patient.notes.clone().unwrap_or_else(|| \"—\".to_string())}" } }
-            }
-            div {
-                class: "actions",
                 if profile.can_create_prescriptions() {
-                    Link {
-                        class: "button",
+                    ButtonLink {
                         to: Route::PrescriptionNew {
                             patient_id: Some(patient.id.clone()),
                             template_id: None,
                         },
+                        variant: ButtonVariant::Primary,
+                        active_class: None,
+                        extra_class: String::new(),
                         "Nueva receta"
                     }
                 }
-                Link {
-                    class: "button secondary",
+                ButtonLink {
                     to: Route::Prescriptions { status: None },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
                     "Historial de recetas"
                 }
             }
-            if !message().is_empty() {
-                p { class: "error", "{message}" }
-            }
-            if confirm_delete() {
-                div {
-                    class: "notice",
-                    p { "¿Eliminar este paciente? La ficha se oculta de la búsqueda y queda registrada en auditoría." }
-                    div {
-                        class: "actions",
-                        button {
-                            disabled: deleting(),
-                            onclick: {
-                                let patient_id = patient.id.clone();
-                                move |_| {
-                                    if deleting() {
-                                        return;
-                                    }
-                                    deleting.set(true);
-                                    let patient_id = patient_id.clone();
-                                    spawn(async move {
-                                        match api::delete_patient(&patient_id).await {
-                                            Ok(()) => {
-                                                navigator.push(Route::Patients {});
-                                            }
-                                            Err(error) => {
-                                                deleting.set(false);
-                                                message.set(error);
-                                            }
-                                        }
-                                    });
-                                }
-                            },
-                            if deleting() { "Eliminando..." } else { "Confirmar eliminación" }
-                        }
-                        button {
-                            class: "secondary",
-                            disabled: deleting(),
-                            onclick: move |_| confirm_delete.set(false),
-                            "Cancelar"
-                        }
+            Card {
+                DetailGrid {
+                    DetailItem {
+                        label: "Cédula".to_owned(),
+                        "{patient.national_id.clone().unwrap_or_else(|| \"—\".to_owned())}"
+                    }
+                    DetailItem { label: "Fecha de nacimiento".to_owned(), "{optional_date(patient.birth_date.as_deref())}" }
+                    DetailItem { label: "Sexo".to_owned(), "{sex_label(patient.sex.as_deref())}" }
+                    DetailItem {
+                        label: "Teléfono".to_owned(),
+                        "{patient.phone.clone().unwrap_or_else(|| \"—\".to_owned())}"
+                    }
+                    DetailItem {
+                        label: "Notas".to_owned(),
+                        wide: true,
+                        "{patient.notes.clone().unwrap_or_else(|| \"—\".to_owned())}"
                     }
                 }
+            }
+            if !message().is_empty() {
+                ErrorText { text: message() }
+            }
+            if confirm_delete() {
+                ConfirmPanel {
+                    message: "¿Eliminar este paciente? La ficha se oculta de la búsqueda y queda registrada en auditoría.".to_owned(),
+                    confirm_label: "Confirmar eliminación".to_owned(),
+                    cancel_label: "Cancelar".to_owned(),
+                    busy: deleting(),
+                    on_cancel: move |_| confirm_delete.set(false),
+                    on_confirm: move |_| {
+                        if deleting() {
+                            return;
+                        }
+                        deleting.set(true);
+                        let patient_id = patient.id.clone();
+                        spawn(async move {
+                            match api::delete_patient(&patient_id).await {
+                                Ok(()) => {
+                                    navigator.push(Route::Patients {});
+                                }
+                                Err(error) => {
+                                    deleting.set(false);
+                                    message.set(error);
+                                }
+                            }
+                        });
+                    },
+                    span {}
+                }
             } else if profile.can_write_patients() {
-                div {
-                    class: "actions",
-                    button {
-                        class: "danger",
+                ActionRow {
+                    Button {
+                        variant: ButtonVariant::Danger,
                         onclick: move |_| confirm_delete.set(true),
                         "Eliminar paciente"
                     }
                 }
             }
-            div {
-                class: "actions",
-                Link { class: "button secondary", to: Route::Patients {}, "Volver a pacientes" }
+            ActionRow {
+                ButtonLink {
+                    to: Route::Patients {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver a pacientes"
+                }
             }
         }
     }
@@ -3607,22 +3793,64 @@ fn PatientEdit(id: String) -> Element {
 
     if !checked() {
         return rsx! {
-            div { id: "patients-page", p { "Cargando..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Editar paciente".to_owned(),
+                    subtitle: None,
+                    ButtonLink {
+                        to: Route::PatientDetail { id: patient_id.clone() },
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Cancelar"
+                    }
+                }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "patients-page", p { "Redirigiendo..." } }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Editar paciente".to_owned(),
+                    subtitle: None,
+                    ButtonLink {
+                        to: Route::PatientDetail { id: patient_id.clone() },
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Cancelar"
+                    }
+                }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_write_patients() {
         return rsx! {
-            div {
-                id: "patients-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Editar paciente".to_owned(),
+                    subtitle: None,
+                    ButtonLink {
+                        to: Route::PatientDetail { id: patient_id.clone() },
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Cancelar"
+                    }
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Solo doctor, enfermería y secretaría pueden editar pacientes." }
-                    Link { to: Route::PatientDetail { id: patient_id.clone() }, "Ver ficha" }
+                }
+                ButtonLink {
+                    to: Route::PatientDetail { id: patient_id.clone() },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Ver ficha"
                 }
             }
         };
@@ -3638,103 +3866,147 @@ fn PatientEdit(id: String) -> Element {
     };
 
     rsx! {
-        div {
-            id: "patients-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Editar paciente" }
-                    p { "Los cambios se auditan en la ficha del paciente." }
-                }
-                Link {
-                    class: "button secondary",
+        PageShell { id: "patients-page".to_owned(),
+            PageHeader {
+                title: "Editar paciente".to_owned(),
+                subtitle: Some("Los cambios se auditan en la ficha del paciente.".to_owned()),
+                ButtonLink {
                     to: Route::PatientDetail { id: patient_id.clone() },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
                     "Cancelar"
                 }
             }
             if !initialized() && message().is_empty() {
-                p { "Cargando..." }
+                LoadingState { label: "Cargando…".to_owned() }
             }
-            div {
-                class: "form-grid",
-                label {
-                    class: "field",
-                    span { "Nombres y apellidos" }
-                    input {
-                        value: "{full_name}",
-                        oninput: move |event| full_name.set(event.value()),
+            Card {
+                FormGrid { columns: FormColumns::Two,
+                    TextField {
+                        label: "Nombres completos".to_owned(),
+                        value: full_name(),
+                        oninput: move |next| full_name.set(next),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "name".to_owned(),
+                        spellcheck: true,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: true,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Cédula" }
-                    input {
-                        value: "{national_id}",
-                        oninput: move |event| national_id.set(event.value()),
+                    TextField {
+                        label: "Cédula".to_owned(),
+                        value: national_id(),
+                        oninput: move |next| national_id.set(next),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "off".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: false,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Fecha de nacimiento" }
-                    input {
-                        r#type: "date",
-                        value: "{birth_date}",
-                        oninput: move |event| birth_date.set(event.value()),
+                    TextField {
+                        label: "Fecha de nacimiento".to_owned(),
+                        value: birth_date(),
+                        oninput: move |next| birth_date.set(next),
+                        input_type: "date".to_owned(),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "bday".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: Some("1".to_owned()),
+                        wide: false,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Sexo" }
-                    select {
-                        value: "{sex}",
-                        onchange: move |event| sex.set(event.value()),
+                    SelectField {
+                        label: "Sexo".to_owned(),
+                        value: sex(),
+                        onchange: move |next| sex.set(next),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
                         option { value: "", "Sin especificar" }
                         option { value: "female", "Femenino" }
                         option { value: "male", "Masculino" }
                         option { value: "other", "Otro" }
                         option { value: "unspecified", "Prefiere no decir" }
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Teléfono" }
-                    input {
-                        r#type: "tel",
-                        value: "{phone}",
-                        oninput: move |event| phone.set(event.value()),
+                    TextField {
+                        label: "Teléfono".to_owned(),
+                        value: phone(),
+                        oninput: move |next| phone.set(next),
+                        input_type: "tel".to_owned(),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "tel".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: false,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field wide",
-                    span { "Notas" }
-                    textarea {
-                        value: "{notes}",
-                        oninput: move |event| notes.set(event.value()),
+                    TextAreaField {
+                        label: "Notas".to_owned(),
+                        value: notes(),
+                        oninput: move |next| notes.set(next),
+                        placeholder: String::new(),
+                        wide: true,
+                        hint: None,
+                        error: None,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        hide_label: false,
+                        rows: None,
                     }
                 }
             }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
-            div {
-                class: "actions",
-                button {
+            ActionRow {
+                Button {
+                    variant: ButtonVariant::Primary,
                     disabled: saving(),
-                    onclick: {
-                        let patient_id = patient_id.clone();
-                        move |_| {
-                            submit_edit_patient(
-                                saving,
-                                message,
-                                navigator,
-                                patient_id.clone(),
-                                form(),
-                                profile.clone(),
-                                sync,
-                            );
-                        }
+                    onclick: move |_| {
+                        submit_edit_patient(
+                            saving,
+                            message,
+                            navigator,
+                            patient_id.clone(),
+                            form(),
+                            profile.clone(),
+                            sync,
+                        );
                     },
-                    if saving() { "Guardando..." } else { "Guardar cambios" }
+                    "Guardar cambios"
                 }
             }
         }

@@ -81,6 +81,20 @@ Pass 2026-11-17, Run `run_0a5cb3406016`, automation `75f49b64-df62-4a76-a714-a65
 - Desktop: no pilot slice declared `Desktop-verify: yes` and no pilot slice owned `persona-sanus/src/update.rs` or installer config; Computer Use was not invoked.
 - Manual trigger: `orca automations run --id 75f49b64-df62-4a76-a714-a651c4cd7e31 --json` created run `e9f7ca49-6354-4e46-899b-7f4d8d7a8d6d`, `trigger: manual`, `precheckResult: null`, workspace `auto-spec-queue-coordinator-run-1-20261117T1647`. It was stopped and the workspace removed before it could dispatch, because its projected queue spend exceeds the ceiling.
 
+Second pass 2026-11-17, gated scan only, no Run created, no worker dispatched, automation `75f49b64-df62-4a76-a714-a651c4cd7e31` still disabled (`enabled: false`).
+
+| Outcome | Count |
+| --- | --- |
+| dispatched | 0 |
+| merged | 0 |
+| gated | 8 ready slices remain queued |
+| scanner ready at scan | 8 |
+
+- Scanner: `python3 .blocks/spec-queue.py --specs-dir specs --ready-only --brief` exits 0 with 8 `ready` (`12-L-rate-limit-proxy`, `13-M-backup-file-safety`, `13-M-backup-minio-mirror`, `13-M-compose-production-config`, `13-M-es-ec-copy`, `13-M-release-hygiene`, `13-M-stale-asset-cleanup`, `13-M-update-channel`), all `whole_spec: true`, so the runbook serializes them one alone per pass and the `$5/day` ceiling covers one worker, not eight.
+- No clean coordinator checkout: `encantado` worktree on `serbarla/merge-screens-specs` has uncommitted user changes (`persona-sanus/assets/main.css`, `persona-sanus/src/forms.rs`, `persona-sanus/src/main.rs`, `persona-sanus/src/ui/format.rs`, `specs/22-V-ui-templates.md`); the main checkout on `master` is also dirty (`encantado`, deleted `spec-13-M-backup-repo-exclusion`, untracked `spec-13-M-signed-installers/`). Dispatching from either HEAD would fork without that in-progress work and merge back into conflict.
+- Prior gates unchanged: `orca orchestration gate-list --run run_0a5cb3406016 --json` still shows `gate_991970b05208` (objective 4, signing credentials) and `gate_0de125de84ac` (signed-installers divergence) pending; `spec-13-M-signed-installers` worktree preserved, no `.dmg`/`.msi`/`.pkg` produced.
+- `specs/15-O-spec-automation-pipeline.md` itself scans `blocked` by `13-M`, which scans `blocked` by `external:signing-and-notarization-credentials` (OPEN per 13-M objective 4).
+
 ## 4. Divergences
 
 *Process and tracking-file rules: see `AGENTS.md` (§ Spec-Driven Development).
@@ -101,6 +115,7 @@ file in `specs/divergences/`.*
 ### Divergences
 
 1. Pilot dispatch is partial: 1 of 9 in-scope ready slices (`13-M-backup-repo-exclusion`) got a worktree and worker; the other 8 stay gated, not `conflict`. The `$5/day` ceiling set under objective 1 covers one worker, not nine, and the template-era slices carry no `Owned files`: three share `persona-sanus/src/jobs.rs`, two share `docker-compose.yml`, and the rest overlap `context/runbook.md`, `README.md`, `Dockerfile`, and `persona-sanus/src/auth_server.rs`. No-go forbids dispatching overlapping or silently reassigning shared files, so wide dispatch waits for a human-authored split and a raised ceiling. Objectives 4 and 9 stay open. (Verified 2026-11-17: 0 fix attempts — the nine-worker pass was not launched; the one non-overlapping slice was dispatched, its gate passed, its merge was reverted on a pre-existing `fmt` failure, the baseline was formatted, and the merge was reapplied green. The remaining slices are fenced by the $5 ceiling and the missing file split, not by tooling; wide dispatch is deferred to a later pass by design, not a defect.)
+2. Second pass dispatched nothing: both coordinator checkouts are dirty with in-progress user work, so there is no clean base to fork `spec/<id>-<slug>` worktrees from without dropping that work or merging back into conflict; the No-go on touching unfinished work outside owned files and the runbook's clean-checkout / merge-alone rules fence dispatch. Combined with divergence 1 ($5 ceiling, no human-authored `Owned files` split for the 8 `whole_spec` ready slices, each serialized alone per pass) and 15-O scanning `blocked` by 13-M's OPEN signing-credentials prerequisite, objectives 4 and 9 stay open. (Verified 2026-11-17: 1 scan plus gate/worktree/automation inspection — scanner exits 0 with 8 `ready`, gates `gate_991970b05208`/`gate_0de125de84ac` still pending, automation still disabled, both checkouts dirty — 0 dispatch fix attempts, because launching a worker from a dirty or ceiling-exceeding base would violate the No-go; cleared when the user commits or stashes the in-progress work, authors the shared-file split, and raises or confirms the ceiling, by design not a defect.)
 
 ---
 

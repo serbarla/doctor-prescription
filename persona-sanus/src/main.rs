@@ -42,11 +42,12 @@ use crate::ui::{
     prescription_status_label, role_label, sex_label, status_label, template_owner_label,
     template_status_label, version_status_label, A4MockKind, AccentTone, ActionRow, Badge,
     BadgeTone, Button, ButtonLink, ButtonVariant, Card, ConfirmPanel, DetailGrid, DetailItem,
-    EmptyState, ErrorText, FormColumns, FormGrid, Hero, LinkAction, ListRow, LoadingState,
-    LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard, PageHeader, PageShell, PillBadge,
-    SearchField, SectionBand, SectionCard, SectionHeader, SelectField, SurfaceTone, SyncStatus,
-    SyncStatusIndicator, TextAreaField, TextField, TrustSecurityRow, VerificationCodeForm,
-    VerificationResultCard,
+    EmptyState, ErrorText, FilterBar, FormColumns, FormGrid, Hero, HintText, LinkAction, ListRow,
+    LlmExplainLink, LoadingState, LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard,
+    PageHeader, PageShell, PillBadge, PrescriptionStatusBadge, RxBlockIndicator, SearchField,
+    SectionBand, SectionCard, SectionHeader, SelectField, SurfaceTone, SyncStatus,
+    SyncStatusIndicator, TemplateStatusBadge, TextAreaField, TextField, TrustSecurityRow,
+    VerificationCodeForm, VerificationResultCard,
 };
 use api::Me;
 use auth::SessionUser;
@@ -1569,7 +1570,7 @@ fn AuthPage() -> Element {
         };
     }
 
-    let mut submit = move |_| {
+    let submit = move |_| {
         if submitting() {
             return;
         }
@@ -1642,7 +1643,7 @@ fn AuthPage() -> Element {
         });
     };
 
-    let mut verify_mfa = move |_| {
+    let verify_mfa = move |_| {
         if submitting() {
             return;
         }
@@ -1802,7 +1803,7 @@ fn AuthPage() -> Element {
                         variant: ButtonVariant::Primary,
                         disabled: submitting(),
                         loading: submitting(),
-                        onclick: move |event| submit(event),
+                        onclick: submit,
                         if submitting() {
                             "Procesando..."
                         } else if sign_up_mode() {
@@ -1841,7 +1842,7 @@ fn AuthPage() -> Element {
                                 variant: ButtonVariant::Primary,
                                 disabled: submitting(),
                                 loading: submitting(),
-                                onclick: move |event| verify_mfa(event),
+                                onclick: verify_mfa,
                                 "Verificar código"
                             }
                             Button {
@@ -4021,6 +4022,7 @@ fn Templates() -> Element {
     let navigator = use_navigator();
     let mut templates = use_signal(Vec::<api::Template>::new);
     let mut message = use_signal(String::new);
+    let mut loaded = use_signal(|| false);
     let refresh = use_signal(|| 0);
 
     use_effect(move || {
@@ -4040,81 +4042,107 @@ fn Templates() -> Element {
                 }
                 Err(error) => message.set(error),
             }
+            loaded.set(true);
         });
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "templates-page", p { "Cargando..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader {
+                    title: "Plantillas".to_owned(),
+                    subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
+                }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "templates-page", p { "Redirigiendo..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader {
+                    title: "Plantillas".to_owned(),
+                    subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
+                }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_manage_templates() {
         return rsx! {
-            div {
-                id: "templates-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader {
+                    title: "Plantillas".to_owned(),
+                    subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Solo doctor y administrador pueden gestionar plantillas." }
                 }
+            }
+        };
+    }
+    if !loaded() {
+        return rsx! {
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader {
+                    title: "Plantillas".to_owned(),
+                    subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
+                }
+                LoadingState {}
             }
         };
     }
     let rows = templates();
 
     rsx! {
-        div {
-            id: "templates-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Plantillas" }
-                    p { "Plantillas del médico y maestras de la clínica, con su versión vigente." }
+        PageShell { id: "templates-page".to_owned(),
+            PageHeader {
+                title: "Plantillas".to_owned(),
+                subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
+                ButtonLink {
+                    to: Route::TemplateNew {},
+                    variant: ButtonVariant::Primary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Nueva plantilla"
                 }
-                Link { class: "button", to: Route::TemplateNew {}, "Nueva plantilla" }
             }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
-            div {
-                class: "template-list",
-                if rows.is_empty() {
-                    p { class: "hint", "Todavía no hay plantillas." }
-                }
-                for template in rows {
-                    div {
-                        key: "{template.id}",
-                        class: "template-row",
-                        div {
-                            p { class: "patient-name", "{template.name}" }
-                            p {
-                                class: "patient-meta",
-                                "{template_owner_label(&template.owner_type)} · {template_status_label(&template.status)}"
-                            }
-                            if let Some(version) = template.current_version.clone() {
-                                p {
-                                    class: "patient-meta",
-                                    "Versión vigente: {version.version_no} ({version_status_label(&version.status)})"
-                                }
-                            } else {
-                                p { class: "patient-meta", "Sin versión publicada." }
-                            }
-                        }
-                        if template.status != "archived" {
-                            div {
-                                class: "actions",
-                                Link {
-                                    class: "button secondary",
+            if rows.is_empty() {
+                EmptyState { title: "Todavía no hay plantillas.".to_owned(), description: String::new() }
+            } else {
+                div { class: "ui-list",
+                    for template in rows {
+                        ListRow {
+                            key: "{template.id}",
+                            title: template.name.clone(),
+                            meta: vec![
+                                template_owner_label(&template.owner_type).to_owned(),
+                                template
+                                    .current_version
+                                    .as_ref()
+                                    .map(|version| format!("Versión {}", version.version_no))
+                                    .unwrap_or_else(|| "Sin versión publicada.".to_owned()),
+                            ],
+                            badge: Some(rsx! {
+                                TemplateStatusBadge { status: template.status.clone() }
+                            }),
+                            if template.status != "archived" {
+                                ButtonLink {
                                     to: Route::TemplateEdit { id: template.id.clone() },
+                                    variant: ButtonVariant::Secondary,
+                                    active_class: None,
+                                    extra_class: String::new(),
                                     "Editar"
                                 }
-                                Link {
-                                    class: "button secondary",
+                                ButtonLink {
                                     to: Route::TemplatePreview { id: template.id.clone() },
+                                    variant: ButtonVariant::Secondary,
+                                    active_class: None,
+                                    extra_class: String::new(),
                                     "Vista previa"
                                 }
                             }
@@ -4142,24 +4170,45 @@ fn TemplateNew() -> Element {
         }
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "templates-page", p { "Cargando..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader {
+                    title: "Nueva plantilla".to_owned(),
+                    subtitle: Some("Se crea un borrador; el contenido se define en el editor.".to_owned()),
+                }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "templates-page", p { "Redirigiendo..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader {
+                    title: "Nueva plantilla".to_owned(),
+                    subtitle: Some("Se crea un borrador; el contenido se define en el editor.".to_owned()),
+                }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_manage_templates() {
         return rsx! {
-            div {
-                id: "templates-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader {
+                    title: "Nueva plantilla".to_owned(),
+                    subtitle: Some("Se crea un borrador; el contenido se define en el editor.".to_owned()),
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Solo doctor y administrador pueden crear plantillas." }
-                    Link { to: Route::Templates {}, "Volver a plantillas" }
+                }
+                ButtonLink {
+                    to: Route::Templates {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver a plantillas"
                 }
             }
         };
@@ -4171,33 +4220,49 @@ fn TemplateNew() -> Element {
     };
 
     rsx! {
-        div {
-            id: "templates-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Nueva plantilla" }
-                    p { "Se crea un borrador; el contenido se define en el editor." }
-                }
-                Link { class: "button secondary", to: Route::Templates {}, "Cancelar" }
-            }
-            label {
-                class: "field",
-                span { "Nombre" }
-                input {
-                    placeholder: "Nombre de la plantilla",
-                    value: "{name}",
-                    oninput: move |event| name.set(event.value()),
+        PageShell { id: "templates-page".to_owned(),
+            PageHeader {
+                title: "Nueva plantilla".to_owned(),
+                subtitle: Some("Se crea un borrador; el contenido se define en el editor.".to_owned()),
+                ButtonLink {
+                    to: Route::Templates {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Cancelar"
                 }
             }
-            p { class: "hint", "Tipo: {owner}" }
+            Card {
+                FormGrid { columns: FormColumns::One,
+                    TextField {
+                        label: "Nombre".to_owned(),
+                        value: name(),
+                        oninput: move |value| name.set(value),
+                        placeholder: "Nombre de la plantilla".to_owned(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "off".to_owned(),
+                        spellcheck: true,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: true,
+                        hide_label: false,
+                    }
+                }
+                HintText { text: format!("Tipo: {owner}") }
+            }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
-            div {
-                class: "actions",
-                button {
+            ActionRow {
+                Button {
+                    variant: ButtonVariant::Primary,
                     disabled: saving(),
+                    loading: saving(),
                     onclick: move |_| {
                         if saving() {
                             return;
@@ -4331,22 +4396,28 @@ fn TemplateEdit(id: String) -> Element {
         });
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "templates-page", p { "Cargando..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "templates-page", p { "Redirigiendo..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_manage_templates() {
         return rsx! {
-            div {
-                id: "templates-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Solo doctor y administrador pueden editar plantillas." }
                 }
             }
@@ -4354,13 +4425,21 @@ fn TemplateEdit(id: String) -> Element {
     }
     let Some(model) = template() else {
         return rsx! {
-            div {
-                id: "templates-page",
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
                 if message().is_empty() {
-                    p { "Cargando..." }
+                    LoadingState {}
                 } else {
-                    p { class: "error", "{message}" }
-                    Link { to: Route::Templates {}, "Volver a plantillas" }
+                    Notice { tone: NoticeTone::Error,
+                        p { "{message()}" }
+                    }
+                    ButtonLink {
+                        to: Route::Templates {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Volver a plantillas"
+                    }
                 }
             }
         };
@@ -4382,27 +4461,31 @@ fn TemplateEdit(id: String) -> Element {
     let archived = model.status == "archived";
 
     rsx! {
-        div {
-            id: "templates-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "{model.name}" }
-                    p { "{template_owner_label(&model.owner_type)} · {template_status_label(&model.status)}" }
+        PageShell { id: "templates-page".to_owned(),
+            PageHeader {
+                title: model.name.clone(),
+                subtitle: Some(format!(
+                    "{} · {}",
+                    template_owner_label(&model.owner_type),
+                    template_status_label(&model.status)
+                )),
+                ButtonLink {
+                    to: Route::TemplatePreview { id: model.id.clone() },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Vista previa"
                 }
-                div {
-                    class: "actions",
-                    Link {
-                        class: "button secondary",
-                        to: Route::TemplatePreview { id: model.id.clone() },
-                        "Vista previa"
-                    }
-                    Link { class: "button secondary", to: Route::Templates {}, "Volver" }
+                ButtonLink {
+                    to: Route::Templates {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver"
                 }
             }
             if archived {
-                div {
-                    class: "notice",
+                Notice { tone: NoticeTone::Warning,
                     p { "La plantilla está archivada y no admite cambios." }
                 }
             } else {
@@ -4418,11 +4501,11 @@ fn TemplateEdit(id: String) -> Element {
                     },
                 }
                 if !message().is_empty() {
-                    p { class: "error", "{message}" }
+                    ErrorText { text: message() }
                 }
-                div {
-                    class: "actions",
-                    button {
+                ActionRow {
+                    Button {
+                        variant: ButtonVariant::Primary,
                         disabled: saved_draft().is_none(),
                         onclick: {
                             let template_id = template_id.clone();
@@ -4447,47 +4530,43 @@ fn TemplateEdit(id: String) -> Element {
                         },
                         "Publicar versión"
                     }
-                    button {
-                        class: "secondary",
+                    Button {
+                        variant: ButtonVariant::Secondary,
                         disabled: !matches!(model.status.as_str(), "draft" | "published"),
                         onclick: move |_| {
                             generation += 1;
                         },
                         "Recargar"
                     }
-                    if confirming_archive() {
-                        button {
-                            class: "danger",
-                            onclick: {
-                                let template_id = template_id.clone();
-                                move |_| {
-                                    let template_id = template_id.clone();
-                                    spawn(async move {
-                                        match api::archive_template(&template_id).await {
-                                            Ok(archived) => {
-                                                saved_draft.set(None);
-                                                confirming_archive.set(false);
-                                                template.set(Some(archived));
-                                                message.set("Plantilla archivada.".to_owned());
-                                            }
-                                            Err(error) => message.set(error),
-                                        }
-                                    });
+                    Button {
+                        variant: ButtonVariant::Danger,
+                        onclick: move |_| confirming_archive.set(true),
+                        "Archivar plantilla"
+                    }
+                }
+                if confirming_archive() {
+                    ConfirmPanel {
+                        message: "La plantilla archivada no admite cambios.".to_owned(),
+                        confirm_label: "Confirmar archivo".to_owned(),
+                        cancel_label: "Cancelar".to_owned(),
+                        busy: false,
+                        on_cancel: move |_| confirming_archive.set(false),
+                        on_confirm: move |_| {
+                            let template_id = template_id.clone();
+                            spawn(async move {
+                                match api::archive_template(&template_id).await {
+                                    Ok(archived) => {
+                                        saved_draft.set(None);
+                                        confirming_archive.set(false);
+                                        generation += 1;
+                                        template.set(Some(archived));
+                                        message.set("Plantilla archivada.".to_owned());
+                                    }
+                                    Err(error) => message.set(error),
                                 }
-                            },
-                            "Confirmar archivo"
-                        }
-                        button {
-                            class: "secondary",
-                            onclick: move |_| confirming_archive.set(false),
-                            "Cancelar"
-                        }
-                    } else {
-                        button {
-                            class: "danger",
-                            onclick: move |_| confirming_archive.set(true),
-                            "Archivar plantilla"
-                        }
+                            });
+                        },
+                        span {}
                     }
                 }
             }
@@ -4533,22 +4612,28 @@ fn TemplatePreview(id: String) -> Element {
         });
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "templates-page", p { "Cargando..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "templates-page", p { "Redirigiendo..." } }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_manage_templates() {
         return rsx! {
-            div {
-                id: "templates-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Solo doctor y administrador pueden ver la vista previa." }
                 }
             }
@@ -4556,13 +4641,19 @@ fn TemplatePreview(id: String) -> Element {
     }
     let Some(model) = template() else {
         return rsx! {
-            div {
-                id: "templates-page",
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
                 if message().is_empty() {
-                    p { "Cargando..." }
+                    LoadingState {}
                 } else {
-                    p { class: "error", "{message}" }
-                    Link { to: Route::Templates {}, "Volver a plantillas" }
+                    Notice { tone: NoticeTone::Error, p { "{message()}" } }
+                    ButtonLink {
+                        to: Route::Templates {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Volver a plantillas"
+                    }
                 }
             }
         };
@@ -4579,11 +4670,17 @@ fn TemplatePreview(id: String) -> Element {
         .or_else(|| model.versions.first().cloned());
     let Some(version) = version else {
         return rsx! {
-            div {
-                id: "templates-page",
-                div { class: "notice",
+            PageShell { id: "templates-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
+                Notice { tone: NoticeTone::Warning,
                     p { "La plantilla todavía no tiene versiones para previsualizar." }
-                    Link { to: Route::TemplateEdit { id: model.id.clone() }, "Abrir editor" }
+                }
+                ButtonLink {
+                    to: Route::TemplateEdit { id: model.id.clone() },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Abrir editor"
                 }
             }
         };
@@ -4595,38 +4692,41 @@ fn TemplatePreview(id: String) -> Element {
     let versions = model.versions.clone();
 
     rsx! {
-        div {
-            id: "templates-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Vista previa A4 — {model.name}" }
-                    p { "Proyección 210 × 297 mm con valores de ejemplo." }
+        PageShell { id: "templates-page".to_owned(),
+            PageHeader {
+                title: "Vista previa A4".to_owned(),
+                subtitle: Some("210 × 297 mm con valores de ejemplo.".to_owned()),
+                ButtonLink {
+                    to: Route::Templates {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver a plantillas"
                 }
-                div {
-                    class: "actions",
-                    Link { to: Route::Templates {}, "Volver a plantillas" }
-                    Link {
-                        class: "button secondary",
-                        to: Route::TemplateEdit { id: model.id.clone() },
-                        "Abrir editor"
-                    }
+                ButtonLink {
+                    to: Route::TemplateEdit { id: model.id.clone() },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Abrir editor"
                 }
             }
-            div {
-                class: "preview-controls",
-                label {
-                    class: "field",
-                    span { "Versión" }
-                    select {
-                        value: "{selected().unwrap_or_default()}",
-                        onchange: move |event| {
-                            let value = event.value();
+            Card {
+                FormGrid { columns: FormColumns::Two,
+                    SelectField {
+                        label: "Versión".to_owned(),
+                        value: selected().unwrap_or_default(),
+                        onchange: move |value| {
                             if let Some(version) = model.versions.iter().find(|version| version.id == value) {
                                 margin.set(forms::template_theme_margin(version.theme.as_deref()));
                             }
                             selected.set(Some(value));
                         },
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
                         for version in versions {
                             option {
                                 value: "{version.id}",
@@ -4634,32 +4734,41 @@ fn TemplatePreview(id: String) -> Element {
                             }
                         }
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Márgenes (mm)" }
-                    input {
-                        r#type: "number",
-                        min: "5",
-                        max: "40",
-                        value: "{margin}",
-                        oninput: move |event| {
-                            if let Ok(value) = event.value().parse::<u32>() {
-                                margin.set(value.clamp(5, 40));
+                    TextField {
+                        label: "Márgenes (mm)".to_owned(),
+                        value: margin().to_string(),
+                        oninput: move |value: String| {
+                            if let Ok(parsed) = value.parse::<u32>() {
+                                margin.set(parsed.clamp(5, 40));
                             }
                         },
+                        input_type: "number".to_owned(),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "off".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: Some("5".to_owned()),
+                        max: Some("40".to_owned()),
+                        step: None,
+                        wide: false,
+                        hide_label: false,
                     }
                 }
             }
             if !warnings.is_empty() {
-                div {
-                    class: "notice",
-                    p { "Variables no válidas: {warnings_joined}" }
-                    p { class: "hint", "En la proyección se marcan como texto de advertencia, nunca como {{clave}}." }
+                Notice { tone: NoticeTone::Warning,
+                    div {
+                        p { strong { "Variables no válidas" } }
+                        p { "{warnings_joined}" }
+                        p { class: "ui-hint", "En la proyección se marcan como texto de advertencia, nunca como {{clave}}." }
+                    }
                 }
             }
-            div {
-                class: "preview-scroll",
+            div { class: "ui-preview-canvas",
                 forms::A4Preview {
                     doc_json: version.doc_json.clone(),
                     values: forms::sample_values(),
@@ -4708,6 +4817,7 @@ fn Prescriptions(status: Option<String>) -> Element {
     #[allow(unused_mut)]
     let mut failed_rows = use_signal(Vec::<(String, String)>::new);
     let mut loading = use_signal(|| true);
+    let mut loaded = use_signal(|| false);
 
     use_effect(move || {
         if !checked() {
@@ -4720,6 +4830,8 @@ fn Prescriptions(status: Option<String>) -> Element {
         let selected_status = status();
         let selected_date = date();
         loading.set(true);
+        loaded.set(false);
+        failed_rows.set(Vec::new());
         spawn(async move {
             #[cfg(feature = "desktop")]
             if selected_status == "pending_sync" {
@@ -4728,15 +4840,17 @@ fn Prescriptions(status: Option<String>) -> Element {
                     {
                         let mut mapped = Vec::new();
                         for value in found {
-                            if let Ok(prescription) =
+                            if let Ok(mut prescription) =
                                 serde_json::from_value::<api::Prescription>(value)
                             {
+                                prescription.status = "pending_sync".to_owned();
                                 mapped.push(prescription);
                             }
                         }
                         rows.set(mapped);
                         message.set(String::new());
                         loading.set(false);
+                        loaded.set(true);
                         return;
                     }
                 }
@@ -4776,6 +4890,7 @@ fn Prescriptions(status: Option<String>) -> Element {
                         }
                         failed_rows.set(errors);
                         loading.set(false);
+                        loaded.set(true);
                         return;
                     }
                 }
@@ -4804,25 +4919,41 @@ fn Prescriptions(status: Option<String>) -> Element {
                 }
             }
             loading.set(false);
+            loaded.set(true);
         });
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "prescriptions-page", p { "Cargando..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader {
+                    title: "Recetas".to_owned(),
+                    subtitle: Some("Historial con filtros por paciente, fecha y estado.".to_owned())
+                }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "prescriptions-page", p { "Redirigiendo..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader {
+                    title: "Recetas".to_owned(),
+                    subtitle: Some("Historial con filtros por paciente, fecha y estado.".to_owned())
+                }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_read_prescriptions() {
         return rsx! {
-            div {
-                id: "prescriptions-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader {
+                    title: "Recetas".to_owned(),
+                    subtitle: Some("Historial con filtros por paciente, fecha y estado.".to_owned())
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Necesitas un rol en la clínica para consultar recetas." }
                 }
             }
@@ -4835,33 +4966,37 @@ fn Prescriptions(status: Option<String>) -> Element {
         .collect::<Vec<_>>();
 
     rsx! {
-        div {
-            id: "prescriptions-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Recetas" }
-                    p { "Historial con filtros por paciente, fecha y estado." }
-                }
+        PageShell { id: "prescriptions-page".to_owned(),
+            PageHeader {
+                title: "Recetas".to_owned(),
+                subtitle: Some("Historial con filtros por paciente, fecha y estado.".to_owned()),
                 if profile.can_create_prescriptions() {
-                    Link {
-                        class: "button",
+                    ButtonLink {
                         to: Route::PrescriptionNew { patient_id: None, template_id: None },
+                        variant: ButtonVariant::Primary,
+                        active_class: None,
+                        extra_class: String::new(),
                         "Nueva receta"
                     }
                 }
             }
-            div {
-                class: "prescription-filters",
-                input {
-                    r#type: "search",
-                    placeholder: "Paciente",
-                    value: "{query}",
-                    oninput: move |event| query.set(event.value()),
+            FilterBar {
+                SearchField {
+                    label: "Paciente".to_owned(),
+                    value: query(),
+                    oninput: move |value| query.set(value),
+                    placeholder: "Paciente".to_owned(),
+                    wide: false,
                 }
-                select {
-                    value: "{status}",
-                    onchange: move |event| status.set(event.value()),
+                SelectField {
+                    label: "Estado".to_owned(),
+                    value: status(),
+                    onchange: move |value| status.set(value),
+                    wide: false,
+                    hint: None,
+                    error: None,
+                    disabled: false,
+                    hide_label: false,
                     option { value: "", "Todos los estados" }
                     option { value: "draft", "Borradores" }
                     option { value: "signed", "Firmadas" }
@@ -4870,56 +5005,77 @@ fn Prescriptions(status: Option<String>) -> Element {
                     option { value: "pending_sync", "Pendientes de sincronización" }
                     option { value: "failed", "Con error de sincronización" }
                 }
-                input {
-                    r#type: "date",
-                    value: "{date}",
-                    oninput: move |event| date.set(event.value()),
+                TextField {
+                    label: "Fecha".to_owned(),
+                    value: date(),
+                    oninput: move |value: String| date.set(value),
+                    input_type: "date".to_owned(),
+                    placeholder: String::new(),
+                    wide: false,
+                    hint: None,
+                    error: None,
+                    autocomplete: "off".to_owned(),
+                    spellcheck: false,
+                    required: false,
+                    disabled: false,
+                    readonly: false,
+                    min: None,
+                    max: None,
+                    step: None,
+                    hide_label: false,
                 }
             }
-            if !message().is_empty() {
-                p { class: "error", "{message}" }
+            if !loaded() {
+                LoadingState { label: "Cargando recetas...".to_owned() }
             }
-            div {
-                class: "patient-list",
-                if loading() {
-                    p { class: "hint", "Cargando recetas..." }
-                } else if visible.is_empty() {
-                    p { class: "hint", "No hay recetas para estos filtros." }
-                }
-                for row in visible {
-                    div {
-                        key: "{row.id}",
-                        class: "patient-row",
-                        div {
-                            p { class: "patient-name", "{row.patient_name}" }
-                            p { class: "patient-meta",
-                                "{prescription_status_label(&row.status)} · {format_date(&row.created_at)}"
-                                if let Some(number) = row.rx_number {
-                                    " · No. {number}"
+            if loaded() && !message().is_empty() {
+                ErrorText { text: message() }
+            }
+            if loaded() {
+                if visible.is_empty() {
+                    EmptyState {
+                        title: "Sin recetas".to_owned(),
+                        description: "No hay recetas para estos filtros.".to_owned()
+                    }
+                } else {
+                    for row in visible {
+                        ListRow {
+                            key: "{row.id}",
+                            title: row.patient_name.clone(),
+                            meta: vec![
+                                prescription_status_label(&row.status).to_owned(),
+                                format_date(&row.created_at),
+                                row.rx_number
+                                    .map(|number| format!("No. {number}"))
+                                    .unwrap_or_else(|| "Sin número".to_owned()),
+                            ],
+                            badge: Some(rsx! {
+                                PrescriptionStatusBadge { status: row.status.clone() }
+                                if row.status == "pending_sync" {
+                                    Badge { tone: BadgeTone::Cream, "Provisional · PENDIENTE DE SINCRONIZACIÓN" }
                                 }
+                            }),
+                            ButtonLink {
+                                to: Route::PrescriptionDetail { id: row.id.clone() },
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Abrir"
                             }
-                            if status() == "pending_sync" {
-                                span { class: "badge", "Provisional · PENDIENTE DE SINCRONIZACIÓN" }
-                            }
-                        }
-                        Link {
-                            class: "button secondary",
-                            to: Route::PrescriptionDetail { id: row.id.clone() },
-                            "Abrir"
                         }
                     }
                 }
-            }
-            if status() == "failed" {
-                div {
-                    class: "patient-list",
-                    for (at, (operation, detail)) in failed_rows().into_iter().enumerate() {
-                        div {
-                            key: "{at}",
-                            class: "patient-row",
-                            div {
-                                p { class: "patient-name", "{operation}" }
-                                p { class: "patient-meta", "{detail}" }
+                if !failed_rows().is_empty() {
+                    SectionCard {
+                        title: "Errores de sincronización".to_owned(),
+                        description: None,
+                        for (at, (operation, detail)) in failed_rows().into_iter().enumerate() {
+                            ListRow {
+                                key: "{at}",
+                                title: operation,
+                                meta: vec![detail],
+                                badge: None,
+                                span {}
                             }
                         }
                     }
@@ -4993,24 +5149,45 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
         });
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "prescriptions-page", p { "Cargando..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader {
+                    title: "Nueva receta".to_owned(),
+                    subtitle: Some("Paciente y plantilla publicada.".to_owned())
+                }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "prescriptions-page", p { "Redirigiendo..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader {
+                    title: "Nueva receta".to_owned(),
+                    subtitle: Some("Paciente y plantilla publicada.".to_owned())
+                }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_create_prescriptions() {
         return rsx! {
-            div {
-                id: "prescriptions-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader {
+                    title: "Nueva receta".to_owned(),
+                    subtitle: Some("Paciente y plantilla publicada.".to_owned())
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "Solo doctor o enfermería pueden crear recetas." }
-                    Link { to: Route::Prescriptions { status: None }, "Volver a recetas" }
+                }
+                ButtonLink {
+                    to: Route::Prescriptions { status: None },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver a recetas"
                 }
             }
         };
@@ -5028,36 +5205,43 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
         .collect::<Vec<_>>();
 
     rsx! {
-        div {
-            id: "prescriptions-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Nueva receta" }
-                    p { "Paciente y plantilla publicada." }
+        PageShell { id: "prescriptions-page".to_owned(),
+            PageHeader {
+                title: "Nueva receta".to_owned(),
+                subtitle: Some("Paciente y plantilla publicada.".to_owned()),
+                ButtonLink {
+                    to: Route::Prescriptions { status: None },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Cancelar"
                 }
-                Link { class: "button secondary", to: Route::Prescriptions { status: None }, "Cancelar" }
             }
-            div {
-                class: "form-grid",
-                label {
-                    class: "field",
-                    span { "Paciente" }
-                    select {
-                        value: "{selected_patient}",
-                        onchange: move |event| selected_patient.set(event.value()),
+            Card {
+                FormGrid { columns: FormColumns::Two,
+                    SelectField {
+                        label: "Paciente".to_owned(),
+                        value: selected_patient(),
+                        onchange: move |value| selected_patient.set(value),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
                         option { value: "", "Selecciona un paciente" }
                         for patient in patients() {
                             option { value: "{patient.id}", "{patient.full_name}" }
                         }
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Plantilla" }
-                    select {
-                        value: "{selected_template}",
-                        onchange: move |event| selected_template.set(event.value()),
+                    SelectField {
+                        label: "Plantilla".to_owned(),
+                        value: selected_template(),
+                        onchange: move |value| selected_template.set(value),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
                         option { value: "", "Selecciona una plantilla" }
                         for template in published {
                             option {
@@ -5066,38 +5250,60 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                             }
                         }
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Diagnóstico" }
-                    textarea {
-                        value: "{diagnosis}",
-                        oninput: move |event| diagnosis.set(event.value()),
+                    TextAreaField {
+                        label: "Diagnóstico".to_owned(),
+                        value: diagnosis(),
+                        oninput: move |value: String| diagnosis.set(value),
+                        placeholder: String::new(),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        hide_label: false,
+                        rows: None,
                     }
-                }
-                label {
-                    class: "field",
-                    span { "Vigencia" }
-                    input {
-                        value: "{validity}",
-                        oninput: move |event| validity.set(event.value()),
+                    TextField {
+                        label: "Vigencia".to_owned(),
+                        value: validity(),
+                        oninput: move |value: String| validity.set(value),
+                        input_type: "text".to_owned(),
+                        placeholder: String::new(),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        autocomplete: "off".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        hide_label: false,
                     }
-                }
-                label {
-                    class: "field wide",
-                    span { "Indicaciones generales" }
-                    textarea {
-                        value: "{instructions}",
-                        oninput: move |event| instructions.set(event.value()),
+                    TextAreaField {
+                        label: "Indicaciones generales".to_owned(),
+                        value: instructions(),
+                        oninput: move |value: String| instructions.set(value),
+                        placeholder: String::new(),
+                        wide: true,
+                        hint: None,
+                        error: None,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        hide_label: false,
+                        rows: None,
                     }
                 }
             }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
-            div {
-                class: "actions",
-                button {
+            ActionRow {
+                Button {
                     disabled: saving(),
                     onclick: move |_| {
                         if saving() {
@@ -5442,22 +5648,28 @@ fn PrescriptionPreview(id: String) -> Element {
         });
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "prescriptions-page", p { "Cargando..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "prescriptions-page", p { "Redirigiendo..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     if !profile.can_read_prescriptions() {
         return rsx! {
-            div {
-                id: "prescriptions-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
                     p { "No tienes permiso para ver esta receta." }
                 }
             }
@@ -5465,13 +5677,19 @@ fn PrescriptionPreview(id: String) -> Element {
     }
     let Some(current) = preview() else {
         return rsx! {
-            div {
-                id: "prescriptions-page",
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
                 if message().is_empty() {
-                    p { "Cargando vista previa..." }
+                    LoadingState { label: "Cargando vista previa...".to_owned() }
                 } else {
-                    p { class: "error", "{message}" }
-                    Link { to: Route::Prescriptions { status: None }, "Volver a recetas" }
+                    ErrorText { text: message() }
+                    ButtonLink {
+                        to: Route::Prescriptions { status: None },
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Volver a recetas"
+                    }
                 }
             }
         };
@@ -5479,6 +5697,14 @@ fn PrescriptionPreview(id: String) -> Element {
     let is_draft = current.status == "draft";
     let can_sign = is_draft && profile.can_sign_prescriptions();
     let profile_for_ack = profile.clone();
+    let subtitle = {
+        let mut parts = vec![prescription_status_label(&current.status).to_owned()];
+        if let Some(number) = current.rx_number {
+            parts.push(format!("No. {number}"));
+        }
+        parts.push(current.issued_at.clone());
+        parts.join(" · ")
+    };
     let patient_name = current
         .variables
         .iter()
@@ -5511,38 +5737,31 @@ fn PrescriptionPreview(id: String) -> Element {
     let pdf_issued = current.issued_at.clone();
 
     rsx! {
-        div {
-            id: "prescriptions-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Vista previa A4 — {patient_name}" }
-                    p {
-                        "{prescription_status_label(&current.status)}"
-                        if let Some(number) = current.rx_number {
-                            " · No. {number}"
-                        }
-                        " · {current.issued_at}"
-                    }
+        PageShell { id: "prescriptions-page".to_owned(),
+            PageHeader {
+                title: format!("Vista previa A4 — {patient_name}"),
+                subtitle: Some(subtitle),
+                ButtonLink {
+                    to: Route::PrescriptionDetail { id: current.id.clone() },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver a la receta"
                 }
-                div {
-                    class: "actions",
-                    Link {
-                        class: "button secondary",
-                        to: Route::PrescriptionDetail { id: current.id.clone() },
-                        "Volver a la receta"
-                    }
-                    if is_draft {
-                        if can_sign {
-                            button {
-                                disabled: signing(),
-                                onclick: {
-                                    let preview_id = preview_id.clone();
-                                    move |_| {
-                                        if signing() {
-                                            return;
-                                        }
-                                        signing.set(true);
+            }
+            ActionRow {
+                if can_sign {
+                    Button {
+                        variant: ButtonVariant::Primary,
+                        disabled: signing(),
+                        loading: signing(),
+                        onclick: {
+                            let preview_id = preview_id.clone();
+                            move |_| {
+                                if signing() {
+                                    return;
+                                }
+                                signing.set(true);
                                         needs_ack.set(false);
                                         let preview_id = preview_id.clone();
                                         let offline = prescription()
@@ -5573,8 +5792,8 @@ fn PrescriptionPreview(id: String) -> Element {
                                 if signing() { "Firmando..." } else { "Firmar y emitir" }
                             }
                             if needs_ack() {
-                                button {
-                                    class: "secondary",
+                                Button {
+                                    variant: ButtonVariant::Secondary,
                                     onclick: {
                                         let preview_id = preview_id.clone();
                                         move |_| {
@@ -5602,23 +5821,24 @@ fn PrescriptionPreview(id: String) -> Element {
                                     "Firmar reconociendo las advertencias"
                                 }
                             }
-                        }
                     } else {
-                        a {
-                            class: "button",
-                            href: "{pdf_url}",
+                        LinkAction {
+                            href: pdf_url.clone(),
+                            variant: ButtonVariant::Primary,
+                            target: None,
+                            rel: None,
                             "Descargar PDF"
                         }
-                        a {
-                            class: "button secondary",
-                            href: "{pdf_url}",
-                            target: "_blank",
-                            rel: "noopener noreferrer",
+                        LinkAction {
+                            href: pdf_url.clone(),
+                            variant: ButtonVariant::Secondary,
+                            target: Some("_blank".to_owned()),
+                            rel: Some("noopener noreferrer".to_owned()),
                             "Imprimir"
                         }
                         if current.provisional {
-                            button {
-                                class: "secondary",
+                            Button {
+                                variant: ButtonVariant::Secondary,
                                 onclick: move |_| {
                                     let inputs_doc = pdf_doc.clone();
                                     let inputs_values = pdf_values.clone();
@@ -5663,8 +5883,8 @@ fn PrescriptionPreview(id: String) -> Element {
                         {
                             #[cfg(target_arch = "wasm32")]
                             rsx! {
-                                button {
-                                    class: "secondary",
+                                Button {
+                                    variant: ButtonVariant::Secondary,
                                     onclick: {
                                         let pdf_url = pdf_url.clone();
                                         move |_| {
@@ -5689,18 +5909,16 @@ fn PrescriptionPreview(id: String) -> Element {
                         }
                     }
                 }
-            }
             if current.provisional {
-                div {
-                    class: "notice",
+                Notice { tone: NoticeTone::Warning,
                     p { "Documento provisional: se muestra sin QR escaneable hasta sincronizar." }
                 }
             }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
             div {
-                class: "preview-scroll",
+                class: "ui-preview-canvas",
                 forms::A4Preview {
                     doc_json: current.doc_json.clone(),
                     values,
@@ -5724,6 +5942,7 @@ fn PrescriptionDetail(id: String) -> Element {
     let mut prescription = use_signal(|| None::<api::Prescription>);
     let mut items = use_signal(Vec::<api::PrescriptionItemForm>::new);
     let mut block = use_signal(|| None::<api::RxBlockStatus>);
+    let mut allocating = use_signal(|| false);
     let mut message = use_signal(String::new);
     let mut draft_diagnosis = use_signal(String::new);
     let mut draft_validity = use_signal(String::new);
@@ -5855,25 +6074,37 @@ fn PrescriptionDetail(id: String) -> Element {
         });
     });
 
-    if !checked() {
+    if !checked() || user().is_none() {
         return rsx! {
-            div { id: "prescriptions-page", p { "Cargando..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader { title: "Receta".to_owned(), subtitle: None }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
-            div { id: "prescriptions-page", p { "Redirigiendo..." } }
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader { title: "Receta".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     let Some(current) = prescription() else {
         return rsx! {
-            div {
-                id: "prescriptions-page",
+            PageShell { id: "prescriptions-page".to_owned(),
+                PageHeader { title: "Receta".to_owned(), subtitle: None }
                 if message().is_empty() && !initialized() {
-                    p { "Cargando..." }
+                    LoadingState {}
                 } else {
-                    p { class: "error", "{message}" }
-                    Link { to: Route::Prescriptions { status: None }, "Volver a recetas" }
+                    ErrorText { text: message() }
+                    ButtonLink {
+                        to: Route::Prescriptions { status: None },
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Volver a recetas"
+                    }
                 }
             }
         };
@@ -5902,123 +6133,187 @@ fn PrescriptionDetail(id: String) -> Element {
                 .is_some_and(|doctor| &doctor.id == owner)
         });
     let block_state = block();
+    let is_nursing = profile.role.as_deref() == Some("nursing");
+    let block_exhausted = block_state.as_ref().is_some_and(|status| status.exhausted);
+    let subtitle = {
+        let mut parts = vec![prescription_status_label(&current.status).to_owned()];
+        if let Some(number) = current.rx_number {
+            parts.push(format!("No. {number}"));
+        }
+        parts.push(format_date(&current.created_at));
+        parts.join(" · ")
+    };
     let llm_template = profile
         .clinic
         .as_ref()
         .and_then(|clinic| clinic.llm_url_template.clone());
 
     rsx! {
-        div {
-            id: "prescriptions-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "{current.patient_name}" }
-                    p {
-                        "{prescription_status_label(&current.status)}"
-                        if let Some(number) = current.rx_number {
-                            " · No. {number}"
-                        }
-                        " · {format_date(&current.created_at)}"
-                    }
+        PageShell { id: "prescriptions-page".to_owned(),
+            PageHeader {
+                title: current.patient_name.clone(),
+                subtitle: Some(subtitle),
+                ButtonLink {
+                    to: Route::PrescriptionPreview { id: current.id.clone() },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Vista previa A4"
                 }
-                div {
-                    class: "actions",
-                    Link {
-                        class: "button secondary",
-                        to: Route::PrescriptionPreview { id: current.id.clone() },
-                        "Vista previa A4"
-                    }
-                    Link { class: "button secondary", to: Route::Prescriptions { status: None }, "Volver" }
+                ButtonLink {
+                    to: Route::Prescriptions { status: None },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver"
                 }
             }
-            div {
-                class: "block-indicator",
-                if let Some(status) = block_state.as_ref() {
-                    if status.active {
-                        span { "Números disponibles: {status.remaining} de {status.limit}" }
-                    } else {
-                        span { "Sin bloque de números activo." }
-                        button {
-                            class: "secondary",
-                            onclick: move |_| {
-                                let profile_clone = profile_for_allocate.clone();
-                                let _ = &profile_clone;
-                                spawn(async move {
-                                    match api::allocate_rx_block().await {
-                                        Ok(info) => {
-                                            let _ = &info;
-                                            #[cfg(feature = "desktop")]
-                                            {
-                                                if let Ok(mut conn) = desktop_local::open_local_db() {
-                                                    let value = serde_json::json!({
-                                                        "id": info.id,
-                                                        "clinic_id": profile_clone.clinic.as_ref().map(|clinic| clinic.id.clone()).unwrap_or_default(),
-                                                        "device_id": info.device_id,
-                                                        "start_number": info.start_number,
-                                                        "end_number": info.end_number,
-                                                        "consumed": info.consumed,
-                                                        "status": info.status,
-                                                        "allocated_at": info.allocated_at,
-                                                        "created_at": info.allocated_at,
-                                                        "updated_at": info.allocated_at,
-                                                        "created_by": profile_clone.profile.id,
-                                                    });
-                                                    let _ = desktop_local::cache_rx_block(&mut conn, &value);
-                                                    let _ = desktop_local::set_meta(&mut conn, "active_rx_block", &info.id);
-                                                }
-                                            }
-                                            if let Ok(status) = api::fetch_rx_block_status().await {
-                                                block.set(Some(status));
-                                            }
-                                        }
-                                        Err(error) => message.set(error),
+            RxBlockIndicator {
+                status: block_state.clone(),
+                allocating: allocating(),
+                on_allocate: move |_| {
+                    if allocating() {
+                        return;
+                    }
+                    allocating.set(true);
+                    let profile_clone = profile_for_allocate.clone();
+                    let _ = &profile_clone;
+                    spawn(async move {
+                        match api::allocate_rx_block().await {
+                            Ok(info) => {
+                                let _ = &info;
+                                #[cfg(feature = "desktop")]
+                                {
+                                    if let Ok(mut conn) = desktop_local::open_local_db() {
+                                        let value = serde_json::json!({
+                                            "id": info.id,
+                                            "clinic_id": profile_clone.clinic.as_ref().map(|clinic| clinic.id.clone()).unwrap_or_default(),
+                                            "device_id": info.device_id,
+                                            "start_number": info.start_number,
+                                            "end_number": info.end_number,
+                                            "consumed": info.consumed,
+                                            "status": info.status,
+                                            "allocated_at": info.allocated_at,
+                                            "created_at": info.allocated_at,
+                                            "updated_at": info.allocated_at,
+                                            "created_by": profile_clone.profile.id,
+                                        });
+                                        let _ = desktop_local::cache_rx_block(&mut conn, &value);
+                                        let _ = desktop_local::set_meta(&mut conn, "active_rx_block", &info.id);
                                     }
-                                });
-                            },
-                            "Reservar bloque"
+                                }
+                                if let Ok(status) = api::fetch_rx_block_status().await {
+                                    block.set(Some(status));
+                                }
+                            }
+                            Err(error) => message.set(error),
                         }
-                    }
-                    if status.exhausted {
-                        p { class: "warning", "Bloque agotado. Reserva otro antes de firmar." }
-                    }
+                        allocating.set(false);
+                    });
                 }
             }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
             if can_edit {
-                div {
-                    class: "form-grid",
-                    label {
-                        class: "field",
-                        span { "Diagnóstico" }
-                        textarea {
-                            value: "{draft_diagnosis}",
-                            oninput: move |event| draft_diagnosis.set(event.value()),
+                Card {
+                    FormGrid { columns: FormColumns::Two,
+                        TextAreaField {
+                            label: "Diagnóstico".to_owned(),
+                            value: draft_diagnosis(),
+                            oninput: move |value: String| draft_diagnosis.set(value),
+                            placeholder: String::new(),
+                            wide: false,
+                            hint: None,
+                            error: None,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            hide_label: false,
+                            rows: Some(2),
                         }
-                    }
-                    label {
-                        class: "field",
-                        span { "Vigencia" }
-                        input {
-                            value: "{draft_validity}",
-                            oninput: move |event| draft_validity.set(event.value()),
+                        TextField {
+                            label: "Vigencia".to_owned(),
+                            value: draft_validity(),
+                            oninput: move |value: String| draft_validity.set(value),
+                            input_type: "text".to_owned(),
+                            placeholder: String::new(),
+                            wide: false,
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: false,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            hide_label: false,
                         }
-                    }
-                    label {
-                        class: "field wide",
-                        span { "Indicaciones generales" }
-                        textarea {
-                            value: "{draft_instructions}",
-                            oninput: move |event| draft_instructions.set(event.value()),
+                        TextAreaField {
+                            label: "Indicaciones generales".to_owned(),
+                            value: draft_instructions(),
+                            oninput: move |value: String| draft_instructions.set(value),
+                            placeholder: String::new(),
+                            wide: true,
+                            hint: None,
+                            error: None,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            hide_label: false,
+                            rows: Some(4),
                         }
                     }
                 }
-                div {
-                    class: "actions",
-                    button {
+                ActionRow {
+                    if can_sign {
+                        Button {
+                            variant: ButtonVariant::Primary,
+                            disabled: signing(),
+                            loading: signing(),
+                            onclick: {
+                                let profile = profile.clone();
+                                move |_| {
+                                    if signing() {
+                                        return;
+                                    }
+                                    signing.set(true);
+                                    needs_ack.set(false);
+                                    let id = prescription_id();
+                                    let offline = prescription().map(|found| {
+                                        (found, actor().unwrap_or(profile.clone()))
+                                    });
+                                    spawn(async move {
+                                        match sign_prescription_dispatch(&id, false, offline).await {
+                                            Ok(signed) => {
+                                                signing.set(false);
+                                                sync.set(probe_sync_status().await);
+                                                prescription.set(Some(signed));
+                                            }
+                                            Err(error) => {
+                                                signing.set(false);
+                                                if error.contains("variables desconocidas") {
+                                                    needs_ack.set(true);
+                                                }
+                                                message.set(error);
+                                            }
+                                        }
+                                    });
+                                }
+                            },
+                            "Firmar receta"
+                        }
+                    }
+                    Button {
+                        variant: if can_sign || !is_nursing {
+                            ButtonVariant::Secondary
+                        } else {
+                            ButtonVariant::Primary
+                        },
                         disabled: saving(),
+                        loading: saving(),
                         onclick: {
                             let current = current.clone();
                             let profile = profile.clone();
@@ -6073,144 +6368,266 @@ fn PrescriptionDetail(id: String) -> Element {
                         },
                         if saving() { "Guardando..." } else { "Guardar borrador" }
                     }
+                    if can_sign && needs_ack() {
+                        Button {
+                            variant: ButtonVariant::Secondary,
+                            onclick: {
+                                let profile = profile_for_ack.clone();
+                                move |_| {
+                                    let id = prescription_id();
+                                    let offline =
+                                        prescription().map(|found| (found, actor().unwrap_or(profile.clone())));
+                                    spawn(async move {
+                                        match sign_prescription_dispatch(&id, true, offline).await {
+                                            Ok(signed) => {
+                                                needs_ack.set(false);
+                                                prescription.set(Some(signed));
+                                            }
+                                            Err(error) => message.set(error),
+                                        }
+                                    });
+                                }
+                            },
+                            "Firmar reconociendo las advertencias"
+                        }
+                    }
+                }
+                if can_sign && block_exhausted {
+                    HintText {
+                        text: "Sin números disponibles: reserva un bloque para firmar.".to_owned()
+                    }
                 }
             } else {
-                div {
-                    class: "detail-grid",
-                    div { class: "field", span { "Diagnóstico" }, span { "{current.diagnosis.clone().unwrap_or_else(|| \"—\".to_string())}" } }
-                    div { class: "field", span { "Vigencia" }, span { "{current.validity.clone().unwrap_or_else(|| \"—\".to_string())}" } }
-                    div { class: "field wide", span { "Indicaciones" }, span { class: "notes", "{current.instructions.clone().unwrap_or_else(|| \"—\".to_string())}" } }
-                    if let Some(verification) = current.verification.as_ref() {
-                        div { class: "field", span { "Código de verificación" }, span { "{verification.code}" } }
-                        div { class: "field", span { "Estado del código" }, span { "{verification.status}" } }
-                    }
-                    if let Some(reason) = current.void_reason.as_ref() {
-                        div { class: "field wide", span { "Motivo de anulación" }, span { "{reason}" } }
+                Card {
+                    DetailGrid {
+                        DetailItem {
+                            label: "Diagnóstico".to_owned(),
+                            "{current.diagnosis.clone().unwrap_or_else(|| \"—\".to_string())}"
+                        }
+                        DetailItem {
+                            label: "Vigencia".to_owned(),
+                            "{current.validity.clone().unwrap_or_else(|| \"—\".to_string())}"
+                        }
+                        DetailItem {
+                            label: "Indicaciones".to_owned(),
+                            wide: true,
+                            "{current.instructions.clone().unwrap_or_else(|| \"—\".to_string())}"
+                        }
+                        if let Some(verification) = current.verification.as_ref() {
+                            DetailItem {
+                                label: "Código de verificación".to_owned(),
+                                "{verification.code}"
+                            }
+                            DetailItem {
+                                label: "Estado del código".to_owned(),
+                                "{verification.status}"
+                            }
+                        }
+                        if let Some(reason) = current.void_reason.as_ref() {
+                            DetailItem {
+                                label: "Motivo de anulación".to_owned(),
+                                wide: true,
+                                "{reason}"
+                            }
+                        }
                     }
                 }
             }
-            div {
-                class: "medication-list",
-                h4 { "Medicamentos" }
+            SectionCard {
+                title: "Medicamentos".to_owned(),
+                description: None,
                 if items().is_empty() {
-                    p { class: "hint", "Sin medicamentos." }
+                    EmptyState {
+                        title: "Sin medicamentos".to_owned(),
+                        description: "Agrega un medicamento al tratamiento.".to_owned()
+                    }
                 }
                 for (index, item) in items().into_iter().enumerate() {
                     div {
                         key: "{index}",
-                        class: "item-card",
+                        class: "ui-item-card",
                         if can_edit {
-                            div {
-                                class: "form-grid",
-                                label {
-                                    class: "field",
-                                    span { "Medicamento" }
-                                    input {
-                                        value: "{item.med_name}",
-                                        oninput: move |event| {
-                                            let value = event.value();
-                                            items.with_mut(|list| {
-                                                if let Some(entry) = list.get_mut(index) {
-                                                    entry.med_name = value;
-                                                }
-                                            });
-                                        },
-                                    }
+                            FormGrid { columns: FormColumns::Two,
+
+                                TextField {
+                                    label: "Medicamento".to_owned(),
+                                    value: item.med_name.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.med_name = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "text".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: false,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    hide_label: false,
                                 }
-                                label {
-                                    class: "field",
-                                    span { "Dosis" }
-                                    input {
-                                        value: "{item.dose}",
-                                        oninput: move |event| {
-                                            let value = event.value();
-                                            items.with_mut(|list| {
-                                                if let Some(entry) = list.get_mut(index) {
-                                                    entry.dose = value;
-                                                }
-                                            });
-                                        },
-                                    }
+                                TextField {
+                                    label: "Dosis".to_owned(),
+                                    value: item.dose.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.dose = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "text".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: false,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    hide_label: false,
                                 }
-                                label {
-                                    class: "field",
-                                    span { "Vía" }
-                                    input {
-                                        value: "{item.route}",
-                                        oninput: move |event| {
-                                            let value = event.value();
-                                            items.with_mut(|list| {
-                                                if let Some(entry) = list.get_mut(index) {
-                                                    entry.route = value;
-                                                }
-                                            });
-                                        },
-                                    }
+                                TextField {
+                                    label: "Vía".to_owned(),
+                                    value: item.route.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.route = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "text".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: false,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    hide_label: false,
                                 }
-                                label {
-                                    class: "field",
-                                    span { "Frecuencia" }
-                                    input {
-                                        value: "{item.frequency}",
-                                        oninput: move |event| {
-                                            let value = event.value();
-                                            items.with_mut(|list| {
-                                                if let Some(entry) = list.get_mut(index) {
-                                                    entry.frequency = value;
-                                                }
-                                            });
-                                        },
-                                    }
+                                TextField {
+                                    label: "Frecuencia".to_owned(),
+                                    value: item.frequency.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.frequency = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "text".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: false,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    hide_label: false,
                                 }
-                                label {
-                                    class: "field",
-                                    span { "Duración" }
-                                    input {
-                                        value: "{item.duration}",
-                                        oninput: move |event| {
-                                            let value = event.value();
-                                            items.with_mut(|list| {
-                                                if let Some(entry) = list.get_mut(index) {
-                                                    entry.duration = value;
-                                                }
-                                            });
-                                        },
-                                    }
+                                TextField {
+                                    label: "Duración".to_owned(),
+                                    value: item.duration.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.duration = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "text".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: false,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    hide_label: false,
                                 }
-                                label {
-                                    class: "field",
-                                    span { "Cantidad" }
-                                    input {
-                                        value: "{item.quantity}",
-                                        oninput: move |event| {
-                                            let value = event.value();
-                                            items.with_mut(|list| {
-                                                if let Some(entry) = list.get_mut(index) {
-                                                    entry.quantity = value;
-                                                }
-                                            });
-                                        },
-                                    }
+                                TextField {
+                                    label: "Cantidad".to_owned(),
+                                    value: item.quantity.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.quantity = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "text".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: false,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    hide_label: false,
                                 }
-                                label {
-                                    class: "field wide",
-                                    span { "Notas" }
-                                    input {
-                                        value: "{item.notes}",
-                                        oninput: move |event| {
-                                            let value = event.value();
-                                            items.with_mut(|list| {
-                                                if let Some(entry) = list.get_mut(index) {
-                                                    entry.notes = value;
-                                                }
-                                            });
-                                        },
-                                    }
+                                TextField {
+                                    label: "Notas".to_owned(),
+                                    value: item.notes.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.notes = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "text".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: true,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: None,
+                                    max: None,
+                                    step: None,
+                                    hide_label: false,
                                 }
                             }
-                            div {
-                                class: "actions",
-                                button {
+                            ActionRow {
+                                Button {
+                                    variant: ButtonVariant::Secondary,
                                     onclick: {
                                         let id = prescription_id();
                                         let form = item.clone();
@@ -6259,8 +6676,8 @@ fn PrescriptionDetail(id: String) -> Element {
                                     },
                                     "Guardar medicamento"
                                 }
-                                button {
-                                    class: "secondary",
+                                Button {
+                                    variant: ButtonVariant::Secondary,
                                     disabled: index == 0,
                                     onclick: {
                                         let id = prescription_id();
@@ -6289,8 +6706,8 @@ fn PrescriptionDetail(id: String) -> Element {
                                     },
                                     "Subir"
                                 }
-                                button {
-                                    class: "secondary",
+                                Button {
+                                    variant: ButtonVariant::Secondary,
                                     disabled: index + 1 >= items().len(),
                                     onclick: {
                                         let id = prescription_id();
@@ -6319,8 +6736,8 @@ fn PrescriptionDetail(id: String) -> Element {
                                     },
                                     "Bajar"
                                 }
-                                button {
-                                    class: "danger",
+                                Button {
+                                    variant: ButtonVariant::Danger,
                                     onclick: {
                                         let id = prescription_id();
                                         let item_id = item.id.clone().unwrap_or_default();
@@ -6347,36 +6764,47 @@ fn PrescriptionDetail(id: String) -> Element {
                                 }
                             }
                         } else {
-                            div {
-                                class: "item-read",
-                                p { class: "patient-name", "{item.med_name}" }
-                                p { class: "patient-meta",
-                                    "{item.dose} · {item.route} · {item.frequency} · {item.duration}"
+                            DetailGrid {
+                                DetailItem {
+                                    label: "Medicamento".to_owned(),
+                                    "{item.med_name}"
                                 }
-                                if !item.notes.is_empty() {
-                                    p { class: "patient-meta", "{item.notes}" }
+                                DetailItem {
+                                    label: "Dosis".to_owned(),
+                                    "{item.dose}"
+                                }
+                                DetailItem {
+                                    label: "Vía".to_owned(),
+                                    "{item.route}"
+                                }
+                                DetailItem {
+                                    label: "Frecuencia".to_owned(),
+                                    "{item.frequency}"
+                                }
+                                DetailItem {
+                                    label: "Duración".to_owned(),
+                                    "{item.duration}"
+                                }
+                                DetailItem {
+                                    label: "Cantidad".to_owned(),
+                                    "{item.quantity}"
+                                }
+                                DetailItem {
+                                    label: "Notas".to_owned(),
+                                    wide: true,
+                                    "{item.notes}"
                                 }
                             }
                         }
                         if let Some(url) = llm_explain_url(llm_template.as_deref(), &item.med_name) {
-                            div {
-                                class: "llm-link",
-                                a {
-                                    href: "{url}",
-                                    target: "_blank",
-                                    rel: "noopener noreferrer",
-                                    "Explicar con LLM"
-                                }
-                                p { class: "hint", "Se abre un sitio externo con el nombre del medicamento. No se envían datos del paciente." }
-                            }
+                            LlmExplainLink { href: url }
                         }
                     }
                 }
                 if can_edit {
-                    div {
-                        class: "actions",
-                        button {
-                            class: "secondary",
+                    ActionRow {
+                        Button {
+                            variant: ButtonVariant::Secondary,
                             onclick: move |_| {
                                 items.with_mut(|list| list.push(new_prescription_item_form()));
                             },
@@ -6385,69 +6813,10 @@ fn PrescriptionDetail(id: String) -> Element {
                     }
                 }
             }
-            if can_sign {
-                div {
-                    class: "actions",
-                    button {
-                        disabled: signing(),
-                        onclick: move |_| {
-                            if signing() {
-                                return;
-                            }
-                            signing.set(true);
-                            needs_ack.set(false);
-                            let id = prescription_id();
-                            let offline =
-                                prescription().map(|found| (found, actor().unwrap_or(profile.clone())));
-                            spawn(async move {
-                                match sign_prescription_dispatch(&id, false, offline).await {
-                                    Ok(signed) => {
-                                        signing.set(false);
-                                        sync.set(probe_sync_status().await);
-                                        prescription.set(Some(signed));
-                                    }
-                                    Err(error) => {
-                                        signing.set(false);
-                                        if error.contains("variables desconocidas") {
-                                            needs_ack.set(true);
-                                        }
-                                        message.set(error);
-                                    }
-                                }
-                            });
-                        },
-                        if signing() { "Firmando..." } else { "Firmar receta" }
-                    }
-                    if needs_ack() {
-                        button {
-                            class: "secondary",
-                            onclick: move |_| {
-                                let id = prescription_id();
-                            let offline =
-                                prescription().map(|found| (found, actor().unwrap_or(profile_for_ack.clone())));
-                            spawn(async move {
-                                match sign_prescription_dispatch(&id, true, offline).await {
-                                    Ok(signed) => {
-                                        needs_ack.set(false);
-                                        prescription.set(Some(signed));
-                                    }
-                                    Err(error) => message.set(error),
-                                }
-                            });
-                            },
-                            "Firmar reconociendo las advertencias"
-                        }
-                    }
-                }
-                if block_state.as_ref().is_some_and(|status| status.exhausted) {
-                    p { class: "warning", "Sin números disponibles: reserva un bloque para firmar." }
-                }
-            }
             if can_transition {
-                div {
-                    class: "actions",
-                    button {
-                        class: "secondary",
+                ActionRow {
+                    Button {
+                        variant: ButtonVariant::Secondary,
                         onclick: move |_| {
                             let id = prescription_id();
                             let profile = profile_for_supersede.clone();
@@ -6464,48 +6833,51 @@ fn PrescriptionDetail(id: String) -> Element {
                         },
                         "Reemplazar (corrección)"
                     }
-                    button {
-                        class: "danger",
+                    Button {
+                        variant: ButtonVariant::Danger,
                         onclick: move |_| show_void.set(true),
                         "Anular"
                     }
                 }
                 if show_void() {
-                    div {
-                        class: "notice",
-                        label {
-                            class: "field",
-                            span { "Motivo de anulación" }
-                            input {
-                                value: "{void_reason}",
-                                oninput: move |event| void_reason.set(event.value()),
-                            }
-                        }
-                        div {
-                            class: "actions",
-                            button {
-                                class: "danger",
-                                onclick: move |_| {
-                                    let id = prescription_id();
-                                    let reason = void_reason();
-                                    let profile = profile_for_void.clone();
-                                    spawn(async move {
-                                        match void_prescription_dispatch(&id, &reason, prescription().map(|found| (found, profile.clone()))).await {
-                                            Ok(voided) => {
-                                                show_void.set(false);
-                                                prescription.set(Some(voided));
-                                            }
-                                            Err(error) => message.set(error),
-                                        }
-                                    });
-                                },
-                                "Confirmar anulación"
-                            }
-                            button {
-                                class: "secondary",
-                                onclick: move |_| show_void.set(false),
-                                "Cancelar"
-                            }
+                    ConfirmPanel {
+                        message: "La receta quedará anulada.".to_owned(),
+                        confirm_label: "Confirmar anulación".to_owned(),
+                        cancel_label: "Cancelar".to_owned(),
+                        busy: false,
+                        on_confirm: move |_| {
+                            let id = prescription_id();
+                            let reason = void_reason();
+                            let profile = profile_for_void.clone();
+                            spawn(async move {
+                                match void_prescription_dispatch(&id, &reason, prescription().map(|found| (found, profile.clone()))).await {
+                                    Ok(voided) => {
+                                        show_void.set(false);
+                                        prescription.set(Some(voided));
+                                    }
+                                    Err(error) => message.set(error),
+                                }
+                            });
+                        },
+                        on_cancel: move |_| show_void.set(false),
+                        TextField {
+                            label: "Motivo de anulación".to_owned(),
+                            value: void_reason(),
+                            oninput: move |value: String| void_reason.set(value),
+                            input_type: "text".to_owned(),
+                            placeholder: String::new(),
+                            wide: true,
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: false,
+                            required: true,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            hide_label: false,
                         }
                     }
                 }

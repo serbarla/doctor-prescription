@@ -2742,3 +2742,19 @@ input[type="file"]:focus-visible {
     padding: 64px 24px;
   }
 }
+
+.ui-preview-canvas {
+  overflow-x: auto;
+  padding: 24px;
+  background-color: var(--color-cream);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-cards);
+}
+
+.ui-item-card {
+  background-color: var(--color-paper);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-cards);
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}

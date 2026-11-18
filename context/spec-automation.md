@@ -1,6 +1,6 @@
 # Spec automation pipeline
 
-Spec 15-O turns the one-agent-per-spec workflow into one Orca coordinator pass.
+Spec 26-Z turns the one-agent-per-spec workflow into one Orca coordinator pass.
 A pass scans the queue, dispatches one supervised worker per file-disjoint ready
 slice, collects settled workers, verifies them mechanically, and either merges it or
 opens a decision gate. No human launches, verifies, or merges an individual slice
@@ -281,7 +281,7 @@ automation is the only trigger.
 ## Verbatim coordinator prompt
 
 ```text
-Read specs/15-O-spec-automation-pipeline.md, AGENTS.md, and context/spec-automation.md.
+Read specs/26-Z-spec-automation-pipeline.md, AGENTS.md, and context/spec-automation.md.
 Run exactly one coordinator pass: scan -> dispatch the ready set -> collect settled workers -> merge or gate -> stop.
 Never run a second pass in the same turn.
 

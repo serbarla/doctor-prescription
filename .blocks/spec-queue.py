@@ -18,7 +18,7 @@
 #
 # [provenance]
 # created = "2026-11-17"
-# source = "specs/15-O-spec-automation-pipeline.md objective 2"
+# source = "specs/26-Z-spec-automation-pipeline.md objective 2"
 #
 # [stamp]
 # verified = "27a33363c2ac"

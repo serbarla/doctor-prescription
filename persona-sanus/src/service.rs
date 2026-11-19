@@ -3298,11 +3298,24 @@ pub async fn list_prescriptions(
     status: Option<String>,
     date: Option<String>,
 ) -> Result<Vec<PrescriptionListRow>, AuthError> {
-    actor
+    let role = actor
         .role()
         .ok_or_else(|| AuthError::Forbidden("Se necesita un rol en la clínica.".to_owned()))?;
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
+    let doctor_filter = match role {
+        Role::Doctor => Some(
+            actor
+                .doctor
+                .as_ref()
+                .ok_or_else(|| {
+                    AuthError::Forbidden("El perfil no tiene ficha de médico.".to_owned())
+                })?
+                .id
+                .clone(),
+        ),
+        _ => None,
+    };
     let patient_id = patient_id
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty());
@@ -3316,7 +3329,7 @@ pub async fn list_prescriptions(
         let rows = db::list_prescriptions(
             connection,
             &clinic_id,
-            None,
+            doctor_filter.as_deref(),
             patient_id.as_deref(),
             status.as_deref(),
             date.as_deref(),

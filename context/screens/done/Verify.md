@@ -40,7 +40,7 @@ One public column, centered, symmetric. The head, main, and footer are landmarks
 | 2 | Public main | `.ui-public-main` (`main`), inner `ui-stack` | Paper | Visually hidden page `h1`; then the conditional result region |
 | 3 | Conditional result region | `.ui-verify-inline`, inner `.ui-verify-card` | Paper | Exactly one of: `LoadingState`; `Notice` Error carrying the fetch message; `VerificationResultCard` |
 | 4 | Re-entry card | `SectionCard` `.ui-card`; form `.ui-code-form` | Paper, hairline | `h2`; `VerificationCodeForm` (Primary); `TrustSecurityRow`; optional field `ErrorText` |
-| 5 | Footer band | `<footer id="ui-footer">` | Paper, top hairline | Disclosure line only, target and not shipped (owned by `context/screens/Footer.md` §2.1) |
+| 5 | Footer band | `<footer id="ui-footer">` | Paper, top hairline | Disclosure line only, target and not shipped (owned by `context/screens/done/Footer.md` §2.1) |
 Nothing else renders. There is no navbar band: `/verify/:code` is declared before `#[layout(Navbar)]` (`main.rs:49-51`), so the shell bar does not wrap it. The public head is the page's only brand row. No public marketing hero, no hero image, no trust-logo strip, no sidebar, no duplicate logo in the footer.
 
 ### 2.1 Session and role
@@ -64,7 +64,7 @@ The field starts empty even when the route already carries a code; the route cod
 ### 2.5 Web, desktop, and width
 The web target is the public verifier. The desktop binary renders the same component and the same networked `fetch_verification` call; there is no local lookup, cache, or provisional branch to reconcile. Offline on either target is the fetch-error state. On mobile the public head keeps its 24px padding, the main column is single, the code form stacks the input above the Primary button, and the details grid becomes one column. Copy and region order do not change by surface or width.
 ## 3. Copy text
-All strings are `es-EC`; punctuation, ellipsis, and accents are part of the copy. Chrome strings are referenced, not restated: the navbar lives in `context/screens/Header.md` §3 and is absent here; footer copy is owned by `context/screens/Footer.md` §3.
+All strings are `es-EC`; punctuation, ellipsis, and accents are part of the copy. Chrome strings are referenced, not restated: the navbar lives in `context/screens/done/Header.md` §3 and is absent here; footer copy is owned by `context/screens/done/Footer.md` §3.
 
 ### 3.1 Public head
 | Element | Copy | Target |
@@ -112,7 +112,7 @@ These three rows render only for `valid`, `voided`, and `superseded`. They never
 | Trust row hidden platform label | `macOS, Windows, Web` |
 The code field also carries `autocomplete="off"` and `spellcheck="false"`; those are behavior attributes, not visible copy.
 ### 3.6 Footer
-No footer copy belongs to this file. The band renders the disclosure line defined by `context/screens/Footer.md` §3, and only on `/verify/:code` (§2.1). It does not render the footer wordmark, the Home verify link, the law row, or any second `TrustSecurityRow`; the re-entry card's row is the page's one instance. The page must render the disclosure line, but it must not duplicate that string here.
+No footer copy belongs to this file. The band renders the disclosure line defined by `context/screens/done/Footer.md` §3, and only on `/verify/:code` (§2.1). It does not render the footer wordmark, the Home verify link, the law row, or any second `TrustSecurityRow`; the re-entry card's row is the page's one instance. The page must render the disclosure line, but it must not duplicate that string here.
 ## 4. Displayed information
 ### 4.1 What the screen shows
 | Element | Source | Value shown |
@@ -128,7 +128,7 @@ No footer copy belongs to this file. The band renders the disclosure line define
 | Typed code | local `typed` signal in `VerificationCodeForm` | what the visitor types; trimmed and uppercased on submit only |
 | Section title | static | the section heading (§3.5) |
 | Trust line | static `TrustSecurityRow` | shield glyph + LOPDP text + platform glyphs with the hidden label |
-| Disclosure line | `context/screens/Footer.md` §3 | legal line; footer-owned, not repeated here |
+| Disclosure line | `context/screens/done/Footer.md` §3 | legal line; footer-owned, not repeated here |
 | Session/role | none read | identical for signed-in and signed-out visitors |
 | Storage | none | no localStorage, cookie, service-worker, or result cache |
 The four API status values are `valid`, `voided`, `superseded`, and `not found`. They are the only specialized outcomes; the match is exact and the client does not lowercase the token.
@@ -249,7 +249,7 @@ The result card's visible hierarchy is 14 / 16 / 22. `--font-grenette` is not us
   - `curl -fsS http://127.0.0.1:8080/verify/PS-TEST | grep -F 'Código de verificación'`; repeat once for the section heading (§3.5) and `ui-public-head`. `curl -fsS http://127.0.0.1:8080/verify/PS-TEST | grep -F 'ui-navbar'` must find nothing.
   - The route is rate-limited with the API: 10 requests per 60 s per IP by default. Do not loop the curl checks; an 11th page request returns the 429 JSON instead of HTML.
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` returns `"ok": true` but does not cover `/verify/:code`: its `ORDERED` stages are `fmt`, `check`, `clippy`, `build`, `health`, `home`, `login`, `dashboard`, `signup`, `session`, `signout`, `session_after_signout`, `signin` (`.blocks/persona-smoke.py:38-44`), and `persona-probe`'s default `FULL` flow has the same list. The probe's `verify` flow checks the `/api/verify/{code}` statuses, 429, and no-PHI payload, not this page's copy or geometry.
-  - `python3 .blocks/markdown-table-check.py --path context/screens/Verify.md --strict`
+  - `python3 .blocks/markdown-table-check.py --path context/screens/done/Verify.md --strict`
 - Do not add: a navbar or any shell chrome; a hand-rolled footer or a second disclosure line; a footer wordmark; patient, cédula, diagnosis, medication, or clinical-note fields or values; a PDF, QR download, print, share, or export affordance; a generated QR image; a code-less `/verify` route, a hash form, or a query-param form; a new endpoint, table, column, role, or permission; a second Primary action; a public marketing hero or trust-logo strip; a signature or stamp image; billing, price, trial, plan, or `sync_locked` copy; rich text, a WYSIWYG, or contenteditable; localStorage/sessionStorage/cookie caching or a desktop verification cache; an outbox or `pending_sync` branch; the shipped English labels `Doctor`, `Fecha`, `No.`; the shipped `Cargando...` string; a fifth status title or a raw API status; a 429 countdown, retry loop, or client-side rate-limit display.
 
 ## 8. Spec references

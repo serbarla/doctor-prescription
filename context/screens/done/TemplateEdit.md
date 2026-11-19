@@ -36,7 +36,7 @@ One Paper column in a 24px stack. Header and archived notice mount before the ed
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper | Owned by `context/screens/Header.md`; identity, sync indicator, sign-out only |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper | Owned by `context/screens/done/Header.md`; identity, sync indicator, sign-out only |
 | 1 | Page shell | `#templates-page` · `div.ui-page` > `.ui-container.ui-stack` | Paper | Width, 24px stack gap, 48px top and 80px bottom padding, 24px inline |
 | 2 | Page header | `.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | Title `model.name`; subtitle owner/status; Secondary `Vista previa`, `Volver` |
 | 3 | Archived notice | `.ui-notice.ui-notice--warning` | Cream | `La plantilla está archivada y no admite cambios.`; no action. Archived only; replaces orders 4–7 |
@@ -103,7 +103,7 @@ Publish sends exactly `saved_draft`, never `current_version_id` and never a new 
 
 ## 3. Copy text
 
-All strings are `es-EC`, quoted with punctuation. Dynamic values are prose. Chrome strings belong to `context/screens/Header.md` §3.
+All strings are `es-EC`, quoted with punctuation. Dynamic values are prose. Chrome strings belong to `context/screens/done/Header.md` §3.
 
 ### 3.1 Page header
 
@@ -280,7 +280,7 @@ Never `#000000`. Cards and fields carry the hairline only; the archived notice i
 
 ### 5.4 Iconography and imagery
 
-Line icons only, 1.5px stroke, Ink or Deep Teal. `ErrorText` carries its Alert glyph at 20px in Plum; the archived Warning carries the same glyph at 20px in Ember Ring. No photos, logo previews, asset thumbnails, A4 mock, QR, signature, stamp, or illustration paints here; assets appear as option text. The navbar mark and sync dot are chrome, owned by `context/screens/Header.md` §5.4.
+Line icons only, 1.5px stroke, Ink or Deep Teal. `ErrorText` carries its Alert glyph at 20px in Plum; the archived Warning carries the same glyph at 20px in Ember Ring. No photos, logo previews, asset thumbnails, A4 mock, QR, signature, stamp, or illustration paints here; assets appear as option text. The navbar mark and sync dot are chrome, owned by `context/screens/done/Header.md` §5.4.
 
 ## 6. Accessibility
 
@@ -309,7 +309,7 @@ Line icons only, 1.5px stroke, Ink or Deep Teal. `ErrorText` carries its Alert g
 - Unknown variables: insertion is `format!("{{{{{key}}}}}")` appended to `document.body` (`forms.rs:656-660`); there is no footer insertion, cursor insertion, rich text, or inline validation. `forms::document_warnings` (`forms.rs:267-281`) is called by `TemplatePreview` (`main.rs:4142-4207`), which owns `Variables no válidas`. Publishing does not check it.
 - English-to-`es-EC` replacements: shipped load, save, publish, and archive slots paint raw API text, including `http.rs` transport lines (`Could not reach the server: …`, `Request failed (…)`, `Could not read the server response: …`). Target keeps the raw string in the signal for diagnostics but paints frozen fallbacks: load `No se pudo cargar la plantilla.`, Save `No se pudo guardar el borrador.`, Publish `No se pudo publicar la versión.`, Archive `No se pudo archivar la plantilla.`, library `No se pudo cargar la biblioteca de imágenes.` (the last is target-only). Spanish server and validation strings pass unchanged. Positive strings move from `.error` to Success `Notice`; no positive text becomes an error state.
 - Preserve both surfaces: web calls the API; desktop keeps the cache read on template-load failure and the local publish plus outbox branch. Do not add a local draft-save branch, do not queue archive, and do not let a cached copy hide a server refusal. Keep the generation key and dispatch bodies behaviorally identicalech.
-- Verify, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/TemplateEdit.md --strict`. These are commands to run; this file records no pass claim.
+- Verify, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/done/TemplateEdit.md --strict`. These are commands to run; this file records no pass claim.
 - Do not add: a rich-text editor, WYSIWYG, formatting toolbar, `contenteditable`, HTML body, or Markdown preview; a signature or stamp image, upload, field, or placeholder; an image upload or delete control, file picker, drag-and-drop asset zone, quota prompt, or second asset endpoint on this route; a new route, role, permission, table, column, API argument, or asset kind; patient data, PHI, sample values, a patient picker, or prescription content; billing, price, trial, plan, entitlement, invoice, payment, or `sync_locked` copy or state; a second Primary action, filled Danger button, or extra primary in archived or denied states; an unarchive or restore action; version history, diff, duplicate, rename, delete-template, PDF, or print action; a draft-save outbox branch or a fake offline save; optimistic publish or archive; a colour-only archived, saved, busy, or error indication; or English UI copy.
 
 ## 8. Spec references

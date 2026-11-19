@@ -37,7 +37,7 @@ One centered Paper page: header, one identity card, then the delete and return a
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/Header.md` §2–§5; not restated here |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/done/Header.md` §2–§5; not restated here |
 | 1 | Page shell | `#patients-page` · `div.ui-page` > `.ui-container.ui-stack` | Paper | 48px top padding, 80px bottom, 24px inline; stack gap 24px; max width 1200px |
 | 2 | Page header | `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | Full name as title; `Ficha del paciente`; at most three actions in the inline-end group |
 | 3 | Identity card | `div.ui-card` holding `dl.ui-detail-grid` | Paper, 1px hairline | Five `DetailItem` pairs: Cédula, Fecha de nacimiento, Sexo, Teléfono, Notas (wide) |
@@ -94,7 +94,7 @@ The same component, ids, copy, role gates, and navigation targets serve both bui
 
 ## 3. Copy text
 
-All strings are verbatim `es-EC`; punctuation belongs to the string. Chrome copy is owned by `context/screens/Header.md` §3 and is not repeated here.
+All strings are verbatim `es-EC`; punctuation belongs to the string. Chrome copy is owned by `context/screens/done/Header.md` §3 and is not repeated here.
 
 ### 3.1 Page header and actions
 
@@ -235,7 +235,7 @@ Never `#000000`. Never a chromatic border except the Danger control's Ember Ring
 
 ### 5.4 Iconography and imagery
 
-`ErrorText` carries one 20px Alert line glyph at 1.5px stroke in Plum; it is the page's only icon. Text links and buttons carry no icons. No avatar, patient photo, document mock, A4 sheet, QR, signature, stamp, logo, or illustration renders inside the page. The navbar mark and sync dot are chrome owned by `context/screens/Header.md` §5.4.
+`ErrorText` carries one 20px Alert line glyph at 1.5px stroke in Plum; it is the page's only icon. Text links and buttons carry no icons. No avatar, patient photo, document mock, A4 sheet, QR, signature, stamp, logo, or illustration renders inside the page. The navbar mark and sync dot are chrome owned by `context/screens/done/Header.md` §5.4.
 
 ## 6. Accessibility
 
@@ -255,7 +255,7 @@ Never `#000000`. Never a chromatic border except the Danger control's Ember Ring
 - Preserve delete and navigation: `api::delete_patient(&patient_id)` runs in `spawn` with `deleting` true and a second-click guard; `Ok(())` pushes `Route::Patients {}`, `Err` clears `deleting` and stores the message. No local delete, outbox, toast, or optimistic removal. Targets: `Editar` → `Route::PatientEdit { id: patient.id.clone() }`; `Nueva receta` → `Route::PrescriptionNew { patient_id: Some(patient.id.clone()), template_id: None }`; `Historial de recetas` → `Route::Prescriptions { status: None }`; `Volver a pacientes` and delete success → `Route::Patients {}`. **The history link stays general**: no patient id or filter is appended, and patient filtering belongs to `/prescriptions`, not this page.
 - Copy deltas: paint `No se pudo cargar la ficha del paciente.` instead of the raw `api::fetch_patient`/transport string; paint `No se pudo eliminar el paciente.` instead of the raw delete error; replace the shipped no-role denial body `Necesitas un rol en la clínica para consultar pacientes.` with `No tienes permiso para ver esta ficha.` inside the `Acceso denegado` page header. Keep `Ficha del paciente`, `Editar`, `Solo lectura`, `Nueva receta`, `Historial de recetas`, `Eliminar paciente`, the confirmation sentence, `Confirmar eliminación`, `Cancelar`, `Eliminando...`, `Volver a pacientes`, `Cargando...`, and `Redirigiendo...` verbatim.
 - **Plan confirm copy versus shipped.** The plan supplies the Danger trigger label `Eliminar paciente` and confirm label `Confirmar eliminación`; the shipped component supplies the confirmation sentence `¿Eliminar este paciente? La ficha se oculta de la búsqueda y queda registrada en auditoría.` and the busy label `Eliminando...`. Keep all four; do not shorten the sentence into a modal title or add a success state. No excluded field is added: no `created_at`, `updated_at`, `id`, clinic, prescription count, photo, signature, stamp, billing, quota, PDF, QR, or edit input; the edit route remains the only writer.
-- Verification commands, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/PatientDetail.md --strict`.
+- Verification commands, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/done/PatientDetail.md --strict`.
 - Do not add: an inline edit form, a hard delete, an archive toggle, a cascade, a delete endpoint beyond `api::delete_patient`, a local delete, an outbox row, a success toast, a modal, a focus trap, created/updated timestamps, the patient id, clinic identity, a prescription count, an embedded prescription list, a patient photo or avatar, a signature or stamp image, an asset preview, billing/price/trial/plan/quota/`sync_locked` copy, a PDF or QR action, a rich-text or `contenteditable` surface, a patient-filtered history parameter, a second history link, a second Primary action, or an `Editar`/delete control for the read-only Administrator.
 
 ## 8. Spec references

@@ -35,7 +35,7 @@ One centered page column, Paper. Page header, profile card, two MFA/password car
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3; not restated |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3; not restated |
 | 1 | Page canvas | `PageShell id="settings-page"` → `div#settings-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; 1200px container; 24px stack gap |
 | 2 | Page header | `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` | Paper | `Mi perfil`; `Clínica: {name} · Rol: {role}` or `Sin clínica asignada. Un administrador debe asignarte un rol.`; no actions |
 | 3 | Profile card | `SectionCard` `Datos del perfil` · `Card` + `FormGrid` | Paper, hairline | `Nombre visible` always; doctor fields `Especialidad`, `Número de licencia`, `Cédula`, `Teléfono`, `Correo`; Primary `Guardar`; page-level `ErrorText`/`HintText` |
@@ -324,7 +324,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/SettingsProfile.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/SettingsProfile.md --strict
 ```
 
 The smoke script covers sign-in/MFA at a high level, not the profile card. A browser pass needs: Doctor profile save and reload; Administrator view (no doctor fields, MFA card, password card); Nursing view (no MFA card); MFA enrol with a real TOTP app, reload before confirm, confirm, sign out and sign in with code; disable with wrong and right password; password change with wrong current, short new, and valid new, then prove another session was ended; 320px and 200% zoom.

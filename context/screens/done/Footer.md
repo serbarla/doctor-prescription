@@ -174,7 +174,7 @@ On `/login` only: the `TrustSecurityRow` primitive exactly as defined — `Shiel
 - No new route, endpoint, crate, network font, CDN, icon package, or JS bridge (UI plan No-go). The verify anchor is markup, not a route.
 - Version line is gated `#[cfg(feature = "desktop")]` — the same gate `main.rs` uses throughout and the same condition behind the desktop `devices.app_version` registration (`api.rs:552`); the web bundle never renders it.
 - `/verify/:code` renders the footer on a route whose sitemap status cell still reads ⬜ while the code ships (INDEX §3). That lag is fixed in the sitemap, not here; footer copy is static and unaffected.
-- `context/screens/Home.md` §2 and `context/screens/Header.md` §4.2 already point at this file; no page-file edit is part of this change.
+- `context/screens/done/Home.md` §2 and `context/screens/done/Header.md` §4.2 already point at this file; no page-file edit is part of this change.
 - Verify, in order (target state after plan steps 10–12 plus this band): `cd persona-sanus && cargo check` clean, then `dx build --release --fullstack`, then
   - `curl -s http://127.0.0.1:8080/` contains `id="ui-footer"` once, `href="#verificar"` twice (hero secondary + footer anchor), and still exactly one `ui-button--primary`; the law line appears exactly twice — hero and mint band — the footer adds none;
   - `curl -s http://127.0.0.1:8080/login` contains `Datos protegidos · Ley Orgánica de Protección de Datos Personales` exactly once, and it sits inside `ui-footer`;
@@ -182,7 +182,7 @@ On `/login` only: the `TrustSecurityRow` primitive exactly as defined — `Shiel
   - `curl -s http://127.0.0.1:8080/dashboard` contains no `ui-footer`;
   - the web bundle contains no `Versión ` string on the public pages; a desktop build renders exactly one per public page;
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` still passes;
-  - `caveman-blocks run markdown-table-check --path context/screens/Footer.md` passes.
+  - `caveman-blocks run markdown-table-check --path context/screens/done/Footer.md` passes.
 - Do not add: a pricing or trial band, a partner logo strip, a newsletter or email field, social or app-store badges, a privacy/terms/contact/ARCO link, a language switcher, a second filled teal action, a `LinkAction` or any button-shaped link, a second `LogoLockup` on `/verify/:code`, a hand-rolled shield-only law-line variant, or a sticky footer.
 
 ## 8. Spec references

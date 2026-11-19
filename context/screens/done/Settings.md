@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Source | `context/sitemap.md` §1.2 (Settings — index: all authenticated; hub; non-admin redirect), §2 (only the Administrator holds `/settings/users`, `/settings/clinic`, and `/audit`; every staff role holds `/settings/profile`; `/settings/billing` is v1.1), §4 (M0 ships `/settings/users`; billing is deferred); `context/PRD.md` §3 (roles, server-side authorization, D-03 role authority), D-04 (no billing tables, gates, jobs, or UI in v1), D-06 (no signature or stamp images), D-21 (forms and inputs only, no rich text); `context/Design.md` (Tokens, Surfaces, Elevation, Outlined Secondary Button, Do's and Don'ts); `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` step 13, the Page adoption `Settings` row, the `.ui-link-grid` and `.ui-link-card` CSS rows, steps 3, 5, 9, and 10; `context/screens/INDEX.md` §2.3 and §3 (`/settings` lag); `context/screens/Header.md` §7 (navigation coupling) |
+| Source | `context/sitemap.md` §1.2 (Settings — index: all authenticated; hub; non-admin redirect), §2 (only the Administrator holds `/settings/users`, `/settings/clinic`, and `/audit`; every staff role holds `/settings/profile`; `/settings/billing` is v1.1), §4 (M0 ships `/settings/users`; billing is deferred); `context/PRD.md` §3 (roles, server-side authorization, D-03 role authority), D-04 (no billing tables, gates, jobs, or UI in v1), D-06 (no signature or stamp images), D-21 (forms and inputs only, no rich text); `context/Design.md` (Tokens, Surfaces, Elevation, Outlined Secondary Button, Do's and Don'ts); `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` step 13, the Page adoption `Settings` row, the `.ui-link-grid` and `.ui-link-card` CSS rows, steps 3, 5, 9, and 10; `context/screens/INDEX.md` §2.3 and §3 (`/settings` lag); `context/screens/done/Header.md` §7 (navigation coupling) |
 | Component | `Settings` — `persona-sanus/src/main.rs:1761` (component `:1760-1802`). Target primitives, planned in `persona-sanus/src/ui/`: `PageShell`, `PageHeader`, `ButtonLink`, and `LoadingState`; the directory and its `layout.rs` / `button.rs` / `feedback.rs` are not shipped yet |
 | Route | `/settings` — declared `persona-sanus/src/main.rs:66-67`; every authenticated role may load it; no query parameters. With no session it replaces the location with `/login` (`Route::AuthPage {}`); a non-Administrator profile is replaced with `/settings/profile` (`Route::SettingsProfile {}`); an Administrator stays and renders the hub. `/settings/billing` is not in the `Route` enum and receives no link, redirect, or placeholder |
 | Layout | `PageShell id="settings-page"` inside `#[layout(Navbar)]` (`main.rs:51`); root `div#settings-page.ui-page > div.ui-container.ui-stack`; one Paper band; no full-bleed exception; adds no second header or footer band |
@@ -14,7 +14,7 @@
 The index for staff administration. Ordered jobs:
 
 1. Let an Administrator choose where to work: staff and roles, clinic and library, or their own profile.
-2. Give the Administrator a path to the audit trail that survives the navbar cleanup in `context/screens/Header.md` §7.
+2. Give the Administrator a path to the audit trail that survives the navbar cleanup in `context/screens/done/Header.md` §7.
 3. Move a signed-in non-Administrator out of this index and into the only settings surface their role owns, `/settings/profile`, before the hub paints.
 4. Move a signed-out visitor to `/login` before the hub can paint.
 5. In a debug build only, expose the component gallery at `/dev/ui` without making it a release-visible or product route.
@@ -35,7 +35,7 @@ One Paper page, a stack of 24px gaps descending from the Navbar. The loading/red
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/Header.md` §2–§5; not restated here |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/done/Header.md` §2–§5; not restated here |
 | 1 | Page shell | `#settings-page` · `div.ui-page` > `.ui-container.ui-stack` | Paper | 48px top padding, 80px bottom, 24px inline; stack gap 24px; present in every state |
 | 2 | Loading or redirect line | `.ui-loading` | Paper | One `LoadingState` line: `Cargando...` while the session check is unfinished or the profile is absent, `Redirigiendo...` while a non-administrator is being replaced. No header and no cards in either state |
 | 3 | Page header | `.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` | Paper | `PageHeader` title and subtitle; no header actions, no subtitle children, no trailing metadata |
@@ -75,7 +75,7 @@ The debug card is a development affordance, not a product route: `/dev/ui` is a 
 | Web (Chromium) | The same shell, header, and card grid for an Administrator | Session availability decides entry; the grid is identical |
 | Desktop (macOS, Windows) | The same shell, header, and card grid | No desktop-only card, count, sync widget, or cache notice is added. If the desktop restores a persisted Administrator profile while the server is unreachable, the hub still paints; every destination decides its own offline behaviour |
 
-`Settings` issues no request and reads no cached record, so no loading, pending, failed, or 30-day-retention state is local to this screen. The sync indicator stays in the Navbar (`context/screens/Header.md` §4) and is not repeated here.
+`Settings` issues no request and reads no cached record, so no loading, pending, failed, or 30-day-retention state is local to this screen. The sync indicator stays in the Navbar (`context/screens/done/Header.md` §4) and is not repeated here.
 
 ### 2.4 Empty, denied, error, and busy states
 
@@ -131,7 +131,7 @@ No other user-visible string belongs to this screen. There is no card body copy,
 - The card set follows sitemap §2: `/settings/users` and `/settings/clinic` are Administrator-only, `/audit` is Administrator-only, and `/settings/profile` is the one settings destination every staff role holds. The hub offers no card from which a non-administrator could infer the Administrator-only surfaces.
 - The hub is a link index, not a boundary and not a data surface. It renders no forms, rows, counts, PHI, clinical content, clinic fields, user fields, device data, audit metadata, or billing content.
 - No `/settings/billing` card, link, disabled placeholder, price, trial, plan, `sync_locked`, or “coming soon” copy in v1 (D-04). The path is a v1.1 reservation only; it is absent from the `Route` enum and from this screen.
-- `Auditoría` is Administrator-only and is the replacement path for the navbar entry removed by plan step 10. Ship the card and the removal in one change set (`context/screens/Header.md` §7); never drop the navbar entry first and strand `/audit`.
+- `Auditoría` is Administrator-only and is the replacement path for the navbar entry removed by plan step 10. Ship the card and the removal in one change set (`context/screens/done/Header.md` §7); never drop the navbar entry first and strand `/audit`.
 - `Sistema de diseño` is debug-only. It is compiled out of release builds, has no role, is not a product route, and must never be the only route to a shipped page.
 - Non-administrators never settle here and never see a reduced hub. The only role-shaped behaviour is replacement to `/settings/profile`, which every staff role holds. Patients, prescriptions, and templates are not settings cards; the Navbar owns their destinations.
 - One primary action per viewport, maximum: this viewport has none. Every card is a Secondary `ButtonLink`; no filled Deep Teal control exists on the page.
@@ -161,7 +161,7 @@ No other user-visible string belongs to this screen. There is no card body copy,
 | Direct `/settings/users`, `/settings/clinic`, or `/audit` as a non-administrator | The destination's own guard applies; this hub is not consulted and grants nothing |
 | Empty grid | Unreachable: the Administrator branch always includes at least the three production cards, before and after step 13 |
 | Fetch or mutation error on this screen | None: the hub fetches and mutates nothing. Destination errors belong to those screens |
-| Pending sync or failed outbox | Not rendered here; owned by the Navbar (`context/screens/Header.md` §4) and `/prescriptions` |
+| Pending sync or failed outbox | Not rendered here; owned by the Navbar (`context/screens/done/Header.md` §4) and `/prescriptions` |
 | Reduced motion | No transition or animation is introduced by the hub. The shared spinner is suppressed under `prefers-reduced-motion`, and the loading or redirect label remains readable |
 
 ## 5. Style
@@ -209,7 +209,7 @@ Never `#000000`, never a chromatic card border. The card border is always the ne
 
 ### 5.4 Iconography and imagery
 
-None. The hub is a text index: no line icons, no logo, no QR glyph, no document preview, no avatar, no photography, and no illustration. Each card is identified by its visible label alone, so there is no icon-only control and no decorative mark to hide from assistive technology. The Navbar above owns the only brand mark on the page (`context/screens/Header.md` §3.1).
+None. The hub is a text index: no line icons, no logo, no QR glyph, no document preview, no avatar, no photography, and no illustration. Each card is identified by its visible label alone, so there is no icon-only control and no decorative mark to hide from assistive technology. The Navbar above owns the only brand mark on the page (`context/screens/done/Header.md` §3.1).
 
 ## 6. Accessibility
 
@@ -230,7 +230,7 @@ None. The hub is a text index: no line icons, no logo, no QR glyph, no document 
 - The shipped component is `fn Settings` at `persona-sanus/src/main.rs:1760-1802`; its declaration line is `:1761` and its route variant is `/settings` at `:66-67`. It reads `actor` (`Signal<Option<Me>>`), `checked` (`Signal<bool>`), and `use_navigator()`, and calls no `api::` function.
 - Shipped redirect effect: `main.rs:1766-1778`. When `checked()` is true it matches `actor()`; `None` calls `navigator.replace(Route::AuthPage {})`; `Some(profile)` with `!profile.is_administrator()` calls `navigator.replace(Route::SettingsProfile {})`; the Administrator arm does nothing. Keep these symbols and both guards unchanged.
 - Shipped render: `main.rs:1780-1785` returns `div#echo > p` `Cargando...` for `!checked() || profile.is_none()`. The Administrator arm at `:1786-1796` returns `div#echo` with `h4` `Configuración`, the shipped subtitle at `:1791`, and three raw `Link`s: `Usuarios y roles` → `Route::SettingsUsers {}`, `Clínica y biblioteca` → `Route::SettingsClinic {}`, `Mi perfil` → `Route::SettingsProfile {}`. The fallback at `:1797-1800` returns `div#echo > p` `Redirigiendo...` for a non-administrator. Only that last state uses `Redirigiendo...`; the no-session branch keeps `Cargando...`.
-- Shipped navbar coupling: `Navbar` renders `Auditoría` at `main.rs:1421` and `Configuración` at `:1423`; `Auditoría` is guarded by `is_administrator()` at `:1419`. Plan step 10 removes `Auditoría` from the bar, so plan step 13 must add the hub card in the same change set (`context/screens/Header.md` §7).
+- Shipped navbar coupling: `Navbar` renders `Auditoría` at `main.rs:1421` and `Configuración` at `:1423`; `Auditoría` is guarded by `is_administrator()` at `:1419`. Plan step 10 removes `Auditoría` from the bar, so plan step 13 must add the hub card in the same change set (`context/screens/done/Header.md` §7).
 - Target markup, plan step 13 and the Page adoption `Settings` row: `PageShell id="settings-page"` > `PageHeader` `Configuración` with the existing subtitle unchanged > `<nav aria-label="Configuración">` > `div.ui-link-grid` > one Secondary `ButtonLink` per card, with `extra_class` `ui-link-card` and with the label as its only child. Loading and redirect states use the same `PageShell` and one `LoadingState` with `label` `Cargando...` or `Redirigiendo...`; they do not render `PageHeader` or the grid.
 - Target card set: the three shipped production cards, then `Auditoría` → `Route::Audit {}` inside the Administrator branch, then `Sistema de diseño` → `Route::DevUi {}` inside `#[cfg(debug_assertions)]` only. Plan step 13 says "`Settings` adds the admin `Auditoría` link and the debug-only `Sistema de diseño` link". `Route::Audit` exists today (`main.rs:74-75`); `Route::DevUi` does not and arrives with plan step 9. No billing variant exists and none is added.
 - Current primitives are raw `div`, `h4`, `p`, and `Link` in `main.rs`. The shared `PageShell`, `PageHeader`, `ButtonLink`, and `LoadingState` are planned in `persona-sanus/src/ui/` (`layout.rs`, `button.rs`, `feedback.rs` per plan steps 3 and 5); that directory is not shipped, so today's `Settings` composes only `dioxus::prelude` and router types already imported in `main.rs`.
@@ -239,7 +239,7 @@ None. The hub is a text index: no line icons, no logo, no QR glyph, no document 
   - `cd persona-sanus && cargo check` — the adopted primitives and the card set compile in the debug configuration.
   - `cd persona-sanus && dx build --release --fullstack` — the release build contains no `Sistema de diseño` card and still builds every destination route.
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` — the shell smoke run covers `/`, `/login`, and an authenticated `/dashboard`; it has no `/settings` stage, so it proves the shell and destinations, not the hub assertions above.
-  - `python3 .blocks/markdown-table-check.py --path context/screens/Settings.md --strict` — every table has a consistent column count.
+  - `python3 .blocks/markdown-table-check.py --path context/screens/done/Settings.md --strict` — every table has a consistent column count.
 - No route-specific `curl`: `/settings` is authenticated and the smoke script does not exercise it.
 - Do not add: a `/settings/billing` card, link, placeholder, price, trial, plan, or `sync_locked` copy (D-04); cards or links for patients, prescriptions, or templates (the Navbar owns them); forms, editable fields, count badges, PHI, clinical content, or clinic, user, profile, or audit data to the hub; a reduced non-administrator hub, denial panel, or local sign-in form; signature or stamp imagery (D-06); rich text, a formatting toolbar, or `contenteditable` (D-21); an icon-only card, decorative image, QR glyph, or A4 mock; a Primary button or any filled Deep Teal action; a release-visible `Sistema de diseño` link; a new route, endpoint, role, permission, table, column, or query parameter; a second header or footer band; client-side role checks presented as authorization; or a `push` in place of either replacement redirect.
 

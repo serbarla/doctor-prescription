@@ -27,7 +27,7 @@ One centered page column. The header, one form card, then the result surfaces in
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3; renders above the page unchanged |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3; renders above the page unchanged |
 | 1 | Page canvas | `PageShell id="patients-page"` → `div#patients-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; container max 1200px; 24px vertical stack |
 | 2 | Page header | `header.ui-page-head` | Paper | `h1.ui-page-title` `Nuevo paciente`; `p.ui-page-subtitle` `Los datos se guardan en la clínica actual.`; `.ui-page-head-actions` with one Secondary `ButtonLink` `Cancelar` → `/patients` |
 | 3 | Form card | `div.ui-card` | Paper `#ffffff`, 1px hairline | `FormGrid columns=Two` with six controls (§3.1); no card heading |
@@ -89,7 +89,7 @@ Success is navigation to `/patients/{id}`; no toast, success banner, or modal. T
 
 ## 3. Copy text
 
-All strings verbatim, `es-EC`; punctuation belongs to the copy. Navbar strings are owned by `context/screens/Header.md` §3 and are not repeated here.
+All strings verbatim, `es-EC`; punctuation belongs to the copy. Navbar strings are owned by `context/screens/done/Header.md` §3 and are not repeated here.
 
 ### 3.1 Fields
 
@@ -299,7 +299,7 @@ Verification commands, run from the repo root; none is recorded here as executed
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/PatientNew.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/PatientNew.md --strict
 ```
 
 - Do not add: a second clinic selector, a clinic-id input, or a free-text role field.

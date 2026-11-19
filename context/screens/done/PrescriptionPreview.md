@@ -28,7 +28,7 @@ One column: page header, one action row, conditional feedback, then the document
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar`, inner `.ui-navbar-inner` | Paper | Owned by `context/screens/Header.md`; identity, sync indicator and sign-out only |
+| — | Navbar (layout) | `header.ui-navbar`, inner `.ui-navbar-inner` | Paper | Owned by `context/screens/done/Header.md`; identity, sync indicator and sign-out only |
 | 1 | Page shell and stack | `#prescriptions-page` · `.ui-page` > `.ui-container.ui-stack` | Paper | Page width and vertical rhythm; one root for every state |
 | 2 | Page header | `header.ui-page-head`, `h1.ui-page-title`, `p.ui-page-subtitle`, `.ui-page-head-actions` | Paper | Patient-specific A4 title, status/number/date subtitle, Secondary back action |
 | 3 | Action row | `.ui-actions` | Paper | One primary at most (sign or download), then print, desktop-local provisional, wasm share, conditional acknowledgment |
@@ -87,7 +87,7 @@ Every string is user-visible `es-EC`, quoted with final punctuation. Structural 
 
 ### 3.1 Chrome reference
 
-The navbar is not this page's copy. Labels, session states, sync strings, and sign-out belong to `context/screens/Header.md` §3. This page supplies no public footer band and adds no chrome string.
+The navbar is not this page's copy. Labels, session states, sync strings, and sign-out belong to `context/screens/done/Header.md` §3. This page supplies no public footer band and adds no chrome string.
 
 ### 3.2 Page header
 
@@ -344,7 +344,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/PrescriptionPreview.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/PrescriptionPreview.md --strict
 ```
 
 `curl` is not used: the route requires an authenticated actor, and the preview endpoint is not public. A browser pass covers a draft as doctor, a signed row as secretary, a provisional desktop row offline, and a parse failure.

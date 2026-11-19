@@ -21,12 +21,12 @@ Vertical, centered, symmetric. Bands alternate white and tinted wash. No sidebar
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar`, inner `.ui-navbar-inner` | Paper `#ffffff`, bottom hairline 1px `#e5e7eb` | Owned by `context/screens/Header.md` — `LogoLockup` + `PillBadge`, zero to five role-guarded `NavLink`s when a session exists, session-aware right group |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar`, inner `.ui-navbar-inner` | Paper `#ffffff`, bottom hairline 1px `#e5e7eb` | Owned by `context/screens/done/Header.md` — `LogoLockup` + `PillBadge`, zero to five role-guarded `NavLink`s when a session exists, session-aware right group |
 | 1 | Hero | — | Paper `#ffffff` | `h1` display headline, subtitle, `ActionRow` (one filled teal + one outlined), microcopy line, `TrustSecurityRow` |
 | 2 | Cómo funciona | `#como-funciona` | Paper `#ffffff` | `SectionHeader` + `ui-steps` grid of three `NumberedStepCard`s + centered note |
 | 3 | Verifica una receta | `#verificar` | Mint `#b9ffe8` | `SectionHeader` + `Card` holding `VerificationCodeForm` (Secondary) + `TrustSecurityRow` |
 
-Nothing else renders on this screen. `TrustLogoStrip` is excluded until real clinic marks exist (`UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` No-go). The header band renders above this screen as the layout's first element; its structure and copy are owned by `context/screens/Header.md`. The public footer band renders as the page's last element; its structure and copy are owned by `context/screens/Footer.md`.
+Nothing else renders on this screen. `TrustLogoStrip` is excluded until real clinic marks exist (`UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` No-go). The header band renders above this screen as the layout's first element; its structure and copy are owned by `context/screens/done/Header.md`. The public footer band renders as the page's last element; its structure and copy are owned by `context/screens/done/Footer.md`.
 
 ### 2.1 Signed-out visitor (default)
 
@@ -34,11 +34,11 @@ Bands 1–3 as ordered. The Hero CTA is the `no session` row of §3.3 (`Emitir r
 
 ### 2.2 Signed-in staff
 
-Same three bands, same order. Only the Hero CTA row changes, resolved by role in §3.3 rows 2–4; no other Home region reads the session. The sync indicator, when a session exists, is rendered by the navbar band, not by Home (§4.1, `context/screens/Header.md` §4).
+Same three bands, same order. Only the Hero CTA row changes, resolved by role in §3.3 rows 2–4; no other Home region reads the session. The sync indicator, when a session exists, is rendered by the navbar band, not by Home (§4.1, `context/screens/done/Header.md` §4).
 
 ### 2.3 Public verifier
 
-Band 3 renders for every visitor regardless of session or role — it is the surface for someone arriving with a printed code, and the anchor target of the Hero secondary CTA. Submitting the code navigates to `/verify/:code`; the verification result surface is `context/screens/Verify.md`, never Home. Home renders no verification result.
+Band 3 renders for every visitor regardless of session or role — it is the surface for someone arriving with a printed code, and the anchor target of the Hero secondary CTA. Submitting the code navigates to `/verify/:code`; the verification result surface is `context/screens/done/Verify.md`, never Home. Home renders no verification result.
 
 ## 3. Copy text
 
@@ -46,7 +46,7 @@ All strings verbatim, `es-EC`. Punctuation is part of the copy.
 
 ### 3.1 Navbar
 
-The navbar band is shared chrome, not Home copy: its strings, role guards, session states, and style are owned by `context/screens/Header.md` §2–§5. Home renders nothing into the bar; it only reads the same `Signal<Option<Me>>` context the bar uses (§3.3, §7).
+The navbar band is shared chrome, not Home copy: its strings, role guards, session states, and style are owned by `context/screens/done/Header.md` §2–§5. Home renders nothing into the bar; it only reads the same `Signal<Option<Me>>` context the bar uses (§3.3, §7).
 
 ### 3.2 Hero
 
@@ -111,7 +111,7 @@ Step bodies describe FR-001/002 (search and dedup by cédula), FR-010/021 (form-
 | Verification tag on step 3 | static | `Verificable` |
 | Verify form | local signal only | typed code; on submit it is trimmed, uppercased, and pushed to `/verify/{CODE}` (`Route::Verify`) |
 | Trust row | static | shield glyph + law line + macOS/Windows/Web icons |
-| Sync indicator (signed-in only) | rendered by the header band, not by `Home` — `context/screens/Header.md` §4 | `En línea` / `Sincronizando` / `Sin conexión` / `Error de sincronización` + pending count (FR-043); counts are desktop-only; not rendered for signed-out visitors |
+| Sync indicator (signed-in only) | rendered by the header band, not by `Home` — `context/screens/done/Header.md` §4 | `En línea` / `Sincronizando` / `Sin conexión` / `Error de sincronización` + pending count (FR-043); counts are desktop-only; not rendered for signed-out visitors |
 
 The A4 mock content is fictional and constant. It is the only patient-shaped text on this screen, and it never touches the database, the API, or the outbox.
 
@@ -123,7 +123,7 @@ The A4 mock content is fictional and constant. It is the only patient-shaped tex
 - No invented proof: no fake partner logos, no testimonials, no counters ("+500 clínicas"), no medical-accuracy or legal-validity guarantees (PRD §15 O-01 is open).
 - No text-entry surface other than the verification code input; all clinical text entry stays in forms and inputs (D-21), and Home contains no rich-text affordance.
 - Verification copy must state the disclosure limit exactly once on this screen (§3.5) — doctor, date, prescription number, nothing else.
-- Home renders no verification result; the result belongs to `/verify/:code` (`context/screens/Verify.md`).
+- Home renders no verification result; the result belongs to `/verify/:code` (`context/screens/done/Verify.md`).
 
 ### 4.3 Dynamic states
 
@@ -203,14 +203,14 @@ Line icons only, 1.5px stroke, monochrome Ink or Deep Teal (Mist for the platfor
 ## 7. Implementation notes
 
 - Current shipped code is the minimal `#hero` block in `persona-sanus/src/main.rs:1282-1295`; the target markup is step 11 of `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md`, which builds the primitives this spec consumes (`persona-sanus/src/ui/` does not exist yet).
-- `Home` stays inside the Navbar layout — the bar itself is specified in `context/screens/Header.md`. `context/architecture.md:227` records that `#[layout(Navbar)]` is not closed with `#[end_layout]`, so the navbar currently wraps `/` and `/login` too — Home assumes a navbar is present.
+- `Home` stays inside the Navbar layout — the bar itself is specified in `context/screens/done/Header.md`. `context/architecture.md:227` records that `#[layout(Navbar)]` is not closed with `#[end_layout]`, so the navbar currently wraps `/` and `/login` too — Home assumes a navbar is present.
 - CTA resolution reads the same `Signal<Option<Me>>` context the Navbar uses; Home adds no fetch, no endpoint, and no permission logic beyond `can_create_prescriptions()`.
 - Verify, in order:
   - `cargo check` passes;
   - `dx build --release --fullstack` succeeds;
   - `curl -s http://127.0.0.1:8080/` contains `Recetas claras, verificables y listas para firmar.` and exactly one `ui-button--primary`;
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` returns `"ok": true` (its `home` stage covers `/`);
-  - `caveman-blocks run markdown-table-check --path context/screens/Home.md` passes.
+  - `caveman-blocks run markdown-table-check --path context/screens/done/Home.md` passes.
 - Do not add: a `TrustLogoStrip`, a pricing or trial band, a screenshot carousel, a newsletter form, a verification result on this page, or any second filled teal action.
 
 ## 8. Spec references

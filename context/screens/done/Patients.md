@@ -34,7 +34,7 @@ One Paper page, a stack of 24px gaps, descending from the navbar. The header and
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/Header.md` §2–§5; not restated here |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/done/Header.md` §2–§5; not restated here |
 | 1 | Page shell | `#patients-page` · `div.ui-page` > `.ui-container.ui-stack` | Paper | 48px top padding, 80px bottom, 24px inline; stack gap 24px |
 | 2 | Page header | `.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | Page title and subtitle, then at most one Primary action at the inline end |
 | 3 | Search | `.ui-field` holding `input[type=search].ui-input` | Paper | `SearchField` label, value, oninput, placeholder; `wide: true`; label visually hidden |
@@ -94,7 +94,7 @@ All strings verbatim, `es-EC`. Punctuation is part of the copy. Each string appe
 | Page subtitle | `Busca por nombre o cédula dentro de tu clínica.` | — |
 | Create action, Primary, writers only | `Nuevo paciente` | `/patients/new` (`Route::PatientNew {}`) |
 
-The screen renders no back link. `/patients` is a top-level destination of the navbar (`context/screens/Header.md` §3.2), so no `Volver a...` string exists here.
+The screen renders no back link. `/patients` is a top-level destination of the navbar (`context/screens/done/Header.md` §3.2), so no `Volver a...` string exists here.
 
 ### 3.2 Search
 
@@ -229,7 +229,7 @@ Never `#000000`. Never a chromatic border: row, input, and empty borders use the
 
 ### 5.4 Iconography and imagery
 
-`ErrorText` carries its Alert glyph at 20px with a 1.5px stroke, Plum; it is the page's only icon. No avatar, patient photo, document mock, QR, signature, stamp, or illustration renders. The navbar mark and sync dot are chrome, owned by `context/screens/Header.md` §5.4.
+`ErrorText` carries its Alert glyph at 20px with a 1.5px stroke, Plum; it is the page's only icon. No avatar, patient photo, document mock, QR, signature, stamp, or illustration renders. The navbar mark and sync dot are chrome, owned by `context/screens/done/Header.md` §5.4.
 
 ## 6. Accessibility
 
@@ -256,7 +256,7 @@ Never `#000000`. Never a chromatic border: row, input, and empty borders use the
 - Preserve the role gates and navigation targets: `can_read_patients()` before any directory markup; `can_write_patients()` only around the Primary; each row action to `Route::PatientDetail { id: patient.id.clone() }`; the Primary to `Route::PatientNew {}`. No new permission check is added here.
 - Adopt `ErrorText` in place of the `.error` paragraph; keep the existing message slot above the list. The denial branch becomes a `PageHeader` inside the same `PageShell`, not a `.notice` block or a denied action.
 - No query parameter, route variant, endpoint, or API argument is added. `api::fetch_patients(&term)` and `desktop_local::list_patients` keep their current signatures; the local helper remains unfiltered by term. No back link renders: the navbar is the return path, and this is a top-level list.
-- Verify, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/Patients.md --strict`.
+- Verify, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/done/Patients.md --strict`.
 - Do not add: a URL query or history entry for search, a sort or count control, pagination or result totals, a second Primary action, create/edit/delete controls for Administrator, a patient photo or avatar, sex/phone/notes/timestamps in the row, a document or QR preview, a billing or plan surface, a signature or stamp asset, a rich-text affordance, a new endpoint or field, or a success toast that hides the desktop cache error.
 
 ## 8. Spec references

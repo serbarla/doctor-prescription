@@ -26,7 +26,7 @@ One centered page column. Paper surfaces throughout; no tinted band, no imagery.
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§oses3; renders above this page unchanged |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§oses3; renders above this page unchanged |
 | 1 | Page canvas | `PageShell id="dashboard-page"` → `div#dashboard-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; max 1200px; 24px vertical gap |
 | 2 | Page header | `header.ui-page-head` | Paper | `h1.ui-page-title` `Panel`; subtitle from the session (name, or email while the profile is absent); no header action |
 | 3 | Session card | `SectionCard` `Sesión` → `div.ui-card` | Paper, 1px hairline | `DetailGrid` with `Nombre`, `Correo`, `Rol` (`Badge`), `Clínica` or `Sin clínica asignada.` |
@@ -73,7 +73,7 @@ On web the widget is absent: `probe_sync_status()` reports reachability only and
 
 ## 3. Copy text
 
-All strings verbatim, `es-EC`; punctuation belongs to the copy. Navbar strings are owned by `context/screens/Header.md` §3 and are not repeated here.
+All strings verbatim, `es-EC`; punctuation belongs to the copy. Navbar strings are owned by `context/screens/done/Header.md` §3 and are not repeated here.
 
 ### 3.1 Page header and session card
 
@@ -296,7 +296,7 @@ Verification commands, run from the repo root; none is recorded here as executed
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/Dashboard.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/Dashboard.md --strict
 ```
 
 - Do not add: a second endpoint, a role-specific dashboard route, a chart, metric cards, a streak, a greeting, a notification bell, an avatar, or a marketing band.

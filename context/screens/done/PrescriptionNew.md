@@ -29,7 +29,7 @@ One page column inside the shared shell. Every region is Paper; no tinted band, 
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3; renders above this page and is never edited here |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3; renders above this page and is never edited here |
 | 1 | Page canvas | `PageShell id="prescriptions-page"` → `div#prescriptions-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; container max 1200px; 24px vertical stack |
 | 2 | Page header | `header.ui-page-head` | Paper | `h1.ui-page-title` `Nueva receta`; `p.ui-page-subtitle` `Paciente y plantilla publicada.`; `.ui-page-head-actions` with one `ButtonLink` Secondary `Cancelar` → `/prescriptions` |
 | 3 | Form card | `div.ui-card` | Paper `#ffffff`, 1px hairline border | `FormGrid columns=Two`: patient `SelectField`, template `SelectField`, diagnosis `TextAreaField`, validity `TextField`, instructions `TextAreaField wide`; no card heading |
@@ -85,7 +85,7 @@ For an authenticated actor whose role is not `doctor` or `nursing`, the page ren
 
 ## 3. Copy text
 
-All visible strings, verbatim, `es-EC`; punctuation belongs to the copy. Chrome copy is owned by `context/screens/Header.md` and is not repeated here.
+All visible strings, verbatim, `es-EC`; punctuation belongs to the copy. Chrome copy is owned by `context/screens/done/Header.md` and is not repeated here.
 
 ### 3.1 Page header and navigation
 
@@ -270,7 +270,7 @@ Only the shared 1.5px line icons, 20px default: `Alert` in `ErrorText`/`Notice` 
 
 ## 6. Accessibility
 
-- Landmarks: the shell's navbar is the `header` owned by `context/screens/Header.md`; this page's `PageHeader` is a second labeled header region containing the only `h1`. The Card and ActionRow are plain divs, so the page has no invented `main`, `nav`, `form`, or landmark labels. The native selects and buttons carry their own roles.
+- Landmarks: the shell's navbar is the `header` owned by `context/screens/done/Header.md`; this page's `PageHeader` is a second labeled header region containing the only `h1`. The Card and ActionRow are plain divs, so the page has no invented `main`, `nav`, `form`, or landmark labels. The native selects and buttons carry their own roles.
 - Headings: exactly one `h1`, `Nueva receta`, from `PageHeader`. There is no `h2` because there is no `SectionCard`, and the denied title is body text, not a heading. Order is `h1` → none; no skipped level.
 - Tab order: header `Cancelar` → `Paciente` select → `Plantilla` select → `Diagnóstico` textarea → `Vigencia` input → `Indicaciones generales` textarea → `Crear borrador`. In the denied state: `Cancelar` (if kept) → `Volver a recetas`. Nothing is focus-trapped, nothing has positive `tabindex`, links stay links and controls stay native.
 - Focus: every interactive control uses the plan's utility — `outline: 1px solid var(--color-deep-teal); outline-offset: 2px; box-shadow: 0 0 0 3px rgba(185,255,232,0.55);`. The focus halo is a ring, never elevation; it is visible on Paper and on Blossom.
@@ -314,7 +314,7 @@ Verification commands, run from the repo root; none is recorded here as executed
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/PrescriptionNew.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/PrescriptionNew.md --strict
 ```
 
 - Do not add: medication editor, medication rows, `PrescriptionItem`, add/remove/reorder, or any medication prefill; that is `/prescriptions/:id` (FR-011).

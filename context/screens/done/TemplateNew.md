@@ -35,7 +35,7 @@ One centered page column: header, one form card, then the result surfaces in DOM
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3; unchanged above the page |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3; unchanged above the page |
 | 1 | Page canvas | `PageShell id="templates-page"` → `div#templates-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; 1200px container; 24px vertical stack |
 | 2 | Page header | `header.ui-page-head` | Paper | `h1.ui-page-title` (the only `h1`), `p.ui-page-subtitle`, `.ui-page-head-actions` holding one Secondary `ButtonLink` to the list |
 | 3 | Form card | `div.ui-card` | Paper `#ffffff`, 1px hairline | `FormGrid columns=One` with one labeled `TextField`; no card heading |
@@ -92,7 +92,7 @@ The session gate is the only loading state: there is no spinner during create, o
 
 ## 3. Copy text
 
-All strings are verbatim `es-EC`; punctuation belongs to the copy. Navbar and footer strings are owned by `context/screens/Header.md` §3 and `context/screens/Footer.md` §3 and are not repeated.
+All strings are verbatim `es-EC`; punctuation belongs to the copy. Navbar and footer strings are owned by `context/screens/done/Header.md` §3 and `context/screens/done/Footer.md` §3 and are not repeated.
 
 ### 3.1 Page header
 
@@ -318,7 +318,7 @@ Verification commands, run from the repo root; none is recorded here as executed
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/TemplateNew.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/TemplateNew.md --strict
 ```
 
 - Do not add: an owner selector, clinic picker, doctor picker, `owner_type` input, or `owner_id` field.

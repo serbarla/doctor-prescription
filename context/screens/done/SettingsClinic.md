@@ -35,7 +35,7 @@ One centered page column, Paper throughout, four `SectionCard`s in a 24px stack.
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3 |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3 |
 | 1 | Page canvas | `PageShell id="settings-page"` → `div#settings-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; container max 1200px; 24px stack gap |
 | 2 | Page header | `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | `Clínica`; `Datos de la clínica, logo y biblioteca de imágenes.`; Secondary `Volver` → `/settings` |
 | 3 | Clinic data card | `SectionCard` `Datos de la clínica` · `div.ui-card` | Paper, 1px hairline | `FormGrid columns=Two`: `Nombre`, `Dirección`; `Teléfono`; `Plantilla del enlace LLM` wide; read-only timezone; Primary `Guardar datos` |
@@ -343,7 +343,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/SettingsClinic.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/SettingsClinic.md --strict
 ```
 
 A browser pass as Administrator and as Doctor is needed for the redirect; an offline desktop pass for both disabled upload fields and delete; upload a JPEG, a PNG, a WebP, and a file over 10 MiB to prove the server refusals render in `ErrorText`.

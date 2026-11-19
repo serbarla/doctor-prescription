@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Source | `context/sitemap.md` §1.1–§1.3 (routes, non-routes), §2 (navigation by role), §3 (flows), §4 (current vs. target), §5 (conventions); `context/Design.md`; `context/PRD.md`; `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` (Page adoption table); the `Route` enum at `persona-sanus/src/main.rs:47-95` |
-| Purpose | Track which `context/screens/<Name>.md` specs exist and which are missing, and fix naming, shape, and write order for the ones not written yet. This file defines no screen: every screen's structure, copy, style, and states live in its own file |
+| Purpose | Track which `context/screens/done/<Name>.md` specs exist and which are missing, and fix naming, shape, and write order for the ones not written yet. This file defines no screen: every screen's structure, copy, style, and states live in its own file |
 | Doc status key | ✅ spec complete (sections 1–7 written) · 🟡 partial (file exists, sections incomplete) · ⬜ missing (no file) |
 | Route status key | Copied verbatim from `context/sitemap.md` §1.1/§1.2 — ✅ implemented · 🟡 partial · ⬜ planned. It tracks **code**, not this doc set; the two axes are independent (`Footer.md` is a complete spec with no shipped component; `SettingsUsers` ships while its sitemap cell still reads ⬜) |
 | Component column | Dioxus component and its current definition line in `persona-sanus/src/main.rs` (6,177 lines) |
@@ -49,40 +49,40 @@ A screen file never introduces a route, an endpoint, a table, a column, or a rol
 
 | Screen doc | Surface | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|---|:---:|
-| `Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `:1377` | 🟡 | ✅ |
-| `Footer.md` | Public footer band (`/`, `/login`, `/verify/:code`) | not shipped | ⬜ | ✅ |
+| `done/Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `:1377` | 🟡 | ✅ |
+| `done/Footer.md` | Public footer band (`/`, `/login`, `/verify/:code`) | not shipped | ⬜ | ✅ |
 
 ### 2.2 Public, no auth (sitemap §1.1)
 
 | Screen doc | Route | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|:---:|:---:|
-| `Home.md` | `/` | `Home` · `:1282` | ✅ | ✅ |
-| `AuthPage.md` | `/login` | `AuthPage` · `:1462` | ✅ | ✅ |
-| `Verify.md` | `/verify/:code` | `Verify` · `:1297` | ⬜ — see §3 | ✅ |
+| `done/Home.md` | `/` | `Home` · `:1282` | ✅ | ✅ |
+| `done/AuthPage.md` | `/login` | `AuthPage` · `:1462` | ✅ | ✅ |
+| `done/Verify.md` | `/verify/:code` | `Verify` · `:1297` | ⬜ — see §3 | ✅ |
 
 ### 2.3 Authenticated shell (sitemap §1.2)
 
 | Screen doc | Route | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|:---:|:---:|
-| `Dashboard.md` | `/dashboard` | `Dashboard` · `:1701` | 🟡 | ✅ |
-| `Patients.md` | `/patients` | `Patients` · `:2758` | ✅ | ✅ |
-| `PatientNew.md` | `/patients/new` | `PatientNew` · `:2954` | ✅ | ✅ |
-| `PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3128` | 🟡 | ✅ |
-| `PatientEdit.md` | `/patients/:id/edit` | `PatientEdit` · `:3358` | ✅ | ✅ |
-| `Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:4360` | 🟡 | ✅ |
-| `PrescriptionNew.md` | `/prescriptions/new` | `PrescriptionNew` · `:4595` | ✅ | ✅ |
-| `PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:5380` | 🟡 | ✅ |
-| `PrescriptionPreview.md` | `/prescriptions/:id/preview` | `PrescriptionPreview` · `:4939` | ✅ | ✅ |
-| `Templates.md` | `/templates` | `Templates` · `:3567` | ✅ | ✅ |
-| `TemplateNew.md` | `/templates/new` | `TemplateNew` · `:3680` | ✅ | ✅ |
-| `TemplateEdit.md` | `/templates/:id/edit` | `TemplateEdit` · `:3788` | ✅ | ✅ |
-| `TemplatePreview.md` | `/templates/:id/preview` | `TemplatePreview` · `:4049` | ✅ | ✅ |
-| `Settings.md` | `/settings` | `Settings` · `:1761` | ⬜ — see §3 | ✅ |
-| `SettingsClinic.md` | `/settings/clinic` | `SettingsClinic` · `:1804` | ✅ | ✅ |
-| `SettingsUsers.md` | `/settings/users` | `SettingsUsers` · `:2120` | ⬜ — see §3 | ✅ |
-| `SettingsProfile.md` | `/settings/profile` | `SettingsProfile` · `:2319` | ⬜ — see §3 | ✅ |
+| `done/Dashboard.md` | `/dashboard` | `Dashboard` · `:1701` | 🟡 | ✅ |
+| `done/Patients.md` | `/patients` | `Patients` · `:2758` | ✅ | ✅ |
+| `done/PatientNew.md` | `/patients/new` | `PatientNew` · `:2954` | ✅ | ✅ |
+| `done/PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3128` | 🟡 | ✅ |
+| `done/PatientEdit.md` | `/patients/:id/edit` | `PatientEdit` · `:3358` | ✅ | ✅ |
+| `done/Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:4360` | 🟡 | ✅ |
+| `done/PrescriptionNew.md` | `/prescriptions/new` | `PrescriptionNew` · `:4595` | ✅ | ✅ |
+| `done/PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:5380` | 🟡 | ✅ |
+| `done/PrescriptionPreview.md` | `/prescriptions/:id/preview` | `PrescriptionPreview` · `:4939` | ✅ | ✅ |
+| `done/Templates.md` | `/templates` | `Templates` · `:3567` | ✅ | ✅ |
+| `done/TemplateNew.md` | `/templates/new` | `TemplateNew` · `:3680` | ✅ | ✅ |
+| `done/TemplateEdit.md` | `/templates/:id/edit` | `TemplateEdit` · `:3788` | ✅ | ✅ |
+| `done/TemplatePreview.md` | `/templates/:id/preview` | `TemplatePreview` · `:4049` | ✅ | ✅ |
+| `done/Settings.md` | `/settings` | `Settings` · `:1761` | ⬜ — see §3 | ✅ |
+| `done/SettingsClinic.md` | `/settings/clinic` | `SettingsClinic` · `:1804` | ✅ | ✅ |
+| `done/SettingsUsers.md` | `/settings/users` | `SettingsUsers` · `:2120` | ⬜ — see §3 | ✅ |
+| `done/SettingsProfile.md` | `/settings/profile` | `SettingsProfile` · `:2319` | ⬜ — see §3 | ✅ |
 | `SettingsBilling.md` | `/settings/billing` (v1.1) | not routed | ⬜ v1.1 | ⬜ |
-| `Audit.md` | `/audit` | `Audit` · `:2634` | ⬜ — see §3 | ✅ |
+| `done/Audit.md` | `/audit` | `Audit` · `:2634` | ⬜ — see §3 | ✅ |
 
 ## 3. Where `context/sitemap.md` lags the code
 
@@ -102,38 +102,38 @@ Ordered by the primary flows of `context/sitemap.md` §3, so each file lands bef
 
 **Wave 1 — issue path (flows 1–2, PRD target < 60 s)**
 
-- [x] 1. `PrescriptionNew.md` — patient/template pickers from `?patient_id=&template_id=`, draft creation, one primary `Crear borrador`.
-- [x] 2. `PrescriptionDetail.md` — the largest state matrix in the app: `draft` vs. `signed`, four roles, sign/void/supersede, per-medication blocks, the external LLM link (FR-012), `RxBlockIndicator`.
-- [x] 3. `PrescriptionPreview.md` — true-scale A4 1:1, `Firmar y emitir`, PDF/print/share actions, provisional offline state with `PENDIENTE DE SINCRONIZACIÓN` and placeholder QR (FR-030–034, FR-043).
-- [x] 4. `AuthPage.md` — sign in / sign up, `es-EC` copy from the UI plan; shipped MFA challenge documented, device registration silent.
-- [x] 5. `Dashboard.md` — role-aware blocks, drafts, pending-sync widget (desktop), quick actions.
-- [x] 6. `Patients.md` — search by name/cédula, clinic scoping, duplicate warnings.
-- [x] 7. `PatientNew.md` — create form + deduplication notice.
-- [x] 8. `PatientDetail.md` — demographics, role-filtered actions, deep link into `/prescriptions/new`.
-- [x] 9. `PatientEdit.md` — same fields, sensitive-read audit note (§6).
+- [x] 1. `done/PrescriptionNew.md` — patient/template pickers from `?patient_id=&template_id=`, draft creation, one primary `Crear borrador`.
+- [x] 2. `done/PrescriptionDetail.md` — the largest state matrix in the app: `draft` vs. `signed`, four roles, sign/void/supersede, per-medication blocks, the external LLM link (FR-012), `RxBlockIndicator`.
+- [x] 3. `done/PrescriptionPreview.md` — true-scale A4 1:1, `Firmar y emitir`, PDF/print/share actions, provisional offline state with `PENDIENTE DE SINCRONIZACIÓN` and placeholder QR (FR-030–034, FR-043).
+- [x] 4. `done/AuthPage.md` — sign in / sign up, `es-EC` copy from the UI plan; shipped MFA challenge documented, device registration silent.
+- [x] 5. `done/Dashboard.md` — role-aware blocks, drafts, pending-sync widget (desktop), quick actions.
+- [x] 6. `done/Patients.md` — search by name/cédula, clinic scoping, duplicate warnings.
+- [x] 7. `done/PatientNew.md` — create form + deduplication notice.
+- [x] 8. `done/PatientDetail.md` — demographics, role-filtered actions, deep link into `/prescriptions/new`.
+- [x] 9. `done/PatientEdit.md` — same fields, sensitive-read audit note (§6).
 
 **Wave 2 — history and retention (flow 5, M2 states)**
 
-- [x] 10. `Prescriptions.md` — status filter (`draft → signed → superseded/voided`, FR-013), pending/failed sync rows, 30-day local-cache states and on-demand regeneration (desktop).
+- [x] 10. `done/Prescriptions.md` — status filter (`draft → signed → superseded/voided`, FR-013), pending/failed sync rows, 30-day local-cache states and on-demand regeneration (desktop).
 
 **Wave 3 — templates (flow 3)**
 
-- [x] 11. `Templates.md` — own + clinic master list, status and current version, `Use for prescription` deep link.
-- [x] 12. `TemplateNew.md` — create with owner/type hint.
-- [x] 13. `TemplateEdit.md` — letterhead/body/footer forms, variable insertion, image slots with the v1 one-image quota prompt, `Publish` pinning `asset_id`s (FR-020–024, FR-080–085).
-- [x] 14. `TemplatePreview.md` — A4 preview with sample values and pinned images.
+- [x] 11. `done/Templates.md` — own + clinic master list, status and current version, `Use for prescription` deep link.
+- [x] 12. `done/TemplateNew.md` — create with owner/type hint.
+- [x] 13. `done/TemplateEdit.md` — letterhead/body/footer forms, variable insertion, image slots with the v1 one-image quota prompt, `Publish` pinning `asset_id`s (FR-020–024, FR-080–085).
+- [x] 14. `done/TemplatePreview.md` — A4 preview with sample values and pinned images.
 
 **Wave 4 — public verification (flow 4)**
 
-- [x] 15. `Verify.md` — QR target page, four statuses, typed-code form (FR-034), zero PHI, rate-limit and `not found` shapes, no shell chrome beyond `Header`/`Footer`.
+- [x] 15. `done/Verify.md` — QR target page, four statuses, typed-code form (FR-034), zero PHI, rate-limit and `not found` shapes, no shell chrome beyond `Header`/`Footer`.
 
 **Wave 5 — admin and trust (M0/M3)**
 
-- [x] 16. `Settings.md` — hub plus the role redirects; no content beyond the links.
-- [x] 17. `SettingsClinic.md` — clinic data, logo, image library (1 × 10 MB in v1), retention dates, `llm_url_template`, export (FR-080–085).
-- [x] 18. `SettingsUsers.md` — staff table, role changes, disable/remove, device revocation (§9).
-- [x] 19. `SettingsProfile.md` — profile fields, TOTP MFA, password change, no signature/stamp asset (D-06).
-- [x] 20. `Audit.md` — filters, actor/action/entity table, sensitive-read and verification logs, 5-year append-only framing (§8).
+- [x] 16. `done/Settings.md` — hub plus the role redirects; no content beyond the links.
+- [x] 17. `done/SettingsClinic.md` — clinic data, logo, image library (1 × 10 MB in v1), retention dates, `llm_url_template`, export (FR-080–085).
+- [x] 18. `done/SettingsUsers.md` — staff table, role changes, disable/remove, device revocation (§9).
+- [x] 19. `done/SettingsProfile.md` — profile fields, TOTP MFA, password change, no signature/stamp asset (D-06).
+- [x] 20. `done/Audit.md` — filters, actor/action/entity table, sensitive-read and verification logs, 5-year append-only framing (§8).
 
 **Wave 6 — deferred, do not open yet**
 
@@ -145,10 +145,10 @@ Sitemap §1.3 non-routes fold into the screen that hosts them; no separate file,
 
 | Surface | Folded into | Why |
 |---|---|---|
-| *Explain with LLM* per medication | `PrescriptionDetail.md` | Opens an external tab from `clinics.llm_url_template` with the medication name only; no PHI, no page |
-| Download PDF · Print · Share | `PrescriptionPreview.md` (+ the row actions in `Prescriptions.md`) | `GET /api/prescriptions/:id/pdf` streams the `printpdf` render; the desktop writes it in-process. No PDF is stored |
-| Image upload / delete | `SettingsClinic.md` and `TemplateEdit.md` | Quota, format, and MinIO rules are one set; both hosts restate nothing |
-| Sync / outbox indicator | `Header.md` (+ the dashboard widget in `Dashboard.md`) | FR-043 lives in the shell; the pending count links to `/prescriptions?status=pending_sync` |
+| *Explain with LLM* per medication | `done/PrescriptionDetail.md` | Opens an external tab from `clinics.llm_url_template` with the medication name only; no PHI, no page |
+| Download PDF · Print · Share | `done/PrescriptionPreview.md` (+ the row actions in `done/Prescriptions.md`) | `GET /api/prescriptions/:id/pdf` streams the `printpdf` render; the desktop writes it in-process. No PDF is stored |
+| Image upload / delete | `done/SettingsClinic.md` and `done/TemplateEdit.md` | Quota, format, and MinIO rules are one set; both hosts restate nothing |
+| Sync / outbox indicator | `done/Header.md` (+ the dashboard widget in `done/Dashboard.md`) | FR-043 lives in the shell; the pending count links to `/prescriptions?status=pending_sync` |
 | PayPhone checkout + confirmation | `SettingsBilling.md` (v1.1) | External payment button; no card form in PersonaSanus |
 | Renewal / retention / purge jobs | `context/runbook.md`, `context/architecture.md` | In-process scheduler, no surface |
 | Auth API (`/api/auth/*`) | `context/architecture.md` | Endpoints, not Dioxus routes |

@@ -32,7 +32,7 @@ It never renders:
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar | `header.ui-navbar` | Paper `#ffffff` | Shared shell band, owned by `context/screens/Header.md`; this page adds nothing |
+| — | Navbar | `header.ui-navbar` | Paper `#ffffff` | Shared shell band, owned by `context/screens/done/Header.md`; this page adds nothing |
 | 1 | Header | `#prescriptions-page` · `div.ui-page > div.ui-container.ui-stack`; `header.ui-page-head` | Paper | `PageHeader`: only `h1` is the authorized patient name; subtitle is state, number, date; actions are Secondary `Vista previa A4` and Secondary `Volver` |
 | 2 | RX block | `.ui-rx-block` | Paper; Cream strip `#fffded` | `RxBlockIndicator`: count, no-block, exhausted warning, Secondary `Reservar bloque` |
 | 3 | Page message | `.ui-notice--error` / `.ui-error` | Paper; Blossom `#ffc3e6` | Load, save, item, sign, void, and supersede errors; absent when empty |
@@ -323,7 +323,7 @@ Line icons only, 1.5px stroke, 24-unit view box, Ink or Deep Teal (Mist for the 
 - Read/void deltas: `Card` + `DetailGrid`/`DetailItem` with code, §3.7 state, and stored reason; `ActionRow` Secondary replace and Danger void; inline `ConfirmPanel` with `TextField` bound to `void_reason`; keep trimmed reason, `void_prescription_dispatch`, and server-side audit. Add no supersede/audit endpoint. English token mapping at `:5747`: `valid` → `Válido`, `voided` → `Anulado`, `superseded` → `Reemplazado`; status enum maps to `Borrador`, `Firmada`, `Reemplazada`, `Anulada`, and the old `Desconocida` fallback becomes `Desconocido`.
 - Desktop/web branches stay: cache read/item load, update/item-upsert fallbacks, sign/void/supersede dispatch, block cache, and the below-760px/below-640px layouts. This component contains no PDF/print/share/QR/A4 call; those belong to `/prescriptions/:id/preview`.
 - Verify, from the repo root:
-  - `python3 .blocks/markdown-table-check.py --path context/screens/PrescriptionDetail.md --strict`
+  - `python3 .blocks/markdown-table-check.py --path context/screens/done/PrescriptionDetail.md --strict`
   - `cd persona-sanus && cargo check`
   - `cd persona-sanus && cargo check --no-default-features --features desktop`
   - `cd persona-sanus && dx build --release --fullstack`

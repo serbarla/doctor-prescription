@@ -35,7 +35,7 @@ One centered page column, Paper, two `SectionCard`s. Each card owns one `DataTab
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3 |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3 |
 | 1 | Page canvas | `PageShell id="settings-page"` → `div#settings-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; 1200px container; 24px stack gap |
 | 2 | Page header | `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` | Paper | `Usuarios y roles`; `Asigna un rol o deshabilita el acceso de cada persona.`; no action |
 | 3 | Feedback | `ErrorText` | Paper | One page-level message slot above the cards; `role="alert"`; only when non-empty |
@@ -363,7 +363,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/SettingsUsers.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/SettingsUsers.md --strict
 ```
 
 The smoke script covers auth, not this admin table. A browser pass needs: Administrator with at least two profiles and two devices; Doctor denied; role change; disable/enable; remove with confirm; revoke; last-Administrator refusal (set a clinic with one admin); unknown role through a stale client (or service test); 320px stacked rows.

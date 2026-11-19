@@ -5,7 +5,7 @@
 | Source | `context/sitemap.md` §1.1 (`/login` — all staff pre-auth; sign in / sign up), §2 (`/login` for Administrator, Doctor, Nursing, Secretary; not the public verifier), §3 flow 1 (`/login` → `/dashboard`), §4 (shipped auth module; the sitemap leaves MFA and device registration at M3, shipped under specs 12-L and 04-D), §5 (locale; no PHI in URLs); `context/PRD.md` §3 (roles; server-side authorization), §9 (MFA for doctors/administrators; registered and revocable devices), §11 M3, D-04, D-06, D-21; `context/Design.md` Primary Action Button, Outlined Secondary Button, Ghost Nav Button, Form Input and Textarea, Spacing & Shapes, Elevation, Layout, Imagery; `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` step 10, page-adoption shared rules, `PageShell`, `PageHeader`, `Card`, `FormGrid`, `DetailGrid`, `DetailItem`, `ActionRow`, `TextField`, `Button`, `ButtonLink`, `ErrorText`; `context/screens/INDEX.md` §2.2 |
 | Component | `AuthPage` — `persona-sanus/src/main.rs:1462` (body 1462–1698). Composes planned primitives from `persona-sanus/src/ui/` (planned, not shipped): `layout::PageShell`, `layout::PageHeader`, `layout::Card`, `layout::FormGrid`, `layout::DetailGrid`, `layout::DetailItem`, `layout::ActionRow`, `form::TextField`, `button::Button`, `button::ButtonLink`, `feedback::ErrorText` |
 | Route | `/login` (`Route::AuthPage {}`), declared `persona-sanus/src/main.rs:54-55`. Public: no session guard, no role guard, no query params, no path param. Signed-out submit posts to the auth API; a successful sign-in or MFA verification sets the session and pushes `/dashboard` (`Route::Dashboard {}`). `Panel` pushes `/dashboard`; `Cerrar sesión` posts sign-out, clears persisted state, and pushes `/` (`Route::Home {}`). No `next` parameter, no hash form |
-| Layout | Inside `#[layout(Navbar)]`, opened at `persona-sanus/src/main.rs:51` and never closed. `PageShell id="auth-page"` on every branch. Signed-out: `.ui-auth-shell` (max 440, centered vertically, 64px top margin) holding `.ui-auth-head`, `.ui-segmented`, and one `Card`. Signed-in: `PageHeader` plus one `Card`. All bands Paper; no tinted band, no full-bleed region, no sidebar. The navbar band renders above the page and is owned by `context/screens/Header.md` |
+| Layout | Inside `#[layout(Navbar)]`, opened at `persona-sanus/src/main.rs:51` and never closed. `PageShell id="auth-page"` on every branch. Signed-out: `.ui-auth-shell` (max 440, centered vertically, 64px top margin) holding `.ui-auth-head`, `.ui-segmented`, and one `Card`. Signed-in: `PageHeader` plus one `Card`. All bands Paper; no tinted band, no full-bleed region, no sidebar. The navbar band renders above the page and is owned by `context/screens/done/Header.md` |
 | Locale | `es-EC` on every string. `receta`, `cédula` keep Ecuador Spanish spelling. Dates elsewhere use `DD-MM-AAAA`; times use 24-hour. This screen displays no dates or times |
 | Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap §1.1 ships `/login` for all staff pre-auth ("Sign in / sign up (Diesel-backed auth module)") and leaves the MFA step and device registration at M3, ⬜. Shipped: email/password sign-in and sign-up, the MFA challenge, silent device registration after session success, the signed-in identity card, and sign-out. Target: the same route with the §1–§7 presentation; no new route |
 
@@ -28,7 +28,7 @@ It never renders password reset, email verification, SSO or social sign-in, role
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper | Owned by `context/screens/Header.md` §2: brand, role-guarded links, sync indicator, session email, ghost sign-out or sign-in |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper | Owned by `context/screens/done/Header.md` §2: brand, role-guarded links, sync indicator, session email, ghost sign-out or sign-in |
 | 1 | Page shell | `#auth-page` · `.ui-page` > `.ui-container.ui-stack` | Paper | `PageShell` root for both branches. 48px top, 80px bottom, 24px inline; 1200px container; 24px stack gap |
 | 2 | Signed-out stage | `.ui-auth-shell` | Paper | Only when `user()` is `None`. Max 440px, centered, 64px top margin, one column. Holds 2.1 and either 2.2–2.3 or 2.4 |
 | 2.1 | Auth head | `.ui-auth-head` · `h1.ui-auth-title` | Paper | Centered `h1`; padding-top 8px, 24px bottom margin. No subtitle: `.ui-auth-sub` is not emitted |
@@ -38,7 +38,7 @@ It never renders password reset, email verification, SSO or social sign-in, role
 | 3 | Signed-in stage | `#auth-page` > `PageHeader` + `.ui-card` | Paper | Only when `user()` is `Some`. Replaces 2. No form, no segmented control, no error surface |
 | 3.1 | Account header | `.ui-page-head` · `h1.ui-page-title` | Paper | `Sesión iniciada`; no subtitle, no header actions |
 | 3.2 | Account card | `.ui-card` > `DetailGrid` + `ActionRow` | Paper | `Nombre` and `Correo` items; Secondary `ButtonLink` `Panel`; Ghost `Button` `Cerrar sesión` |
-| 4 | Public footer | `<footer id="ui-footer">` | Paper | Signed-out branch only; appended by `context/screens/Footer.md` §2, which owns its structure and copy. The navbar and the page do not restate it |
+| 4 | Public footer | `<footer id="ui-footer">` | Paper | Signed-out branch only; appended by `context/screens/done/Footer.md` §2, which owns its structure and copy. The navbar and the page do not restate it |
 
 There is no `SectionCard`, so the page has no `h2`. The navbar is the only banner and navigation landmark. No region uses a chromatic border or a shadow.
 
@@ -90,7 +90,7 @@ Errors are one `ErrorText` line inside the active card, after the fields and bef
 
 ## 3. Copy text
 
-All strings are `es-EC`, sentence case, punctuation included. Chrome copy is by reference only: navbar strings belong to `context/screens/Header.md` §3, footer strings to `context/screens/Footer.md` §3. The signed-out stage hosts the public footer band; its copy is owned there and not repeated here.
+All strings are `es-EC`, sentence case, punctuation included. Chrome copy is by reference only: navbar strings belong to `context/screens/done/Header.md` §3, footer strings to `context/screens/done/Footer.md` §3. The signed-out stage hosts the public footer band; its copy is owned there and not repeated here.
 
 ### 3.1 Headings
 
@@ -364,7 +364,7 @@ Verification, in order:
 - Manual browser check with MFA enrolled: a Doctor or Administrator sign-in swaps credentials for the challenge with `Verificar código` as the only filled button; an empty code shows `Ingresa el código de verificación.`; a wrong code shows `El código de verificación no es válido o ha expirado.` and leaves the field retryable; `Volver` restores credentials; a valid code reaches `/dashboard`. The smoke script does not cover MFA.
 - Manual signed-in check on `/login`: `Sesión iniciada`, name, email, `Panel`, `Cerrar sesión`, no filled Primary; `Cerrar sesión` lands on `/` and a subsequent `/login` shows the signed-out form.
 - Desktop offline with and without a persisted session: the signed-in card and the transport-error form behave as §4.3; device registration shows no UI and never blocks the dashboard push.
-- `caveman-blocks run markdown-table-check --path context/screens/AuthPage.md --strict` passes.
+- `caveman-blocks run markdown-table-check --path context/screens/done/AuthPage.md --strict` passes.
 
 - Do not add: password reset or a "forgot password" link; email verification or resend; SSO, OAuth, magic link, or social sign-in; role, clinic, or invitation selection; a remember-me checkbox; terms, privacy, or consent acceptance; a show-password/reveal toggle; a password confirmation field; a strength meter; a client-side email regex or eight-character check; a native form submit; an MFA countdown, attempt limit, resend, or local expiry decision; a device list, device name, registration status, or retry control; a profile-completion prompt; a second filled Primary; a link to `/settings/billing`; billing, price, trial, plan, or `sync_locked` copy; a signature, stamp, or ink image; a rich-text or `contenteditable` surface; a patient field, PHI, or patient example; a new route, endpoint, table, column, role, or permission; storing the ticket, email, or password in browser storage or the URL; auto-redirecting a signed-in visitor away from `/login`.
 

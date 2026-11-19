@@ -30,7 +30,7 @@ One Paper column in a 24px stack. The page header mounts first, the form card se
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3; renders above the page unchanged; no screen copy repeated here |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3; renders above the page unchanged; no screen copy repeated here |
 | 1 | Page shell | `PageShell id="patients-page"` → `div#patients-page.ui-page` > `.ui-container.ui-stack` | Paper `#ffffff` | 48px top padding, 80px bottom, 24px inline; container max 1200px; 24px vertical stack gap |
 | 2 | Page header | `PageHeader` → `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | Title `Editar paciente`; subtitle `Los cambios se auditan en la ficha del paciente.`; one Secondary `ButtonLink` `Cancelar` → `/patients/{id}` |
 | 3 | Form card | `Card` → `div.ui-card` | Paper, 1px hairline, 24px radius, 24px padding | `FormGrid columns=Two` with six fields in §3.1, in shipped order; no card heading; notes spans both columns |
@@ -76,7 +76,7 @@ The same component, labels, role gate, and validation run on web and desktop. Th
 
 Notes are a plain textarea. A long value wraps inside the control or scrolls it vertically; `resize: vertical` allows the operator to grow it. The value never widens the page, becomes HTML, or appears rendered elsewhere on this screen.
 ## 3. Copy text
-All strings are verbatim `es-EC`; punctuation belongs to the copy. Navbar strings are owned by `context/screens/Header.md` §3 and are not repeated. No label is English.
+All strings are verbatim `es-EC`; punctuation belongs to the copy. Navbar strings are owned by `context/screens/done/Header.md` §3 and are not repeated. No label is English.
 ### 3.1 Page and fields
 | Element | Copy |
 |---|---|
@@ -240,7 +240,7 @@ Verification commands, run from the repo root; none is recorded here as executed
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/PatientEdit.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/PatientEdit.md --strict
 ```
 
 - Do not add: a new route, endpoint, query parameter, table, column, role, permission, or field; editable `id`, clinic, timestamps, audit, photo, signature, or stamp controls.

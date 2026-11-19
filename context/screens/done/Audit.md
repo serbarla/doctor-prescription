@@ -35,7 +35,7 @@ One centered column, Paper. Header, filters, feedback, one table. The table is t
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/Header.md` §2–§3; not restated |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | — | Owned by `context/screens/done/Header.md` §2–§3; not restated |
 | 1 | Page canvas | `PageShell id="audit-page"` → `div#audit-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; 1200px container; 24px stack gap |
 | 2 | Page header | `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` | Paper | `Auditoría`; `Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto.`; no header action |
 | 3 | Filters | `FilterBar` → `.ui-filter-bar` | Paper | TextField `Acción`; TextField `Entidad`; TextField `Buscar`; Primary `Filtrar` |
@@ -324,7 +324,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/Audit.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/Audit.md --strict
 ```
 
 The smoke script covers auth, not this Administrator table. A browser pass needs: Administrator `/audit`; Doctor denied (no filters); empty filter result; a known `sensitive_read` row; unknown action/entity; long metadata; 320px table wrapper; 200% zoom.

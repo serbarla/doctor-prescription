@@ -34,7 +34,7 @@ One centered column: header, controls, warning, canvas. The sheet is the only la
 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | Paper | Owned by `context/screens/Header.md` §2–§3; not restated |
+| — | Navbar (layout) | `header.ui-navbar` → `.ui-navbar-inner` | Paper | Owned by `context/screens/done/Header.md` §2–§3; not restated |
 | 1 | Page shell | `PageShell id="templates-page"` → `div#templates-page.ui-page > .ui-container.ui-stack` | Paper `#ffffff` | 48px top, 80px bottom, 24px inline; container max 1200px; 24px stack gap |
 | 2 | Page header | `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | `Vista previa A4 — {model.name}`; `210 × 297 mm con valores de ejemplo.`; Secondary `Volver a plantillas` and `Abrir editor`; no Primary |
 | 3 | Controls | `Card` + `FormGrid columns=Two` | Paper | `SelectField` `Versión`; `TextField` `Márgenes (mm)`, numeric, 5–40 step 1 |
@@ -91,7 +91,7 @@ At 760px and below: header actions stack under the title, controls become one co
 
 ## 3. Copy text
 
-Every visible string is `es-EC`, quoted with final punctuation where the source has it. Chrome copy belongs to `context/screens/Header.md` §3 and is not repeated.
+Every visible string is `es-EC`, quoted with final punctuation where the source has it. Chrome copy belongs to `context/screens/done/Header.md` §3 and is not repeated.
 
 ### 3.1 Page header and actions
 
@@ -303,7 +303,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/TemplatePreview.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/TemplatePreview.md --strict
 ```
 
 A browser pass is needed for: a template with one version and no images; a version with a referenced logo/image; a version with an unknown variable; a template with zero versions; and an archived template. The desktop offline case must show the error, not a cached sheet.

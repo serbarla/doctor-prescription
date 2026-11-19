@@ -37,7 +37,7 @@ One Paper page, a stack of 24px gaps, descending from the navbar. Header and fil
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper | Owned by `context/screens/Header.md` §2–§5; identity, sync indicator, links only |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper | Owned by `context/screens/done/Header.md` §2–§5; identity, sync indicator, links only |
 | 1 | Page shell | `#prescriptions-page` · `div.ui-page` > `.ui-container.ui-stack` | Paper | 48px top padding, 80px bottom, 24px inline; stack gap 24px |
 | 2 | Page header | `.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | `Recetas`, the history subtitle, and at most one Primary at the inline end |
 | 3 | Filters | `.ui-filter-bar` | Paper | `SearchField` `Paciente`; `SelectField` `Estado`; `TextField` `Fecha` with date input |
@@ -105,7 +105,7 @@ A long patient name wraps within the title column while the action group keeps i
 
 ## 3. Copy text
 
-All strings are verbatim `es-EC`; punctuation belongs to the copy. Chrome strings are owned by `context/screens/Header.md` §3 and `context/screens/Footer.md` §3 and are not repeated here.
+All strings are verbatim `es-EC`; punctuation belongs to the copy. Chrome strings are owned by `context/screens/done/Header.md` §3 and `context/screens/done/Footer.md` §3 and are not repeated here.
 
 ### 3.1 Page header and primary action
 
@@ -355,7 +355,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/Prescriptions.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/Prescriptions.md --strict
 ```
 
 The smoke script covers `/prescriptions` for an authenticated actor; the pending and failed desktop views need a browser or the desktop probe because they read the local cache. A doctor role pass must show the intended own-scope behavior only after the service gap above closes; today it shows the clinic-wide list, and this spec must not claim otherwise.

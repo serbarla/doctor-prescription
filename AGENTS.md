@@ -32,7 +32,7 @@ Read the matching file in `context/` before changing that area; they are the sou
 | `context/architecture.md`    | System shape, crate/module layout, runtime and deploy topology, feature status — before adding a dependency, route, or service. |
 | `context/database-design.md` | Schema, ids, timestamps, immutability, PHI rules, migrations — before any table, column, or Diesel change.                      |
 | `context/sitemap.md`         | Routes, layout shell, auth guards, status per screen — before adding or moving a page.                                          |
-| `context/screens/INDEX.md`   | Per-screen design specs in `context/screens/` — which exist, which are missing, and the shape each follows — before writing, renaming, or deleting a screen file. |
+| `context/screens/INDEX.md`   | Per-screen design specs in `context/screens/done/` — which exist, which are missing, and the shape each follows — before writing, renaming, or deleting a screen file. |
 | `context/Design.md`          | Colors, typography, spacing tokens, component styling — before writing UI markup or CSS.                                        |
 
 

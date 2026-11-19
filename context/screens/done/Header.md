@@ -207,14 +207,14 @@ The filled `Cross` glyph inside the logo mark (`Icon` `Cross`, `fill="currentCol
 - One delta against the plan, recorded because sitemap §1.3 and INDEX §5 make the pending count a link while `SyncStatusIndicator` is contractually link-free: in the band the `· {n} pendientes` suffix is host-rendered as `Link.ui-sync-link.ui-sync-link--pending` instead of being emitted by the indicator, and `.ui-sync-link` gains a `--pending` tone (Mist text, Deep Teal hover) beside the existing Plum default for the failed link. `SyncStatusIndicator` keeps its plain, unlinked suffix for surfaces with no link of their own (the `Dashboard.md` widget). No other primitive contract changes.
 - Do not change the layout graph here. `/verify/:code` already sits outside `#[layout(Navbar)]` (§2.2), so nothing about the plan step 12 public head conflicts with this band. If `#[end_layout]` and a public layout group land, `/` and `/login` move out and this file covers the shell band only; `context/architecture.md` §5 already records the current split.
 - The `Mi perfil` / `Usuarios` / `Auditoría` removal is coupled to plan step 13 (Settings hub gains the `Auditoría` card). Land them together or keep `Auditoría` in the bar until step 13 ships.
-- `context/screens/Home.md` keeps its §2 navbar row, points at this file for §3.1 copy, and defers the sync row to §4 here; no Home band, CTA, or hero copy changes.
+- `context/screens/done/Home.md` keeps its §2 navbar row, points at this file for §3.1 copy, and defers the sync row to §4 here; no Home band, CTA, or hero copy changes.
 - Verify, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; then
   - `curl -s http://127.0.0.1:8080/` contains `class="ui-navbar"`, `PersonaSanus`, `Receta verificable`, and `Iniciar sesión`; contains no `Sign in`, no `Mi perfil`, and no `ui-button--primary` inside the band (the hero keeps exactly one);
   - `curl -s http://127.0.0.1:8080/verify/PS-TEST` contains no `ui-navbar` — the layout claim of §2.2, held by the route declaration order;
   - a signed-in browser pass on `/dashboard` shows exactly five links with `Panel` active, the email, and `Cerrar sesión`, and no `Home`, `Usuarios`, or `Auditoría` entries;
   - desktop with a queued prescription: the band shows `Sincronizando` and `· {n} pendientes`, and that link lands on `/prescriptions?status=pending_sync` with the select preset to `Pendientes de sincronización`;
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` still returns `"ok": true`;
-  - `caveman-blocks run markdown-table-check --path context/screens/Header.md` passes.
+  - `caveman-blocks run markdown-table-check --path context/screens/done/Header.md` passes.
 - Do not add: a sixth nav entry, a dropdown or hamburger, a filled teal action in the band, a search field, an avatar, a notification bell, a sticky or fixed position, a language switcher, legal text, or a sync label that hides a non-zero count.
 
 ## 8. Spec references

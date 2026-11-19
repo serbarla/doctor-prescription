@@ -38,7 +38,7 @@ One Paper page, a stack of 24px gaps under the navbar. The header remains mounte
 
 | Order | Region | id / class | Band tone | Contents |
 |---|---|---|---|---|
-| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/Header.md` §2–§5; not restated here |
+| — | Navbar (layout) | `#navbar` · `header.ui-navbar` | Paper `#ffffff`, bottom hairline | Owned by `context/screens/done/Header.md` §2–§5; not restated here |
 | 1 | Page shell | `#templates-page` · `div.ui-page` > `.ui-container.ui-stack` | Paper | 48px top, 80px bottom, 24px inline; container max 1200px; 24px stack gap |
 | 2 | Page header | `header.ui-page-head` · `h1.ui-page-title` · `p.ui-page-subtitle` · `.ui-page-head-actions` | Paper | Page title and subtitle, then one Primary `ButtonLink` at the inline end |
 | 3 | Feedback | `.ui-error` | Paper | `ErrorText` fetch-failure line, Alert icon, `role="alert"`; only when the message signal is non-empty |
@@ -106,7 +106,7 @@ The denial surface replaces everything below the chrome, not the navbar. It is a
 
 ## 3. Copy text
 
-All visible strings verbatim, `es-EC`; punctuation is part of the copy. Chrome copy belongs to `context/screens/Header.md` and is not repeated here. `{owner}` is the owner label, `{n}` is the current version number, and `{status}` is a status label from §3.2.
+All visible strings verbatim, `es-EC`; punctuation is part of the copy. Chrome copy belongs to `context/screens/done/Header.md` and is not repeated here. `{owner}` is the owner label, `{n}` is the current version number, and `{status}` is a status label from §3.2.
 
 ### 3.1 Page header, primary, loading, denial
 
@@ -334,7 +334,7 @@ Verification commands, from the repo root; none is recorded here as executed:
 cd persona-sanus && cargo check
 dx build --release --fullstack
 caveman-blocks run persona-smoke --dir persona-sanus --port 8091
-python3 .blocks/markdown-table-check.py --path context/screens/Templates.md --strict
+python3 .blocks/markdown-table-check.py --path context/screens/done/Templates.md --strict
 ```
 
 The smoke script covers authenticated navigation; a browser pass is needed for the three row states (draft, published with a current version, archived) and for the administrator vs doctor scope.

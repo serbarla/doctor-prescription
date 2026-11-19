@@ -21,8 +21,8 @@ This is the final consolidation gate for the split UI work. It must not add a ne
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Remove the old style system — requirements: in `persona-sanus/assets/main.css`, delete every legacy selector and ID listed in section 8 after no release page emits it. Keep `.a4-*` as the print projection. Keep `#navbar` only as the semantic id on `header.ui-navbar`, never as a style hook. Replace every remaining page-ID width rule with `.ui-page` and `.ui-container`; `.ui-container--narrow` and `.ui-container--reading` are only for explicit markup and are not exposed by `PageShell`. Reduce the `.a4-page` shadow to `var(--shadow-paper)` and replace its literal `#111111` with `var(--color-ink)`; do not change mm sizes, page boxes, pagination, QR layout, or print fonts. Do not add comments. Do not add a replacement page-specific selector; reuse the shared `.ui-*` layer. Keep the focus utility and the one-primary rule intact. Run the section 3 source audits against the section 8 list; commands: `cd persona-sanus && cargo fmt --check`; `cd persona-sanus && cargo check`; `cd persona-sanus && cargo clippy -- -D warnings`; `cd persona-sanus && cargo check --no-default-features --features desktop`.
-- [ ] Update the source-of-truth docs and close the split — requirements: add a `src/ui/` row to the module map in `context/architecture.md` describing a shared client module that owns the design-token contract and reusable UI primitives, and explicitly has no SQL, HTTP handlers, storage, or business rules. Add `/dev/ui` under `context/sitemap.md` §1.1 Public as a debug-only developer surface, not a product route. Add a short `Component library` section to `persona-sanus/README.md`: shared components live in `src/ui`, styles live in `assets/main.css`, debug builds expose `/dev/ui`, release builds do not expose the gallery. Do not edit `context/PRD.md`, `context/Design.md`, or billing status. When section 3 passes, move this file and every split predecessor from `specs/` to `specs/done/`; if any divergence is open, leave the owning file in `specs/` and record its tracking file; commands: `rg -n 'src/ui/' context/architecture.md`; `rg -n '/dev/ui' context/sitemap.md`; `rg -n 'Component library|/dev/ui|src/ui' persona-sanus/README.md`.
+- [x] Remove the old style system — requirements: in `persona-sanus/assets/main.css`, delete every legacy selector and ID listed in section 8 after no release page emits it. Keep `.a4-*` as the print projection. Keep `#navbar` only as the semantic id on `header.ui-navbar`, never as a style hook. Replace every remaining page-ID width rule with `.ui-page` and `.ui-container`; `.ui-container--narrow` and `.ui-container--reading` are only for explicit markup and are not exposed by `PageShell`. Reduce the `.a4-page` shadow to `var(--shadow-paper)` and replace its literal `#111111` with `var(--color-ink)`; do not change mm sizes, page boxes, pagination, QR layout, or print fonts. Do not add comments. Do not add a replacement page-specific selector; reuse the shared `.ui-*` layer. Keep the focus utility and the one-primary rule intact. Run the section 3 source audits against the section 8 list; commands: `cd persona-sanus && cargo fmt --check`; `cd persona-sanus && cargo check`; `cd persona-sanus && cargo clippy -- -D warnings`; `cd persona-sanus && cargo check --no-default-features --features desktop`.
+- [x] Update the source-of-truth docs and close the split — requirements: add a `src/ui/` row to the module map in `context/architecture.md` describing a shared client module that owns the design-token contract and reusable UI primitives, and explicitly has no SQL, HTTP handlers, storage, or business rules. Add `/dev/ui` under `context/sitemap.md` §1.1 Public as a debug-only developer surface, not a product route. Add a short `Component library` section to `persona-sanus/README.md`: shared components live in `src/ui`, styles live in `assets/main.css`, debug builds expose `/dev/ui`, release builds do not expose the gallery. Do not edit `context/PRD.md`, `context/Design.md`, or billing status. When section 3 passes, move this file and every split predecessor from `specs/` to `specs/done/`; if any divergence is open, leave the owning file in `specs/` and record its tracking file; commands: `rg -n 'src/ui/' context/architecture.md`; `rg -n '/dev/ui' context/sitemap.md`; `rg -n 'Component library|/dev/ui|src/ui' persona-sanus/README.md`.
 
 ## 2. No-go
 
@@ -43,7 +43,7 @@ This is the final consolidation gate for the split UI work. It must not add a ne
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] Static and both targets pass:
+- [x] Static and both targets pass:
 ```
 cd persona-sanus
 cargo fmt --check
@@ -53,13 +53,13 @@ cargo check --no-default-features --features desktop
 ```
 Expected: exit 0 for all. The desktop command proves the shared controls and adopted desktop branches compile without the web/server cheats.
 
-- [ ] Release integration passes:
+- [x] Release integration passes:
 ```
 caveman-blocks run persona-smoke --dir persona-sanus --port 8094
 ```
 Expected: one JSON object with `"ok": true`, every value in `checks` true, and `"port": 8094`; exit 0.
 
-- [ ] Debug gallery static proof passes:
+- [x] Debug gallery static proof passes:
 ```
 set -euo pipefail
 cd persona-sanus
@@ -93,7 +93,7 @@ test "$(grep -oE '<(a|button)[^>]*class="[^"]*ui-button--primary[^"]*"' "${tmpdi
 ```
 Expected: no output, exit 0.
 
-- [ ] Release gallery absence passes:
+- [x] Release gallery absence passes:
 ```
 set -euo pipefail
 cd persona-sanus
@@ -109,7 +109,7 @@ grep -q 'solo existe en compilaciones de desarrollo' "${tmpdir}/release-gallery.
 ```
 Expected: exit 0.
 
-- [ ] Source audits pass:
+- [x] Source audits pass:
 ```
 rg -n '\b(button|input|select|textarea) \{' persona-sanus/src/main.rs persona-sanus/src/forms.rs
 rg -n 'contenteditable|execCommand|innerHTML|WYSIWYG|rich-text' persona-sanus/src
@@ -119,7 +119,7 @@ rg -n '(\.(button|badge|notice|error|hint|page-head|actions|form-grid|field|deta
 ```
 Expected: all five return no matches (exit 1). The first command is checked from the repo root; if a match is an SVG path attribute containing `input {`, inspect; only raw RSX form controls count.
 
-- [ ] Extra visual/source audits pass:
+- [x] Extra visual/source audits pass:
 ```
 rg -n -P 'box-shadow:\s*(?!none\b|0 0 0 3px var\(--color-mint-halo\)|var\(--shadow-paper\))' persona-sanus/src/ui persona-sanus/assets/main.css
 rg -n -B1 'font-weight: *700|font-weight: *bold' persona-sanus/src/ui persona-sanus/assets/main.css
@@ -129,7 +129,7 @@ rg -n '#111111|0 2px 12px rgba\(0, 0, 0, 0\.18\)' persona-sanus/assets/main.css
 ```
 Expected: the first, third, and fifth return no matches; the second prints one block at `.a4-doctor`; the fourth prints only `.ui-spinner` blocks: the base animation and the reduced-motion override. No `font-weight: 700` outside the A4 document projection.
 
-- [ ] Docs checks pass:
+- [x] Docs checks pass:
 ```
 rg -n 'src/ui/' context/architecture.md
 rg -n '/dev/ui' context/sitemap.md
@@ -137,7 +137,7 @@ rg -n 'Component library|/dev/ui|src/ui' persona-sanus/README.md
 ```
 Expected: architecture has the shared client module row with `no SQL, HTTP handlers, storage, or business rules`; sitemap §1.1 Public labels `/dev/ui` debug-only and not a product route; README has the `Component library` section with `src/ui`, `assets/main.css`, `/dev/ui`, and release absence. Diff review confirms `context/PRD.md` and `context/Design.md` were not edited, and no billing status or `/settings/billing` surface changed.
 
-- [ ] Manual browser gate passes with a throwaway database:
+- [x] Manual browser gate passes with a throwaway database:
 ```
 cd persona-sanus
 dx serve --fullstack --port 8097
@@ -149,7 +149,7 @@ Open:
 - `http://127.0.0.1:8097/verify/NO-EXISTE`: `Receta no encontrada`; no patient, cédula, diagnosis, or medication label. Use a valid signed code to see `Receta auténtica` with only doctor, date, and number.
 - Authenticated: `/patients` search/empty/create/detail/edit; `/templates` edit/publish/preview; `/prescriptions` filters/preview/sign; `/settings`, `/settings/clinic`, `/settings/users`, `/settings/profile`, `/audit` loaded as an administrator. Confirm focused controls show the ring, rows stack below 640, the three steps stack below 900, and only tables or A4 previews scroll horizontally. Tab through auth, gallery, patient form, template form, and the billing demo for visible focus.
 
-- [ ] Split closure passes:
+- [x] Split closure passes:
 ```
 for name in \
   15-O-ui-tokens-actions-and-formatting \
@@ -168,8 +168,8 @@ done
 ```
 Expected: exit 0 after all 11 files move. If the command fails, the named file has an open divergence: leave it in `specs/`, create or link `specs/divergences/` naming the blocking criteria, keep this box unchecked, and record the divergence in section 4.
 
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -179,7 +179,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -190,7 +190,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
 
 ## 5. Context
 

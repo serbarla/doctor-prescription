@@ -47,6 +47,10 @@ Guards:
 - Writes are rejected via `sqlite3_stmt_readonly`; multiple statements are rejected.
 - GET only; no write endpoint is mounted.
 
+## Component library
+
+Shared components live in `src/ui/` (design-token contract and reusable `.ui-*` primitives), and the styles live in `assets/main.css`. Debug builds expose the component gallery at `/dev/ui`; release builds do not expose the gallery — `/dev/ui` answers with the development-only notice.
+
 Environment variables (all optional in development):
 
 | Variable | Default | Purpose |

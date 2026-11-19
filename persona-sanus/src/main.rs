@@ -5089,6 +5089,7 @@ fn Prescriptions(status: Option<String>) -> Element {
     let user = use_context::<Signal<Option<SessionUser>>>();
     let actor = use_context::<Signal<Option<Me>>>();
     let checked = use_context::<Signal<bool>>();
+    #[allow(unused_variables)]
     let sync = use_context::<Signal<SyncStatus>>();
     let navigator = use_navigator();
     let mut rows = use_signal(Vec::<api::Prescription>::new);

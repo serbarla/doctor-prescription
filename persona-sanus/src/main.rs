@@ -38,16 +38,16 @@ mod update;
 #[cfg(feature = "server")]
 mod verify_server;
 use crate::ui::{
-    device_name_label, format_date, last_seen_label, optional_date, platform_label,
-    prescription_status_label, role_label, sex_label, status_label, template_owner_label,
-    template_status_label, version_status_label, A4MockKind, AccentTone, ActionRow, Badge,
-    BadgeTone, Button, ButtonLink, ButtonVariant, Card, ConfirmPanel, DetailGrid, DetailItem,
-    EmptyState, ErrorText, FilterBar, FormColumns, FormGrid, Hero, HintText, LinkAction, ListRow,
-    LlmExplainLink, LoadingState, LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard,
-    PageHeader, PageShell, PillBadge, PrescriptionStatusBadge, RxBlockIndicator, SearchField,
-    SectionBand, SectionCard, SectionHeader, SelectField, SurfaceTone, SyncStatus,
-    SyncStatusIndicator, TemplateStatusBadge, TextAreaField, TextField, TrustSecurityRow,
-    VerificationCodeForm, VerificationResultCard,
+    device_name_label, format_date, format_timestamp, last_seen_label, optional_date,
+    platform_label, prescription_status_label, role_label, sex_label, template_owner_label,
+    template_status_label, version_status_label, A4MockKind, AccentTone, AccountStatusBadge,
+    ActionRow, Badge, BadgeTone, Button, ButtonLink, ButtonVariant, Card, ConfirmPanel, DataTable,
+    DetailGrid, DetailItem, DeviceStatusBadge, EmptyState, ErrorText, FileField, FilterBar,
+    FormColumns, FormGrid, Hero, HintText, ImageLibrary, LinkAction, ListRow, LlmExplainLink,
+    LoadingState, LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard, PageHeader, PageShell,
+    PillBadge, PrescriptionStatusBadge, RxBlockIndicator, SearchField, SectionBand, SectionCard,
+    SectionHeader, SelectField, SurfaceTone, SyncStatus, SyncStatusIndicator, TemplateStatusBadge,
+    TextAreaField, TextField, TrustSecurityRow, VerificationCodeForm, VerificationResultCard,
 };
 use api::Me;
 use auth::SessionUser;
@@ -2029,14 +2029,17 @@ fn Settings() -> Element {
 fn SettingsClinic() -> Element {
     let actor = use_context::<Signal<Option<Me>>>();
     let checked = use_context::<Signal<bool>>();
+    let sync = use_context::<Signal<SyncStatus>>();
     let navigator = use_navigator();
     let mut name = use_signal(String::new);
     let mut address = use_signal(String::new);
     let mut phone = use_signal(String::new);
     let mut llm_url = use_signal(String::new);
     let mut message = use_signal(String::new);
+    let mut status = use_signal(String::new);
     let mut saving = use_signal(|| false);
     let mut uploading = use_signal(|| false);
+    let mut deleting = use_signal(|| None::<String>);
     let mut generation = use_signal(|| 0_u32);
     let mut settings = use_signal(|| None::<api::ClinicSettings>);
     let mut library = use_signal(|| None::<api::AssetLibrary>);
@@ -2077,13 +2080,25 @@ fn SettingsClinic() -> Element {
 
     if !checked() || actor().is_none() {
         return rsx! {
-            div { id: "settings-page", p { "Cargando..." } }
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader {
+                    title: "Clínica".to_owned(),
+                    subtitle: Some("Datos de la clínica, logo y biblioteca de imágenes.".to_owned()),
+                }
+                LoadingState {}
+            }
         };
     }
     if let Some(profile) = actor() {
         if !profile.is_administrator() {
             return rsx! {
-                div { id: "settings-page", p { "Redirigiendo..." } }
+                PageShell { id: "settings-page".to_owned(),
+                    PageHeader {
+                        title: "Clínica".to_owned(),
+                        subtitle: Some("Datos de la clínica, logo y biblioteca de imágenes.".to_owned()),
+                    }
+                    LoadingState { label: "Redirigiendo…".to_owned() }
+                }
             };
         }
     }
@@ -2094,77 +2109,129 @@ fn SettingsClinic() -> Element {
         .and_then(|clinic| clinic.logo.as_ref())
         .and_then(|logo| logo.url.clone());
     let library_state = library();
-    let quota = library_state
-        .as_ref()
-        .map(|library| (library.quota.used, library.quota.limit));
-    let library_assets: Vec<api::AssetRow> = library_state
-        .as_ref()
-        .map(|library| {
-            library
-                .assets
-                .iter()
-                .filter(|asset| asset.kind == "image")
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
+    let (library_assets, used, limit) = match library_state {
+        Some(loaded) => (loaded.assets, loaded.quota.used, loaded.quota.limit),
+        None => (Vec::new(), 0, 0),
+    };
+    let online = sync().online;
+
+    let on_logo_upload = move |event: FormEvent| {
+        let Some(file) = event.files().first().cloned() else {
+            return;
+        };
+        if uploading() {
+            return;
+        }
+        uploading.set(true);
+        let file_name = file.name();
+        spawn(async move {
+            if !http::is_server_reachable().await {
+                message.set("Subir imágenes requiere conexión.".to_owned());
+                uploading.set(false);
+                return;
+            }
+            match file.read_bytes().await {
+                Ok(bytes) => match api::upload_logo(file_name, bytes.to_vec()).await {
+                    Ok(_) => {
+                        status.set("Logo actualizado.".to_owned());
+                        generation += 1;
+                    }
+                    Err(error) => message.set(error),
+                },
+                Err(_) => message.set("No se pudo leer el archivo.".to_owned()),
+            }
+            uploading.set(false);
+        });
+    };
+    let on_library_upload = move |event: FormEvent| {
+        let Some(file) = event.files().first().cloned() else {
+            return;
+        };
+        if uploading() {
+            return;
+        }
+        uploading.set(true);
+        let file_name = file.name();
+        spawn(async move {
+            if !http::is_server_reachable().await {
+                message.set("Subir imágenes requiere conexión.".to_owned());
+                uploading.set(false);
+                return;
+            }
+            match file.read_bytes().await {
+                Ok(bytes) => match api::upload_asset(file_name, bytes.to_vec()).await {
+                    Ok(_) => {
+                        status.set("Imagen agregada a la biblioteca.".to_owned());
+                        generation += 1;
+                    }
+                    Err(error) => message.set(error),
+                },
+                Err(_) => message.set("No se pudo leer el archivo.".to_owned()),
+            }
+            uploading.set(false);
+        });
+    };
+    let on_library_delete = move |asset_id: String| {
+        deleting.set(Some(asset_id.clone()));
+        spawn(async move {
+            match api::delete_asset(&asset_id).await {
+                Ok(()) => {
+                    status.set("Imagen eliminada.".to_owned());
+                    generation += 1;
+                }
+                Err(error) => message.set(error),
+            }
+            deleting.set(None);
+        });
+    };
 
     rsx! {
-        div {
-            id: "settings-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Clínica" }
-                    p { "Datos de la clínica, logo y biblioteca de imágenes." }
+        PageShell { id: "settings-page".to_owned(),
+            PageHeader {
+                title: "Clínica".to_owned(),
+                subtitle: Some("Datos de la clínica, logo y biblioteca de imágenes.".to_owned()),
+                ButtonLink {
+                    to: Route::Settings {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver"
                 }
-                Link { class: "button secondary", to: Route::Settings {}, "Volver" }
             }
             if !message().is_empty() {
-                p { class: "error", "{message}" }
+                ErrorText { text: message() }
             }
-            section {
-                class: "editor-section",
-                h4 { "Datos de la clínica" }
-                div {
-                    class: "form-grid",
-                    label {
-                        class: "field",
-                        span { "Nombre" }
-                        input {
-                            value: "{name}",
-                            oninput: move |event| name.set(event.value()),
-                        }
+            if !status().is_empty() {
+                HintText { text: status() }
+            }
+            SectionCard { title: "Datos de la clínica".to_owned(), description: None,
+                FormGrid { columns: FormColumns::Two,
+                    TextField {
+                        label: "Nombre".to_owned(),
+                        value: name(),
+                        oninput: move |next| name.set(next),
                     }
-                    label {
-                        class: "field",
-                        span { "Dirección" }
-                        input {
-                            value: "{address}",
-                            oninput: move |event| address.set(event.value()),
-                        }
+                    TextField {
+                        label: "Dirección".to_owned(),
+                        value: address(),
+                        oninput: move |next| address.set(next),
                     }
-                    label {
-                        class: "field",
-                        span { "Teléfono" }
-                        input {
-                            value: "{phone}",
-                            oninput: move |event| phone.set(event.value()),
-                        }
+                    TextField {
+                        label: "Teléfono".to_owned(),
+                        value: phone(),
+                        oninput: move |next| phone.set(next),
                     }
-                    label {
-                        class: "field wide",
-                        span { "Plantilla del enlace LLM" }
-                        input {
-                            placeholder: "https://chat.openai.com/?q=",
-                            value: "{llm_url}",
-                            oninput: move |event| llm_url.set(event.value()),
-                        }
+                    TextField {
+                        label: "Plantilla del enlace LLM".to_owned(),
+                        value: llm_url(),
+                        oninput: move |next| llm_url.set(next),
+                        placeholder: "https://chat.openai.com/?q=".to_owned(),
+                        wide: true,
                     }
                 }
-                div {
-                    class: "actions",
-                    button {
+                ActionRow {
+                    Button {
+                        variant: ButtonVariant::Primary,
                         disabled: saving(),
                         onclick: move |_| {
                             if saving() {
@@ -2178,7 +2245,7 @@ fn SettingsClinic() -> Element {
                             spawn(async move {
                                 match api::update_clinic_settings(&value, &street, &telephone, &llm).await {
                                     Ok(_) => {
-                                        message.set("Datos de la clínica actualizados.".to_owned());
+                                        status.set("Datos de la clínica actualizados.".to_owned());
                                         generation += 1;
                                     }
                                     Err(error) => message.set(error),
@@ -2190,149 +2257,48 @@ fn SettingsClinic() -> Element {
                     }
                 }
             }
-            section {
-                class: "editor-section",
-                h4 { "Logo" }
+            SectionCard { title: "Logo".to_owned(), description: None,
                 if let Some(url) = logo_url {
-                    img { class: "clinic-logo", src: "{url}", alt: "Logo de la clínica" }
+                    img { class: "ui-asset-preview", src: "{url}", alt: "Logo de la clínica" }
                 } else {
-                    p { class: "hint", "La clínica todavía no tiene logo." }
+                    HintText { text: "La clínica todavía no tiene logo.".to_owned() }
                 }
-                label {
-                    class: "field",
-                    span { "Subir logo (JPEG o PNG, máximo 10 MB)" }
-                    input {
-                        r#type: "file",
-                        accept: "image/jpeg,image/png",
-                        disabled: uploading(),
-                        onchange: move |event| {
-                            let Some(file) = event.files().first().cloned() else {
-                                return;
-                            };
-                            if uploading() {
-                                return;
-                            }
-                            uploading.set(true);
-                            let file_name = file.name();
-                            spawn(async move {
-                                if !http::is_server_reachable().await {
-                                    message.set("Subir imágenes requiere conexión.".to_owned());
-                                    uploading.set(false);
-                                    return;
-                                }
-                                match file.read_bytes().await {
-                                    Ok(bytes) => {
-                                        match api::upload_logo(file_name, bytes.to_vec()).await {
-                                            Ok(_) => {
-                                                message.set("Logo actualizado.".to_owned());
-                                                generation += 1;
-                                            }
-                                            Err(error) => message.set(error),
-                                        }
-                                    }
-                                    Err(_) => message.set("No se pudo leer el archivo.".to_owned()),
-                                }
-                                uploading.set(false);
-                            });
-                        },
-                    }
+                FileField {
+                    label: "Subir logo (JPEG o PNG, máximo 10 MB)".to_owned(),
+                    accept: "image/jpeg,image/png".to_owned(),
+                    disabled: !online || uploading(),
+                    hint: if !online {
+                        Some("Subir imágenes requiere conexión.".to_owned())
+                    } else {
+                        None
+                    },
+                    on_change: on_logo_upload,
                 }
             }
-            section {
-                class: "editor-section",
-                h4 { "Biblioteca de imágenes" }
-                if let Some((used, limit)) = quota {
-                    p { class: "hint", "Uso de la biblioteca: {used} de {limit}." }
-                }
-                for asset in library_assets.iter() {
-                    div {
-                        key: "{asset.id}",
-                        class: "asset-row",
-                        div {
-                            strong {
-                                "{asset.original_name.clone().unwrap_or_else(|| asset.id.clone())}"
-                            }
-                            p {
-                                class: "hint",
-                                "{asset.width.unwrap_or(0)} × {asset.height.unwrap_or(0)} · {asset.size_bytes} bytes · sha256 {asset.sha256.chars().take(12).collect::<String>()}"
-                            }
-                        }
-                        button {
-                            class: "danger",
-                            onclick: {
-                                let asset_id = asset.id.clone();
-                                move |_| {
-                                    let asset_id = asset_id.clone();
-                                    spawn(async move {
-                                        match api::delete_asset(&asset_id).await {
-                                            Ok(()) => {
-                                                message.set("Imagen eliminada.".to_owned());
-                                                generation += 1;
-                                            }
-                                            Err(error) => message.set(error),
-                                        }
-                                    });
-                                }
-                            },
-                            "Eliminar"
-                        }
-                    }
-                }
-                label {
-                    class: "field",
-                    span { "Subir imagen de la biblioteca (JPEG o PNG, máximo 10 MB)" }
-                    input {
-                        r#type: "file",
-                        accept: "image/jpeg,image/png",
-                        disabled: uploading(),
-                        onchange: move |event| {
-                            let Some(file) = event.files().first().cloned() else {
-                                return;
-                            };
-                            if uploading() {
-                                return;
-                            }
-                            uploading.set(true);
-                            let file_name = file.name();
-                            spawn(async move {
-                                if !http::is_server_reachable().await {
-                                    message.set("Subir imágenes requiere conexión.".to_owned());
-                                    uploading.set(false);
-                                    return;
-                                }
-                                match file.read_bytes().await {
-                                    Ok(bytes) => {
-                                        match api::upload_asset(file_name, bytes.to_vec()).await {
-                                            Ok(_) => {
-                                                message.set("Imagen agregada a la biblioteca.".to_owned());
-                                                generation += 1;
-                                            }
-                                            Err(error) => message.set(error),
-                                        }
-                                    }
-                                    Err(_) => message.set("No se pudo leer el archivo.".to_owned()),
-                                }
-                                uploading.set(false);
-                            });
-                        },
-                    }
+            SectionCard { title: "Biblioteca de imágenes".to_owned(), description: None,
+                ImageLibrary {
+                    assets: library_assets,
+                    used,
+                    limit,
+                    uploading: uploading(),
+                    deleting: deleting(),
+                    online,
+                    on_delete: on_library_delete,
+                    on_upload: on_library_upload,
                 }
             }
-            section {
-                class: "editor-section",
-                h4 { "Exportación de datos" }
+            SectionCard { title: "Exportación de datos".to_owned(), description: None,
                 if let Some(retention_until) = clinic.as_ref().and_then(|value| value.server_retention_until.clone()) {
-                    p { class: "hint", "Retención en servidor hasta: {retention_until}" }
+                    HintText { text: format!("Retención en servidor hasta: {retention_until}") }
                 }
                 if let Some(grace) = clinic.as_ref().and_then(|value| value.data_grace_ends_at.clone()) {
-                    p { class: "hint", "Fin del período de gracia para exportación: {grace}" }
+                    HintText { text: format!("Fin del período de gracia para exportación: {grace}") }
                 }
-                p { class: "hint", "Exporte los datos de la clínica (JSON: pacientes, recetas y medicamentos) antes de que finalice el período de gracia. La exportación queda registrada en la auditoría." }
-                div {
-                    class: "actions",
-                    a {
-                        class: "button secondary",
-                        href: "/api/clinic/export",
+                HintText { text: "Exporte los datos de la clínica (JSON: pacientes, recetas y medicamentos) antes de que finalice el período de gracia. La exportación queda registrada en la auditoría.".to_owned() }
+                ActionRow {
+                    LinkAction {
+                        href: "/api/clinic/export".to_owned(),
+                        variant: ButtonVariant::Secondary,
                         "Exportar datos (JSON)"
                     }
                 }
@@ -2378,7 +2344,13 @@ fn SettingsUsers() -> Element {
     let profile = actor();
     if !checked() {
         return rsx! {
-            div { id: "echo", p { "Cargando..." } }
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader {
+                    title: "Usuarios y roles".to_owned(),
+                    subtitle: Some("Asigna un rol o deshabilita el acceso de cada persona.".to_owned()),
+                }
+                LoadingState {}
+            }
         };
     }
     if !profile
@@ -2386,11 +2358,22 @@ fn SettingsUsers() -> Element {
         .is_some_and(|profile| profile.is_administrator())
     {
         return rsx! {
-            div {
-                id: "echo",
-                h4 { "Acceso denegado" }
-                p { "Solo el administrador puede gestionar usuarios y roles." }
-                Link { to: Route::SettingsProfile {}, "Ir a mi perfil" }
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader {
+                    title: "Usuarios y roles".to_owned(),
+                    subtitle: Some("Asigna un rol o deshabilita el acceso de cada persona.".to_owned()),
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
+                    p { "Solo el administrador puede gestionar usuarios y roles." }
+                }
+                ButtonLink {
+                    to: Route::SettingsProfile {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Ir a mi perfil"
+                }
             }
         };
     }
@@ -2398,138 +2381,185 @@ fn SettingsUsers() -> Element {
     let rows = users();
     let device_rows = devices();
     rsx! {
-        div {
-            id: "echo",
-            h4 { "Usuarios y roles" }
-            p { "Asigna un rol o deshabilita el acceso de cada persona." }
-            if !message().is_empty() {
-                p { "{message}" }
+        PageShell { id: "settings-page".to_owned(),
+            PageHeader {
+                title: "Usuarios y roles".to_owned(),
+                subtitle: Some("Asigna un rol o deshabilita el acceso de cada persona.".to_owned()),
             }
-            for row in rows {
-                div {
-                    key: "{row.profile_id}",
-                    p { "{row.display_name}" }
-                    p { "{row.email}" }
-                    p { "Alta: {format_date(&row.created_at)}" }
-                    p { "Estado: {status_label(&row.status)}" }
-                    select {
-                        value: row.role.clone().unwrap_or_default(),
-                        onchange: {
-                            let profile_id = row.profile_id.clone();
-                            let mut refresh = refresh;
-                            let mut message = message;
-                            move |event| {
-                                let value = event.value();
-                                if value.is_empty() {
-                                    return;
-                                }
-                                let profile_id = profile_id.clone();
-                                spawn(async move {
-                                    match api::set_role(&profile_id, &value).await {
-                                        Ok(()) => refresh += 1,
-                                        Err(error) => message.set(error),
+            if !message().is_empty() {
+                ErrorText { text: message() }
+            }
+            SectionCard { title: "Personal".to_owned(), description: None,
+                if rows.is_empty() {
+                    EmptyState {
+                        title: "Sin usuarios".to_owned(),
+                        description: "No hay usuarios para mostrar.".to_owned(),
+                    }
+                } else {
+                    DataTable {
+                        columns: vec![
+                            "Persona".to_owned(),
+                            "Correo".to_owned(),
+                            "Alta".to_owned(),
+                            "Estado".to_owned(),
+                            "Rol".to_owned(),
+                            "Acciones".to_owned(),
+                        ],
+                        tbody {
+                            for row in rows {
+                                tr {
+                                    key: "{row.profile_id}",
+                                    td { "{row.display_name}" }
+                                    td { "{row.email}" }
+                                    td { "{format_date(&row.created_at)}" }
+                                    td { AccountStatusBadge { status: row.status.clone() } }
+                                    td {
+                                        SelectField {
+                                            label: "Rol".to_owned(),
+                                            hide_label: true,
+                                            value: row.role.clone().unwrap_or_default(),
+                                            onchange: {
+                                                let profile_id = row.profile_id.clone();
+                                                let mut refresh = refresh;
+                                                let mut message = message;
+                                                move |value: String| {
+                                                    if value.is_empty() {
+                                                        return;
+                                                    }
+                                                    let profile_id = profile_id.clone();
+                                                    spawn(async move {
+                                                        match api::set_role(&profile_id, &value).await {
+                                                            Ok(()) => refresh += 1,
+                                                            Err(error) => message.set(error),
+                                                        }
+                                                    });
+                                                }
+                                            },
+                                            option { value: "", disabled: true, "Sin rol" }
+                                            option { value: "administrator", "Administrador" }
+                                            option { value: "doctor", "Doctor" }
+                                            option { value: "nursing", "Enfermería" }
+                                            option { value: "secretary", "Secretaría" }
+                                        }
                                     }
-                                });
+                                    td {
+                                        div { class: "ui-actions",
+                                            if row.role.is_some() {
+                                                Button {
+                                                    variant: ButtonVariant::Danger,
+                                                    onclick: {
+                                                        let profile_id = row.profile_id.clone();
+                                                        let mut refresh = refresh;
+                                                        let mut message = message;
+                                                        move |_| {
+                                                            let profile_id = profile_id.clone();
+                                                            spawn(async move {
+                                                                match api::remove_member(&profile_id).await {
+                                                                    Ok(()) => refresh += 1,
+                                                                    Err(error) => message.set(error),
+                                                                }
+                                                            });
+                                                        }
+                                                    },
+                                                    "Quitar del equipo"
+                                                }
+                                            }
+                                            if row.status == "active" {
+                                                Button {
+                                                    variant: ButtonVariant::Danger,
+                                                    onclick: {
+                                                        let profile_id = row.profile_id.clone();
+                                                        let mut refresh = refresh;
+                                                        let mut message = message;
+                                                        move |_| {
+                                                            let profile_id = profile_id.clone();
+                                                            spawn(async move {
+                                                                match api::disable_profile(&profile_id, true).await {
+                                                                    Ok(()) => refresh += 1,
+                                                                    Err(error) => message.set(error),
+                                                                }
+                                                            });
+                                                        }
+                                                    },
+                                                    "Deshabilitar"
+                                                }
+                                            } else {
+                                                Button {
+                                                    variant: ButtonVariant::Secondary,
+                                                    onclick: {
+                                                        let profile_id = row.profile_id.clone();
+                                                        let mut refresh = refresh;
+                                                        let mut message = message;
+                                                        move |_| {
+                                                            let profile_id = profile_id.clone();
+                                                            spawn(async move {
+                                                                match api::disable_profile(&profile_id, false).await {
+                                                                    Ok(()) => refresh += 1,
+                                                                    Err(error) => message.set(error),
+                                                                }
+                                                            });
+                                                        }
+                                                    },
+                                                    "Habilitar"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                        },
-                        option { value: "", disabled: true, "Sin rol" }
-                        option { value: "administrator", "Administrador" }
-                        option { value: "doctor", "Doctor" }
-                        option { value: "nursing", "Enfermería" }
-                        option { value: "secretary", "Secretaría" }
-                    }
-                    if row.role.is_some() {
-                        button {
-                            onclick: {
-                                let profile_id = row.profile_id.clone();
-                                let mut refresh = refresh;
-                                let mut message = message;
-                                move |_| {
-                                    let profile_id = profile_id.clone();
-                                    spawn(async move {
-                                        match api::remove_member(&profile_id).await {
-                                            Ok(()) => refresh += 1,
-                                            Err(error) => message.set(error),
-                                        }
-                                    });
-                                }
-                            },
-                            "Quitar del equipo"
-                        }
-                    }
-                    if row.status == "active" {
-                        button {
-                            onclick: {
-                                let profile_id = row.profile_id.clone();
-                                let mut refresh = refresh;
-                                let mut message = message;
-                                move |_| {
-                                    let profile_id = profile_id.clone();
-                                    spawn(async move {
-                                        match api::disable_profile(&profile_id, true).await {
-                                            Ok(()) => refresh += 1,
-                                            Err(error) => message.set(error),
-                                        }
-                                    });
-                                }
-                            },
-                            "Deshabilitar"
-                        }
-                    } else {
-                        button {
-                            onclick: {
-                                let profile_id = row.profile_id.clone();
-                                let mut refresh = refresh;
-                                let mut message = message;
-                                move |_| {
-                                    let profile_id = profile_id.clone();
-                                    spawn(async move {
-                                        match api::disable_profile(&profile_id, false).await {
-                                            Ok(()) => refresh += 1,
-                                            Err(error) => message.set(error),
-                                        }
-                                    });
-                                }
-                            },
-                            "Habilitar"
                         }
                     }
                 }
             }
-            if !device_rows.is_empty() {
-                div {
-                    h4 { "Dispositivos" }
-                    p { "Equipos registrados y su último acceso." }
-                    for device in device_rows {
-                        div {
-                            key: "{device.id}",
-                            p { "{device.profile_name} · {device_name_label(&device)}" }
-                            p {
-                                "{platform_label(&device.platform)} · Última conexión: {last_seen_label(device.last_seen_at.as_deref())}"
-                            }
-                            if device.app_version.is_some() {
-                                p { "Versión: {device.app_version.clone().unwrap_or_default()}" }
-                            }
-                            if device.revoked_at.is_some() {
-                                p { "Estado: Revocado" }
-                            } else {
-                                button {
-                                    class: "danger",
-                                    onclick: {
-                                        let device_id = device.id.clone();
-                                        let mut refresh = refresh;
-                                        let mut message = message;
-                                        move |_| {
-                                            let device_id = device_id.clone();
-                                            spawn(async move {
-                                                match api::revoke_device(&device_id).await {
-                                                    Ok(()) => refresh += 1,
-                                                    Err(error) => message.set(error),
-                                                }
-                                            });
+            SectionCard { title: "Dispositivos".to_owned(), description: Some("Equipos registrados y su último acceso.".to_owned()),
+                if device_rows.is_empty() {
+                    EmptyState {
+                        title: "Sin dispositivos".to_owned(),
+                        description: "No hay equipos registrados.".to_owned(),
+                    }
+                } else {
+                    DataTable {
+                        columns: vec![
+                            "Equipo".to_owned(),
+                            "Plataforma".to_owned(),
+                            "Versión".to_owned(),
+                            "Última conexión".to_owned(),
+                            "Estado".to_owned(),
+                            "Acciones".to_owned(),
+                        ],
+                        tbody {
+                            for device in device_rows {
+                                tr {
+                                    key: "{device.id}",
+                                    td { "{device.profile_name} · {device_name_label(&device)}" }
+                                    td { "{platform_label(&device.platform)}" }
+                                    td { "{device.app_version.clone().unwrap_or_else(|| \"—\".to_owned())}" }
+                                    td { "{last_seen_label(device.last_seen_at.as_deref())}" }
+                                    td { DeviceStatusBadge { revoked: device.revoked_at.is_some() } }
+                                    td {
+                                        if device.revoked_at.is_none() {
+                                            Button {
+                                                variant: ButtonVariant::Danger,
+                                                onclick: {
+                                                    let device_id = device.id.clone();
+                                                    let mut refresh = refresh;
+                                                    let mut message = message;
+                                                    move |_| {
+                                                        let device_id = device_id.clone();
+                                                        spawn(async move {
+                                                            match api::revoke_device(&device_id).await {
+                                                                Ok(()) => refresh += 1,
+                                                                Err(error) => message.set(error),
+                                                            }
+                                                        });
+                                                    }
+                                                },
+                                                "Revocar"
+                                            }
+                                        } else {
+                                            "—"
                                         }
-                                    },
-                                    "Revocar"
+                                    }
                                 }
                             }
                         }
@@ -2594,12 +2624,18 @@ fn SettingsProfile() -> Element {
     let current = actor();
     if !checked() {
         return rsx! {
-            div { id: "echo", p { "Cargando..." } }
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader { title: "Mi perfil".to_owned(), subtitle: None }
+                LoadingState {}
+            }
         };
     }
     let Some(profile) = current else {
         return rsx! {
-            div { id: "echo", p { "Redirigiendo..." } }
+            PageShell { id: "settings-page".to_owned(),
+                PageHeader { title: "Mi perfil".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo…".to_owned() }
+            }
         };
     };
     let is_doctor = profile.is_doctor();
@@ -2614,243 +2650,209 @@ fn SettingsProfile() -> Element {
     );
 
     rsx! {
-        div {
-            id: "settings-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Mi perfil" }
-                    p { "{subtitle}" }
-                }
+        PageShell { id: "settings-page".to_owned(),
+            PageHeader {
+                title: "Mi perfil".to_owned(),
+                subtitle: Some(subtitle),
             }
-            section {
-                class: "editor-section",
-                h4 { "Datos del perfil" }
-                div {
-                    class: "form-grid",
-                    label {
-                        class: "field",
-                        span { "Nombre visible" }
-                        input {
-                            value: "{display_name}",
-                            oninput: move |event| display_name.set(event.value()),
-                        }
+            SectionCard { title: "Datos del perfil".to_owned(), description: None,
+                FormGrid { columns: FormColumns::Two,
+                    TextField {
+                        label: "Nombre visible".to_owned(),
+                        value: display_name(),
+                        oninput: move |next| display_name.set(next),
                     }
                     if is_doctor {
-                        label {
-                            class: "field",
-                            span { "Especialidad" }
-                            input {
-                                value: "{specialty}",
-                                oninput: move |event| specialty.set(event.value()),
-                            }
+                        TextField {
+                            label: "Especialidad".to_owned(),
+                            value: specialty(),
+                            oninput: move |next| specialty.set(next),
                         }
-                        label {
-                            class: "field",
-                            span { "Número de licencia" }
-                            input {
-                                value: "{license_no}",
-                                oninput: move |event| license_no.set(event.value()),
-                            }
+                        TextField {
+                            label: "Número de licencia".to_owned(),
+                            value: license_no(),
+                            oninput: move |next| license_no.set(next),
                         }
-                        label {
-                            class: "field",
-                            span { "Cédula" }
-                            input {
-                                value: "{national_id}",
-                                oninput: move |event| national_id.set(event.value()),
-                            }
+                        TextField {
+                            label: "Cédula".to_owned(),
+                            value: national_id(),
+                            oninput: move |next| national_id.set(next),
                         }
-                        label {
-                            class: "field",
-                            span { "Teléfono" }
-                            input {
-                                value: "{phone}",
-                                oninput: move |event| phone.set(event.value()),
-                            }
+                        TextField {
+                            label: "Teléfono".to_owned(),
+                            value: phone(),
+                            oninput: move |next| phone.set(next),
                         }
-                        label {
-                            class: "field",
-                            span { "Correo" }
-                            input {
-                                value: "{email}",
-                                oninput: move |event| email.set(event.value()),
-                            }
+                        TextField {
+                            label: "Correo".to_owned(),
+                            value: email(),
+                            oninput: move |next| email.set(next),
+                            input_type: "email".to_owned(),
                         }
                     }
                 }
                 if !message().is_empty() {
-                    p { "{message}" }
+                    HintText { text: message() }
                 }
-                button {
-                    disabled: saving(),
-                    onclick: move |_| {
-                        if saving() {
-                            return;
-                        }
-                        saving.set(true);
-                        message.set(String::new());
-                        spawn(async move {
-                            let result = api::update_profile(
-                                &display_name(),
-                                &specialty(),
-                                &license_no(),
-                                &national_id(),
-                                &phone(),
-                                &email(),
-                            )
-                            .await;
-                            saving.set(false);
-                            match result {
-                                Ok(updated) => {
-                                    actor.set(Some(updated));
-                                    message.set("Perfil guardado.".to_string());
-                                }
-                                Err(error) => message.set(error),
-                            }
-                        });
-                    },
-                    if saving() { "Guardando..." } else { "Guardar" }
-                }
-            }
-            div {
-                class: "settings-columns",
-                if is_doctor || is_admin {
-                    section {
-                        class: "editor-section",
-                        h4 { "Verificación en dos pasos" }
-                        p {
-                            if mfa_enabled() {
-                                "Activada. Se pedirá el código al iniciar sesión."
-                            } else {
-                                "Sin activar. Actívala para proteger tu cuenta."
-                            }
-                        }
-                        if !mfa_secret().is_empty() {
-                            p {
-                                class: "break-anywhere",
-                                "Secreto: {mfa_secret}"
-                            }
-                            p {
-                                class: "break-anywhere",
-                                "URI: {mfa_uri}"
-                            }
-                            label {
-                                class: "field",
-                                span { "Código de 6 dígitos" }
-                                input {
-                                    value: "{mfa_code}",
-                                    oninput: move |event| mfa_code.set(event.value()),
-                                }
-                            }
-                            button {
-                                onclick: move |_| {
-                                    spawn(async move {
-                                        match auth::confirm_mfa(&mfa_code()).await {
-                                            Ok(_) => {
-                                                mfa_enabled.set(true);
-                                                mfa_secret.set(String::new());
-                                                mfa_message.set("Verificación activada.".to_string());
-                                            }
-                                            Err(error) => mfa_message.set(error),
-                                        }
-                                    });
-                                },
-                                "Confirmar activación"
-                            }
-                        } else {
-                            button {
-                                onclick: move |_| {
-                                    spawn(async move {
-                                        match auth::enroll_mfa().await {
-                                            Ok(value) => {
-                                                if let Some(secret) = http::string_field(&value, &["secret"]) {
-                                                    mfa_secret.set(secret);
-                                                }
-                                                if let Some(uri) = http::string_field(&value, &["uri"]) {
-                                                    mfa_uri.set(uri);
-                                                }
-                                                mfa_message.set("Escanea el URI o copia el secreto en tu app de autenticación.".to_string());
-                                            }
-                                            Err(error) => mfa_message.set(error),
-                                        }
-                                    });
-                                },
-                                "Activar verificación"
-                            }
-                        }
-                        if mfa_enabled() {
-                            label {
-                                class: "field",
-                                span { "Contraseña para desactivar" }
-                                input {
-                                    r#type: "password",
-                                    value: "{mfa_password}",
-                                    oninput: move |event| mfa_password.set(event.value()),
-                                }
-                            }
-                            button {
-                                onclick: move |_| {
-                                    spawn(async move {
-                                        match auth::disable_mfa(&mfa_password()).await {
-                                            Ok(_) => {
-                                                mfa_enabled.set(false);
-                                                mfa_message.set("Verificación desactivada.".to_string());
-                                            }
-                                            Err(error) => mfa_message.set(error),
-                                        }
-                                    });
-                                },
-                                "Desactivar verificación"
-                            }
-                        }
-                        if !mfa_message().is_empty() {
-                            p { "{mfa_message}" }
-                        }
-                    }
-                }
-                section {
-                    class: "editor-section",
-                    h4 { "Cambiar contraseña" }
-                    p { "Al cambiarla se invalidan las demás sesiones." }
-                    div {
-                        class: "form-grid",
-                        label {
-                            class: "field",
-                            span { "Contraseña actual" }
-                            input {
-                                r#type: "password",
-                                value: "{current_password}",
-                                oninput: move |event| current_password.set(event.value()),
-                            }
-                        }
-                        label {
-                            class: "field",
-                            span { "Nueva contraseña" }
-                            input {
-                                r#type: "password",
-                                value: "{new_password}",
-                                oninput: move |event| new_password.set(event.value()),
-                            }
-                        }
-                    }
-                    if !password_message().is_empty() {
-                        p { "{password_message}" }
-                    }
-                    button {
+                ActionRow {
+                    Button {
+                        variant: ButtonVariant::Primary,
+                        disabled: saving(),
                         onclick: move |_| {
+                            if saving() {
+                                return;
+                            }
+                            saving.set(true);
+                            message.set(String::new());
                             spawn(async move {
-                                match auth::change_password(&current_password(), &new_password()).await {
-                                    Ok(_) => {
-                                        current_password.set(String::new());
-                                        new_password.set(String::new());
-                                        password_message.set("Contraseña cambiada. Sesión renovada.".to_string());
+                                let result = api::update_profile(
+                                    &display_name(),
+                                    &specialty(),
+                                    &license_no(),
+                                    &national_id(),
+                                    &phone(),
+                                    &email(),
+                                )
+                                .await;
+                                saving.set(false);
+                                match result {
+                                    Ok(updated) => {
+                                        actor.set(Some(updated));
+                                        message.set("Perfil guardado.".to_string());
                                     }
-                                    Err(error) => password_message.set(error),
+                                    Err(error) => message.set(error),
                                 }
                             });
                         },
-                        "Cambiar contraseña"
+                        if saving() { "Guardando..." } else { "Guardar" }
+                    }
+                }
+            }
+            div { class: "ui-columns",
+                if is_doctor || is_admin {
+                    SectionCard { title: "Verificación en dos pasos".to_owned(), description: None,
+                        HintText {
+                            text: if mfa_enabled() {
+                                "Activada. Se pedirá el código al iniciar sesión.".to_owned()
+                            } else {
+                                "Sin activar. Actívala para proteger tu cuenta.".to_owned()
+                            }
+                        }
+                        if !mfa_secret().is_empty() {
+                            p { class: "ui-break", "Secreto: {mfa_secret}" }
+                            p { class: "ui-break", "URI: {mfa_uri}" }
+                            TextField {
+                                label: "Código de 6 dígitos".to_owned(),
+                                value: mfa_code(),
+                                oninput: move |next| mfa_code.set(next),
+                            }
+                            ActionRow {
+                                Button {
+                                    variant: ButtonVariant::Secondary,
+                                    onclick: move |_| {
+                                        spawn(async move {
+                                            match auth::confirm_mfa(&mfa_code()).await {
+                                                Ok(_) => {
+                                                    mfa_enabled.set(true);
+                                                    mfa_secret.set(String::new());
+                                                    mfa_message.set("Verificación activada.".to_string());
+                                                }
+                                                Err(error) => mfa_message.set(error),
+                                            }
+                                        });
+                                    },
+                                    "Confirmar activación"
+                                }
+                            }
+                        } else if mfa_enabled() {
+                            TextField {
+                                label: "Contraseña para desactivar".to_owned(),
+                                value: mfa_password(),
+                                oninput: move |next| mfa_password.set(next),
+                                input_type: "password".to_owned(),
+                            }
+                            ActionRow {
+                                Button {
+                                    variant: ButtonVariant::Danger,
+                                    onclick: move |_| {
+                                        spawn(async move {
+                                            match auth::disable_mfa(&mfa_password()).await {
+                                                Ok(_) => {
+                                                    mfa_enabled.set(false);
+                                                    mfa_message.set("Verificación desactivada.".to_string());
+                                                }
+                                                Err(error) => mfa_message.set(error),
+                                            }
+                                        });
+                                    },
+                                    "Desactivar verificación"
+                                }
+                            }
+                        } else {
+                            ActionRow {
+                                Button {
+                                    variant: ButtonVariant::Secondary,
+                                    onclick: move |_| {
+                                        spawn(async move {
+                                            match auth::enroll_mfa().await {
+                                                Ok(value) => {
+                                                    if let Some(secret) = http::string_field(&value, &["secret"]) {
+                                                        mfa_secret.set(secret);
+                                                    }
+                                                    if let Some(uri) = http::string_field(&value, &["uri"]) {
+                                                        mfa_uri.set(uri);
+                                                    }
+                                                    mfa_message.set("Escanea el URI o copia el secreto en tu app de autenticación.".to_string());
+                                                }
+                                                Err(error) => mfa_message.set(error),
+                                            }
+                                        });
+                                    },
+                                    "Activar verificación"
+                                }
+                            }
+                        }
+                        if !mfa_message().is_empty() {
+                            HintText { text: mfa_message() }
+                        }
+                    }
+                }
+                SectionCard { title: "Cambiar contraseña".to_owned(), description: None,
+                    HintText { text: "Al cambiarla se invalidan las demás sesiones.".to_owned() }
+                    FormGrid { columns: FormColumns::Two,
+                        TextField {
+                            label: "Contraseña actual".to_owned(),
+                            value: current_password(),
+                            oninput: move |next| current_password.set(next),
+                            input_type: "password".to_owned(),
+                        }
+                        TextField {
+                            label: "Nueva contraseña".to_owned(),
+                            value: new_password(),
+                            oninput: move |next| new_password.set(next),
+                            input_type: "password".to_owned(),
+                        }
+                    }
+                    ActionRow {
+                        Button {
+                            variant: ButtonVariant::Secondary,
+                            onclick: move |_| {
+                                spawn(async move {
+                                    match auth::change_password(&current_password(), &new_password()).await {
+                                        Ok(_) => {
+                                            current_password.set(String::new());
+                                            new_password.set(String::new());
+                                            password_message.set("Contraseña cambiada. Sesión renovada.".to_string());
+                                        }
+                                        Err(error) => password_message.set(error),
+                                    }
+                                });
+                            },
+                            "Cambiar contraseña"
+                        }
+                    }
+                    if !password_message().is_empty() {
+                        HintText { text: password_message() }
                     }
                 }
             }
@@ -2869,6 +2871,7 @@ fn Audit() -> Element {
     let mut rows = use_signal(Vec::<api::AuditRow>::new);
     let mut message = use_signal(String::new);
     let mut generation = use_signal(|| 0_u32);
+    let mut loaded = use_signal(|| false);
 
     use_effect(move || {
         let _ = generation();
@@ -2891,6 +2894,7 @@ fn Audit() -> Element {
         let action_value = action();
         let entity_value = entity();
         let q_value = q();
+        loaded.set(false);
         spawn(async move {
             match api::fetch_audit(&action_value, &entity_value, &q_value).await {
                 Ok(found) => {
@@ -2899,81 +2903,103 @@ fn Audit() -> Element {
                 }
                 Err(error) => message.set(error),
             }
+            loaded.set(true);
         });
     });
 
     if !checked() {
         return rsx! {
-            div { id: "audit-page", p { "Cargando..." } }
+            PageShell { id: "audit-page".to_owned(),
+                PageHeader {
+                    title: "Auditoría".to_owned(),
+                    subtitle: Some("Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto.".to_owned()),
+                }
+                LoadingState {}
+            }
         };
     }
     let is_admin = actor().is_some_and(|profile| profile.is_administrator());
     if !is_admin {
         return rsx! {
-            div {
-                id: "audit-page",
-                div { class: "notice",
-                    h4 { "Acceso denegado" }
-                    p { "{message}" }
+            PageShell { id: "audit-page".to_owned(),
+                PageHeader {
+                    title: "Auditoría".to_owned(),
+                    subtitle: Some("Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto.".to_owned()),
+                }
+                Notice { tone: NoticeTone::Error,
+                    p { "Acceso denegado. Solo el administrador puede ver la auditoría." }
+                }
+                ButtonLink {
+                    to: Route::SettingsProfile {},
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Ir a mi perfil"
                 }
             }
         };
     }
 
     rsx! {
-        div {
-            id: "audit-page",
-            div {
-                class: "page-head",
-                div {
-                    h4 { "Auditoría" }
-                    p { "Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto." }
-                }
+        PageShell { id: "audit-page".to_owned(),
+            PageHeader {
+                title: "Auditoría".to_owned(),
+                subtitle: Some("Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto.".to_owned()),
             }
-            div {
-                input {
-                    placeholder: "Acción (p. ej. sensitive_read)",
-                    value: "{action}",
-                    oninput: move |event| action.set(event.value()),
+            FilterBar {
+                TextField {
+                    label: "Acción".to_owned(),
+                    value: action(),
+                    oninput: move |next| action.set(next),
+                    placeholder: "Acción (p. ej. sensitive_read)".to_owned(),
                 }
-                input {
-                    placeholder: "Entidad (p. ej. patient)",
-                    value: "{entity}",
-                    oninput: move |event| entity.set(event.value()),
+                TextField {
+                    label: "Entidad".to_owned(),
+                    value: entity(),
+                    oninput: move |next| entity.set(next),
+                    placeholder: "Entidad (p. ej. patient)".to_owned(),
                 }
-                input {
-                    placeholder: "Buscar en entidad o metadatos",
-                    value: "{q}",
-                    oninput: move |event| q.set(event.value()),
+                TextField {
+                    label: "Buscar".to_owned(),
+                    value: q(),
+                    oninput: move |next| q.set(next),
+                    placeholder: "Buscar en entidad o metadatos".to_owned(),
                 }
-                button {
+                Button {
+                    variant: ButtonVariant::Primary,
                     onclick: move |_| generation.set(generation() + 1),
                     "Filtrar"
                 }
             }
-            if !message().is_empty() {
-                p { "{message}" }
+            if !loaded() {
+                LoadingState {}
             }
-            table {
-                thead {
-                    tr {
-                        th { "Fecha" }
-                        th { "Actor" }
-                        th { "Acción" }
-                        th { "Entidad" }
-                        th { "ID entidad" }
-                        th { "Metadatos" }
-                    }
-                }
-                tbody {
-                    for row in rows() {
-                        tr {
-                            td { "{row.at}" }
-                            td { "{row.actor_name.clone().unwrap_or_else(|| row.actor_id.clone().unwrap_or_default())}" }
-                            td { "{row.action}" }
-                            td { "{row.entity}" }
-                            td { "{row.entity_id}" }
-                            td { "{row.metadata}" }
+            if !message().is_empty() {
+                ErrorText { text: message() }
+            }
+            if rows().is_empty() && loaded() {
+                EmptyState { title: "Sin eventos".to_owned() }
+            } else {
+                DataTable {
+                    columns: vec![
+                        "Fecha".to_owned(),
+                        "Actor".to_owned(),
+                        "Acción".to_owned(),
+                        "Entidad".to_owned(),
+                        "ID entidad".to_owned(),
+                        "Metadatos".to_owned(),
+                    ],
+                    tbody {
+                        for row in rows() {
+                            tr {
+                                key: "{row.id}",
+                                td { "{format_timestamp(&row.at)}" }
+                                td { "{row.actor_name.clone().unwrap_or_else(|| row.actor_id.clone().unwrap_or_default())}" }
+                                td { "{row.action}" }
+                                td { "{row.entity}" }
+                                td { "{row.entity_id}" }
+                                td { code { class: "ui-mono", "{row.metadata}" } }
+                            }
                         }
                     }
                 }

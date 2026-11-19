@@ -53,14 +53,6 @@ pub fn role_label(role: Option<&str>) -> &'static str {
     }
 }
 
-pub fn status_label(status: &str) -> &'static str {
-    if status == "active" {
-        "Activo"
-    } else {
-        "Deshabilitado"
-    }
-}
-
 pub fn platform_label(platform: &str) -> &'static str {
     match platform {
         "macos" => "macOS",

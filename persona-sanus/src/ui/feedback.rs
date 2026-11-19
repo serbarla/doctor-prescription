@@ -124,6 +124,7 @@ pub fn ConfirmPanel(
     confirm_label: String,
     #[props(default = "Cancelar".to_string())] cancel_label: String,
     busy: bool,
+    #[props(default = String::new())] busy_label: String,
     on_confirm: EventHandler<MouseEvent>,
     on_cancel: EventHandler<MouseEvent>,
     children: Element,
@@ -135,14 +136,20 @@ pub fn ConfirmPanel(
             div { class: "ui-actions",
                 Button {
                     variant: ButtonVariant::Secondary,
+                    disabled: busy,
                     onclick: on_cancel,
                     "{cancel_label}"
                 }
                 Button {
                     variant: ButtonVariant::Danger,
                     disabled: busy,
+                    loading: busy,
                     onclick: on_confirm,
-                    "{confirm_label}"
+                    if busy && !busy_label.is_empty() {
+                        "{busy_label}"
+                    } else {
+                        "{confirm_label}"
+                    }
                 }
             }
         }

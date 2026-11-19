@@ -5,8 +5,8 @@
 | Source | `context/sitemap.md` §1.1–§1.3 (routes, non-routes), §2 (navigation by role), §3 (flows), §4 (current vs. target), §5 (conventions); `context/Design.md`; `context/PRD.md`; `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` (Page adoption table); the `Route` enum at `persona-sanus/src/main.rs:47-95` |
 | Purpose | Track which `context/screens/done/<Name>.md` specs exist and which are missing, and fix naming, shape, and write order for the ones not written yet. This file defines no screen: every screen's structure, copy, style, and states live in its own file |
 | Doc status key | ✅ spec complete (sections 1–7 written) · 🟡 partial (file exists, sections incomplete) · ⬜ missing (no file) |
-| Route status key | Copied verbatim from `context/sitemap.md` §1.1/§1.2 — ✅ implemented · 🟡 partial · ⬜ planned. It tracks **code**, not this doc set; the two axes are independent (`Footer.md` is a complete spec with no shipped component; `SettingsUsers` ships while its sitemap cell still reads ⬜) |
-| Component column | Dioxus component and its current definition line in `persona-sanus/src/main.rs` (6,177 lines) |
+| Route status key | Copied verbatim from `context/sitemap.md` §1.1/§1.2 — ✅ implemented · 🟡 partial · ⬜ planned. It tracks **code**, not this doc set; the two axes are independent |
+| Component column | Dioxus component and its current definition line in `persona-sanus/src/main.rs` |
 | Count | 24 specs in scope — 23 written, 1 deferred (`SettingsBilling.md`, v1.1) |
 | Locale | `es-EC` on every quoted label. `receta`, `cédula` keep Ecuador Spanish spelling |
 | Status | ✅ Complete for v1 — 23 of 24 written. `SettingsBilling.md` stays deferred by PRD D-04/D-14 |
@@ -49,52 +49,44 @@ A screen file never introduces a route, an endpoint, a table, a column, or a rol
 
 | Screen doc | Surface | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|---|:---:|
-| `done/Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `:1377` | 🟡 | ✅ |
-| `done/Footer.md` | Public footer band (`/`, `/login`, `/verify/:code`) | not shipped | ⬜ | ✅ |
+| `done/Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `:1483` | 🟡 | ✅ |
+| `done/Footer.md` | Public footer band (`/`, `/login`, `/verify/:code`) | `Footer` · `:1287` | ✅ | ✅ |
 
 ### 2.2 Public, no auth (sitemap §1.1)
 
 | Screen doc | Route | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|:---:|:---:|
-| `done/Home.md` | `/` | `Home` · `:1282` | ✅ | ✅ |
-| `done/AuthPage.md` | `/login` | `AuthPage` · `:1462` | ✅ | ✅ |
-| `done/Verify.md` | `/verify/:code` | `Verify` · `:1297` | ⬜ — see §3 | ✅ |
+| `done/Home.md` | `/` | `Home` · `:1322` | ✅ | ✅ |
+| `done/AuthPage.md` | `/login` | `AuthPage` · `:1585` | ✅ | ✅ |
+| `done/Verify.md` | `/verify/:code` | `Verify` · `:1419` | ✅ | ✅ |
 
 ### 2.3 Authenticated shell (sitemap §1.2)
 
 | Screen doc | Route | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|:---:|:---:|
-| `done/Dashboard.md` | `/dashboard` | `Dashboard` · `:1701` | 🟡 | ✅ |
-| `done/Patients.md` | `/patients` | `Patients` · `:2758` | ✅ | ✅ |
-| `done/PatientNew.md` | `/patients/new` | `PatientNew` · `:2954` | ✅ | ✅ |
-| `done/PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3128` | 🟡 | ✅ |
-| `done/PatientEdit.md` | `/patients/:id/edit` | `PatientEdit` · `:3358` | ✅ | ✅ |
-| `done/Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:4360` | 🟡 | ✅ |
-| `done/PrescriptionNew.md` | `/prescriptions/new` | `PrescriptionNew` · `:4595` | ✅ | ✅ |
-| `done/PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:5380` | 🟡 | ✅ |
-| `done/PrescriptionPreview.md` | `/prescriptions/:id/preview` | `PrescriptionPreview` · `:4939` | ✅ | ✅ |
-| `done/Templates.md` | `/templates` | `Templates` · `:3567` | ✅ | ✅ |
-| `done/TemplateNew.md` | `/templates/new` | `TemplateNew` · `:3680` | ✅ | ✅ |
-| `done/TemplateEdit.md` | `/templates/:id/edit` | `TemplateEdit` · `:3788` | ✅ | ✅ |
-| `done/TemplatePreview.md` | `/templates/:id/preview` | `TemplatePreview` · `:4049` | ✅ | ✅ |
-| `done/Settings.md` | `/settings` | `Settings` · `:1761` | ⬜ — see §3 | ✅ |
-| `done/SettingsClinic.md` | `/settings/clinic` | `SettingsClinic` · `:1804` | ✅ | ✅ |
-| `done/SettingsUsers.md` | `/settings/users` | `SettingsUsers` · `:2120` | ⬜ — see §3 | ✅ |
-| `done/SettingsProfile.md` | `/settings/profile` | `SettingsProfile` · `:2319` | ⬜ — see §3 | ✅ |
+| `done/Dashboard.md` | `/dashboard` | `Dashboard` · `:1938` | ✅ | ✅ |
+| `done/Patients.md` | `/patients` | `Patients` · `:3408` | ✅ | ✅ |
+| `done/PatientNew.md` | `/patients/new` | `PatientNew` · `:3621` | ✅ | ✅ |
+| `done/PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3905` | 🟡 | ✅ |
+| `done/PatientEdit.md` | `/patients/:id/edit` | `PatientEdit` · `:4144` | ✅ | ✅ |
+| `done/Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:5349` | 🟡 | ✅ |
+| `done/PrescriptionNew.md` | `/prescriptions/new` | `PrescriptionNew` · `:5697` | ✅ | ✅ |
+| `done/PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:6627` | 🟡 | ✅ |
+| `done/PrescriptionPreview.md` | `/prescriptions/:id/preview` | `PrescriptionPreview` · `:6155` | ✅ | ✅ |
+| `done/Templates.md` | `/templates` | `Templates` · `:4462` | ✅ | ✅ |
+| `done/TemplateNew.md` | `/templates/new` | `TemplateNew` · `:4606` | ✅ | ✅ |
+| `done/TemplateEdit.md` | `/templates/:id/edit` | `TemplateEdit` · `:4743` | ✅ | ✅ |
+| `done/TemplatePreview.md` | `/templates/:id/preview` | `TemplatePreview` · `:5057` | ✅ | ✅ |
+| `done/Settings.md` | `/settings` | `Settings` · `:2271` | ✅ | ✅ |
+| `done/SettingsClinic.md` | `/settings/clinic` | `SettingsClinic` · `:2351` | ✅ | ✅ |
+| `done/SettingsUsers.md` | `/settings/users` | `SettingsUsers` · `:2636` | ✅ | ✅ |
+| `done/SettingsProfile.md` | `/settings/profile` | `SettingsProfile` · `:2926` | ✅ | ✅ |
 | `SettingsBilling.md` | `/settings/billing` (v1.1) | not routed | ⬜ v1.1 | ⬜ |
-| `done/Audit.md` | `/audit` | `Audit` · `:2634` | ⬜ — see §3 | ✅ |
+| `done/Audit.md` | `/audit` | `Audit` · `:3273` | ✅ | ✅ |
 
 ## 3. Where `context/sitemap.md` lags the code
 
-The §1.1/§1.2 status cells below read ⬜ while the component ships. The sitemap stays the authority, so the fix is the sitemap, not this index. Update the status cell, then drop the `— see §3` marker from §2.
-
-| Route | Sitemap says | Code today |
-|---|---|---|
-| `/verify/:code` | ⬜ | `Verify` renders the four `es-EC` statuses (`Receta auténtica` / `anulada` / `reemplazada` / `no encontrada`), the typed-code field, and per-IP rate limiting — `specs/done/09-I-public-verification.md`, objectives 1–4 all checked |
-| `/settings` | ⬜ | `Settings` (`main.rs:1761`) renders the admin hub (`Usuarios y roles`, `Clínica y biblioteca`, `Mi perfil`) and redirects non-admins to `/settings/profile`, signed-out to `/login` — the sitemap's own purpose row |
-| `/settings/users` | ⬜ in §1.2, ✅ in §4 (M0) | `SettingsUsers` (`main.rs:2120`) lists staff, changes role, disables/removes, and revokes devices — spec 02-B shipped |
-| `/settings/profile` | ⬜ | `SettingsProfile` (`main.rs:2319`) holds the profile fields (`license_no`, `national_id`, contact — spec 02-B), TOTP enrolment (`mfa_secret`/`mfa_uri`/code) and password change (spec 12-L) |
-| `/audit` | ⬜ | `Audit` (`main.rs:2634`) filters by action/entity/query, is admin-guarded client-side and server-side, and renders the append-only rows — spec 12-L shipped |
+Resolved. `/verify/:code`, `/settings`, `/settings/users`, `/settings/profile`, and `/audit` all read ✅ in the sitemap §1.1/§1.2; the `— see §3` markers in §2 are dropped. The sitemap stays the authority — if a route's status cell drifts again, fix the sitemap cell first, then §2 here.
 
 ## 4. Backlog — specs to write, in order
 

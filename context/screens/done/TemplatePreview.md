@@ -271,31 +271,20 @@ Line icons only, 1.5px stroke, 20px default, Ink or Plum: the Alert glyph in the
 
 ## 7. Implementation notes
 
-The shipped component is `fn TemplatePreview(id: String)` at `persona-sanus/src/main.rs:4049`, `#[component]` at `:4048`, closing before `template_status_label` at `:4223`. Signals: `template: Option<api::Template>`, `selected: Option<String>`, `margin: u32` (initial 15), `message: String`; `load_id = id.clone()`.
+Shipped: `#[component] fn TemplatePreview(id: String)` at `persona-sanus/src/main.rs:5056-5057`, closing at `:5322`. Signals: `template`, `selected`, `margin` (initial 15), `message`, and `image_sources: Vec<(String, String)>` (`:5062-5067`).
 
-Behavior to preserve:
+Current behavior:
 
-- The effect gates on `checked` and `user`; a missing session replaces `/login`; it calls `api::fetch_template(&load_id)` once (no generation/reload signal).
-- On success it picks `found.current_version.as_ref().or(found.versions.first())`, sets `selected` to that version id, sets margin to `forms::template_theme_margin(version.theme)` (15 when no version), and stores the template.
-- On failure `message` holds the API error; the page shows `ErrorText` + `Volver a plantillas`. There is **no desktop local fallback** in this component, so a desktop offline preview is an error, not a cached sheet. Record this honestly; do not add cache copy.
-- The role gate is `profile.can_manage_templates()`; denial copy is `Solo doctor y administrador pueden ver la vista previa.`; no back link in the denial.
-- The version select's `onchange` sets `selected`, resets `margin` to `template_theme_margin` for the chosen version, and does not refetch. Options use `version.id` as value and `Versión {version_no} — {version_status_label(status)}` as text.
-- The margin input is `type=number`, `min=5`, `max=40`, no `step` in the shipped markup; it parses to `u32` and clamps 5–40, keeping the old value on parse failure.
-- Warnings: `forms::parse_document(&version.doc_json)` then `forms::document_warnings(&document)`; `warnings.join(", ")`; a non-empty list paints `Variables no válidas: {joined}` plus the hint. Empty list hides the notice.
-- Canvas: `div.preview-scroll` > `forms::A4Preview { doc_json: version.doc_json.clone(), values: forms::sample_values(), margin_mm: margin() }`. The shipped call does **not** pass `medications`, `meta`, `image_sources`; `A4Preview` defaults medications to the document blocks, meta to empty, and image sources to an empty vector. This preview therefore has no verification code/QR and no image bytes. Do not claim otherwise.
-- Page head: `h4` `Vista previa A4 — {model.name}` and `p` `Proyección 210 × 297 mm con valores de ejemplo.`; actions are `Link.button.secondary` `Volver a plantillas` to `Templates` and `Abrir editor` to `TemplateEdit`.
-- No Primary, no publish, no archive, no upload, no PDF/print/share, no save.
+- The load effect (`:5069-5097`) gates on `checked` and `user`, replaces `/login` when signed out, and calls `api::fetch_template(&load_id)` once (no generation/reload signal). On success it picks `current_version.or(versions.first())`, sets `selected` and `margin` via `forms::template_theme_margin` (`:5080-5088`). On failure `message` holds the API error, with English transport lines mapped to `No se pudo cargar la vista previa.` (`:5090-5095`). There is **no desktop local fallback** in this component, so a desktop offline preview is an error, not a cached sheet.
+- Image sources are shipped: a second effect (`:5099-5147`) runs on `selected`, parses the selected `doc_json`, collects `letterhead.logo_asset_id` plus each `images[].asset_id` (`:5117-5132`), calls `api::fetch_assets()`, and keeps ready `logo`/`image` rows whose id is referenced, mapping them to `(asset.id, url)` (`:5133-5144`). A failed asset read leaves `image_sources` empty and never replaces the document with an error.
+- Gates render `PageShell id="templates-page"` with `LoadingState` (`:5149-5162`); denial renders `PageHeader` plus an Error `Notice` (`Acceso denegado` / `Solo doctor y administrador pueden ver la vista previa.`) with no back link (`:5163-5173`); load failure renders `ErrorText` + Secondary `Volver a plantillas` (`:5174-5192`).
+- No versions renders `PageHeader` (`Vista previa A4 — {name}` / `210 × 297 mm con valores de ejemplo.`), title-only `EmptyState`, and Secondary `Abrir editor` (`:5203-5220`).
+- Settled view renders `PageHeader` with that title/subtitle and Secondary `Volver a plantillas` / `Abrir editor` (`:5229-5248`), then `Card` > `FormGrid columns=Two` with `SelectField label="Versión"` (options `Versión {n} — {status}`, `onchange` resets margin to the chosen version's theme margin, `:5251-5271`) and `TextField label="Márgenes (mm)"` (`input_type="number"`, `min=5`, `max=40`, `step=1`, parses and clamps 5–40, `:5272-5300`).
+- Warnings: `forms::parse_document` + `forms::document_warnings` (`:5221-5224`); a non-empty list paints a Warning `Notice` with strong `Variables no válidas`, the joined keys, and the hint `En la proyección se marcan como texto de advertencia, nunca como {{clave}}.` (`:5303-5311`).
+- Canvas is `div.ui-preview-canvas` holding `forms::A4Preview { doc_json, values: forms::sample_values(), margin_mm: margin(), image_sources: image_sources() }` (`:5312-5319`). `A4Preview` (`forms.rs:468-591`) defaults `medications` to the document blocks and `meta` to empty (so no verification QR is passed from here), paints a referenced ready image or the `Imagen: {caption}` fallback (`forms.rs:540-552`), and paints a parse failure as `ErrorText` (`forms.rs:476-481`).
+- No Primary, no publish, no archive, no upload, no PDF/print/share, no save; the component fetches the template once and re-reads assets on version change.
 
-Plan step 14 adoption:
-
-- Root becomes `PageShell id="templates-page"`; `h4` becomes `PageHeader` `h1` `Vista previa A4 — {model.name}` with the target subtitle `210 × 297 mm con valores de ejemplo.`; `Volver a plantillas` and `Abrir editor` become Secondary `ButtonLink`s.
-- Controls become `Card` + `FormGrid columns=Two`: `SelectField` `label="Versión"`, `value=selected`, `onchange` preserving the reset; `TextField` `label="Márgenes (mm)"`, `input_type="number"`, `min=5`, `max=40`, `step=1`, `value=margin`, `oninput` preserving the clamp. No primary/action row.
-- Warning becomes `Notice tone=Warning` with the title `Variables no válidas` and one line of keys; the explanatory hint stays `HintText` or paragraph. Do not use `ErrorText`: the document is previewable.
-- Canvas wrapper becomes `.ui-preview-canvas`; `forms::A4Preview` keeps `doc_json`, `values: forms::sample_values()`, `margin_mm`, and add `image_sources` as specified below. The `.a4-*` projection classes and page geometry are untouched.
-- Image sources: parse the selected `doc_json`; collect `letterhead.logo_asset_id` plus each `images[].asset_id`; call `api::fetch_assets()` once per selected version; keep `kind == "logo" || kind == "image"`, `status == "ready"`, non-empty `url`; pass `(asset_id, url)` pairs. This uses the existing asset endpoint and the doctor's patient-read entitlement (`service::list_assets`), adds no route. A failed asset read leaves the vector empty and does not replace the document with an error; the renderer's placeholder is the honest fallback. Re-read on version change because URLs expire in 15 minutes.
-- Empty state: `EmptyState` title only plus a Secondary `ButtonLink` `Abrir editor`; no `SelectField`, no margin field, no canvas.
-- Error state: `ErrorText` with the frozen fallback; Secondary `Volver a plantillas`; no empty canvas.
-- Do not add a reload/generation signal, polling, autosave, publish, or upload. The shipped component fetches once.
+Residual §2.4 nuance: the denied state now renders `Notice` only (region 9), and the margin field reverts cleared/invalid input on blur via `TextField::onblur` + a raw-text `margin_text` signal (`:5128-5133`, `:5239-5259`) where `§3.4`'s "clamp on input" behavior is kept (invalid text stays visible until blur).
 
 Verification commands, from the repo root; none is recorded here as executed:
 

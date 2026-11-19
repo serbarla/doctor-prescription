@@ -1276,6 +1276,48 @@ fn App() -> Element {
     }
 }
 
+#[derive(Clone, PartialEq)]
+enum FooterSurface {
+    Home,
+    Auth,
+    Verify,
+}
+
+#[component]
+fn Footer(surface: FooterSurface) -> Element {
+    #[cfg(feature = "desktop")]
+    let version = Some(format!("Versión {}", env!("CARGO_PKG_VERSION")));
+    #[cfg(not(feature = "desktop"))]
+    let version: Option<String> = None;
+    rsx! {
+        footer { id: "ui-footer", class: "ui-footer",
+            div { class: "ui-container",
+                div { class: "ui-footer-inner",
+                    if matches!(surface, FooterSurface::Home | FooterSurface::Auth) {
+                        div { class: "ui-footer-brand",
+                            LogoLockup {}
+                            if matches!(surface, FooterSurface::Home) {
+                                a { href: "#verificar", "Verificar una receta" }
+                            }
+                        }
+                    }
+                    div { class: "ui-footer-legal",
+                        if matches!(surface, FooterSurface::Auth) {
+                            TrustSecurityRow {}
+                        }
+                        if matches!(surface, FooterSurface::Verify) {
+                            p { class: "ui-footer-disclosure", "Solo se muestran el médico, la fecha y el número de la receta." }
+                        }
+                        if let Some(version) = version {
+                            p { class: "ui-footer-version", "{version}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[component]
 fn Home() -> Element {
     let user = use_context::<Signal<Option<SessionUser>>>();
@@ -1327,7 +1369,7 @@ fn Home() -> Element {
                         NumberedStepCard {
                             number: 1,
                             title: "Elige el paciente".to_owned(),
-                            body: "Selecciona a la persona y revisa su ficha antes de recetar.".to_owned(),
+                            body: "Busca por nombre o cédula, o crea la ficha en segundos. El historial de recetas queda junto al paciente.".to_owned(),
                             accent: AccentTone::Mint,
                             mock: A4MockKind::Patient,
                             tag: None
@@ -1335,7 +1377,7 @@ fn Home() -> Element {
                         NumberedStepCard {
                             number: 2,
                             title: "Completa la receta".to_owned(),
-                            body: "Completa diagnóstico, indicaciones y medicamentos en un formulario claro.".to_owned(),
+                            body: "Tu plantilla con tus variables: diagnóstico, instrucciones y medicamentos, escritos en un formulario simple.".to_owned(),
                             accent: AccentTone::Cream,
                             mock: A4MockKind::Medication,
                             tag: None
@@ -1343,7 +1385,7 @@ fn Home() -> Element {
                         NumberedStepCard {
                             number: 3,
                             title: "Firma y verifica".to_owned(),
-                            body: "Firma, descarga el PDF y comparte un código verificable.".to_owned(),
+                            body: "Vista previa A4, PDF listo para imprimir y un QR que cualquiera puede verificar sin exponer datos del paciente.".to_owned(),
                             accent: AccentTone::Blossom,
                             mock: A4MockKind::Verification,
                             tag: Some("Verificable".to_owned())
@@ -1369,6 +1411,7 @@ fn Home() -> Element {
                     TrustSecurityRow {}
                 }
             }
+            Footer { surface: FooterSurface::Home }
         }
     }
 }
@@ -1401,6 +1444,7 @@ fn Verify(code: String) -> Element {
                 PillBadge {}
             }
             div { class: "ui-public-main ui-stack",
+                h1 { class: "ui-visually-hidden", "Verificación de receta" }
                 if !loaded() {
                     LoadingState { label: "Verificando receta…".to_owned() }
                 } else if let Some(verification) = result() {
@@ -1422,6 +1466,7 @@ fn Verify(code: String) -> Element {
                     }
                 }
             }
+            Footer { surface: FooterSurface::Verify }
         }
     }
 }
@@ -1487,15 +1532,26 @@ fn Navbar() -> Element {
                     }
                 }
                 div { class: "ui-navbar-account",
-                    SyncStatusIndicator { status }
-                    if status.failed > 0 {
-                        Link {
-                            class: "ui-sync-link",
-                            to: Route::Prescriptions { status: Some("failed".to_owned()) },
-                            "{status.failed} con error"
-                        }
-                    }
                     if let Some(session) = current {
+                        SyncStatusIndicator { status }
+                        if status.pending > 0 {
+                            Link {
+                                class: "ui-sync-link ui-sync-link--pending",
+                                to: Route::Prescriptions { status: Some("pending_sync".to_owned()) },
+                                if status.pending == 1 {
+                                    "· 1 pendiente"
+                                } else {
+                                    "· {status.pending} pendientes"
+                                }
+                            }
+                        }
+                        if status.failed > 0 {
+                            Link {
+                                class: "ui-sync-link",
+                                to: Route::Prescriptions { status: Some("failed".to_owned()) },
+                                "{status.failed} con error"
+                            }
+                        }
                         span { class: "ui-navbar-user", "{session.email}" }
                         Button {
                             variant: ButtonVariant::Ghost,
@@ -1551,18 +1607,26 @@ fn AuthPage() -> Element {
                             DetailItem { label: "Nombre".to_owned(), "{session.name}" }
                             DetailItem { label: "Correo".to_owned(), "{session.email}" }
                         }
-                        Button {
-                            variant: ButtonVariant::Ghost,
-                            onclick: move |_| {
-                                spawn(async move {
-                                    let _ = auth::sign_out().await;
-                                    clear_persisted_session();
-                                    actor.set(None);
-                                    user.set(None);
-                                    navigator.push(Route::Home {});
-                                });
-                            },
-                            "Cerrar sesión"
+                        ActionRow {
+                            ButtonLink {
+                                to: Route::Dashboard {},
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                "Panel"
+                            }
+                            Button {
+                                variant: ButtonVariant::Ghost,
+                                onclick: move |_| {
+                                    spawn(async move {
+                                        let _ = auth::sign_out().await;
+                                        clear_persisted_session();
+                                        actor.set(None);
+                                        user.set(None);
+                                        navigator.push(Route::Home {});
+                                    });
+                                },
+                                "Cerrar sesión"
+                            }
                         }
                     }
                 }
@@ -1599,7 +1663,6 @@ fn AuthPage() -> Element {
                             mfa_ticket.set(ticket);
                         }
                         submitting.set(false);
-                        error.set("Ingresa el código de verificación.".to_string());
                         return;
                     }
                     #[cfg(feature = "desktop")]
@@ -1714,9 +1777,10 @@ fn AuthPage() -> Element {
                     }
                 }
                 if mfa_ticket().is_empty() {
-                    div { class: "ui-segmented",
+                    div { class: "ui-segmented", aria_label: "Tipo de acceso",
                         Button {
                             variant: ButtonVariant::Ghost,
+                            disabled: submitting(),
                             extra_class: (if sign_up_mode() { "" } else { "is-active" }).to_owned(),
                             onclick: move |_| {
                                 sign_up_mode.set(false);
@@ -1726,6 +1790,7 @@ fn AuthPage() -> Element {
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
+                            disabled: submitting(),
                             extra_class: (if sign_up_mode() { "is-active" } else { "" }).to_owned(),
                             onclick: move |_| {
                                 sign_up_mode.set(true);
@@ -1795,21 +1860,23 @@ fn AuthPage() -> Element {
                                 hide_label: false,
                             }
                         }
-                    }
-                    if !error().is_empty() {
-                        ErrorText { text: error() }
-                    }
-                    Button {
-                        variant: ButtonVariant::Primary,
-                        disabled: submitting(),
-                        loading: submitting(),
-                        onclick: submit,
-                        if submitting() {
-                            "Procesando..."
-                        } else if sign_up_mode() {
-                            "Crear cuenta"
-                        } else {
-                            "Iniciar sesión"
+                        if !error().is_empty() {
+                            ErrorText { text: error() }
+                        }
+                        ActionRow {
+                            Button {
+                                variant: ButtonVariant::Primary,
+                                disabled: submitting(),
+                                loading: submitting(),
+                                onclick: submit,
+                                if submitting() {
+                                    "Procesando..."
+                                } else if sign_up_mode() {
+                                    "Crear cuenta"
+                                } else {
+                                    "Iniciar sesión"
+                                }
+                            }
                         }
                     }
                 } else {
@@ -1822,7 +1889,7 @@ fn AuthPage() -> Element {
                                 placeholder: String::new(),
                                 hint: None,
                                 error: None,
-                                autocomplete: "off".to_owned(),
+                                autocomplete: "one-time-code".to_owned(),
                                 spellcheck: false,
                                 required: false,
                                 disabled: false,
@@ -1843,10 +1910,15 @@ fn AuthPage() -> Element {
                                 disabled: submitting(),
                                 loading: submitting(),
                                 onclick: verify_mfa,
-                                "Verificar código"
+                                if submitting() {
+                                    "Procesando..."
+                                } else {
+                                    "Verificar código"
+                                }
                             }
                             Button {
                                 variant: ButtonVariant::Secondary,
+                                disabled: submitting(),
                                 onclick: move |_| {
                                     mfa_ticket.set(String::new());
                                     error.set(String::new());
@@ -1857,6 +1929,7 @@ fn AuthPage() -> Element {
                     }
                 }
             }
+            Footer { surface: FooterSurface::Auth }
         }
     }
 }
@@ -1912,7 +1985,6 @@ fn Dashboard() -> Element {
     if !checked() {
         return rsx! {
             PageShell { id: "dashboard-page".to_owned(),
-                PageHeader { title: "Panel".to_owned(), subtitle: None }
                 LoadingState {}
             }
         };
@@ -1921,7 +1993,6 @@ fn Dashboard() -> Element {
     let Some(session) = user() else {
         return rsx! {
             PageShell { id: "dashboard-page".to_owned(),
-                PageHeader { title: "Panel".to_owned(), subtitle: None }
                 LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
@@ -2153,8 +2224,8 @@ fn Dashboard() -> Element {
             if show_sync {
                 SectionCard { title: "Sincronización".to_owned(), description: None,
                     div { class: "ui-stack",
+                        Badge { tone: BadgeTone::Cream, "Provisional" }
                         span { "{status.label()}" }
-                        if status.pending > 0 {
                             Link {
                                 class: "ui-sync-link",
                                 to: Route::Prescriptions { status: Some("pending_sync".to_owned()) },
@@ -2164,7 +2235,6 @@ fn Dashboard() -> Element {
                                     "· {status.pending} pendientes"
                                 }
                             }
-                        }
                         if status.failed > 0 {
                             Link {
                                 class: "ui-sync-link",
@@ -2221,10 +2291,6 @@ fn Settings() -> Element {
     if !checked() || profile.is_none() {
         return rsx! {
             PageShell { id: "settings-page".to_owned(),
-                PageHeader {
-                    title: "Configuración".to_owned(),
-                    subtitle: Some("Administra el acceso del personal y tu perfil.".to_owned()),
-                }
                 LoadingState {}
             }
         };
@@ -2236,7 +2302,8 @@ fn Settings() -> Element {
                     title: "Configuración".to_owned(),
                     subtitle: Some("Administra el acceso del personal y tu perfil.".to_owned()),
                 }
-                div { class: "ui-link-grid",
+                nav { aria_label: "Configuración",
+                    div { class: "ui-link-grid",
                     ButtonLink {
                         to: Route::SettingsUsers {},
                         variant: ButtonVariant::Secondary,
@@ -2268,13 +2335,13 @@ fn Settings() -> Element {
                         }
                     }
                     {gallery_settings_link()}
+                    }
                 }
             }
         },
         _ => rsx! {
             PageShell { id: "settings-page".to_owned(),
-                PageHeader { title: "Configuración".to_owned(), subtitle: None }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         },
     }
@@ -2324,11 +2391,13 @@ fn SettingsClinic() -> Element {
                     llm_url.set(found.llm_url_template.clone().unwrap_or_default());
                     settings.set(Some(found));
                 }
-                Err(error) => message.set(error),
+                Err(_) => {
+                    message.set("No se pudo cargar la configuración de la clínica.".to_owned())
+                }
             }
             match api::fetch_assets().await {
                 Ok(loaded) => library.set(Some(loaded)),
-                Err(error) => message.set(error),
+                Err(_) => message.set("No se pudo cargar la biblioteca de imágenes.".to_owned()),
             }
         });
     });
@@ -2336,10 +2405,6 @@ fn SettingsClinic() -> Element {
     if !checked() || actor().is_none() {
         return rsx! {
             PageShell { id: "settings-page".to_owned(),
-                PageHeader {
-                    title: "Clínica".to_owned(),
-                    subtitle: Some("Datos de la clínica, logo y biblioteca de imágenes.".to_owned()),
-                }
                 LoadingState {}
             }
         };
@@ -2348,11 +2413,7 @@ fn SettingsClinic() -> Element {
         if !profile.is_administrator() {
             return rsx! {
                 PageShell { id: "settings-page".to_owned(),
-                    PageHeader {
-                        title: "Clínica".to_owned(),
-                        subtitle: Some("Datos de la clínica, logo y biblioteca de imágenes.".to_owned()),
-                    }
-                    LoadingState { label: "Redirigiendo…".to_owned() }
+                    LoadingState { label: "Redirigiendo...".to_owned() }
                 }
             };
         }
@@ -2484,6 +2545,9 @@ fn SettingsClinic() -> Element {
                         wide: true,
                     }
                 }
+                if let Some(timezone) = clinic.as_ref().map(|value| value.timezone.clone()).filter(|value| !value.is_empty()) {
+                    HintText { text: format!("Zona horaria: {timezone}") }
+                }
                 ActionRow {
                     Button {
                         variant: ButtonVariant::Primary,
@@ -2551,10 +2615,18 @@ fn SettingsClinic() -> Element {
                 }
                 HintText { text: "Exporte los datos de la clínica (JSON: pacientes, recetas y medicamentos) antes de que finalice el período de gracia. La exportación queda registrada en la auditoría.".to_owned() }
                 ActionRow {
-                    LinkAction {
-                        href: "/api/clinic/export".to_owned(),
-                        variant: ButtonVariant::Secondary,
-                        "Exportar datos (JSON)"
+                    if online {
+                        LinkAction {
+                            href: "/api/clinic/export".to_owned(),
+                            variant: ButtonVariant::Secondary,
+                            "Exportar datos (JSON)"
+                        }
+                    } else {
+                        Button {
+                            variant: ButtonVariant::Secondary,
+                            disabled: true,
+                            "Exportar datos (JSON)"
+                        }
                     }
                 }
             }
@@ -2571,6 +2643,7 @@ fn SettingsUsers() -> Element {
     let mut devices = use_signal(Vec::<api::DeviceRow>::new);
     let refresh = use_signal(|| 0);
     let mut message = use_signal(String::new);
+    let busy = use_signal(|| None::<String>);
 
     use_effect(move || {
         let _ = refresh();
@@ -2587,11 +2660,15 @@ fn SettingsUsers() -> Element {
         spawn(async move {
             match api::fetch_users().await {
                 Ok(rows) => users.set(rows),
-                Err(error) => message.set(error),
+                Err(_) => {
+                    message.set("No se pudieron cargar los usuarios y dispositivos.".to_owned())
+                }
             }
             match api::fetch_devices().await {
                 Ok(rows) => devices.set(rows),
-                Err(error) => message.set(error),
+                Err(_) => {
+                    message.set("No se pudieron cargar los usuarios y dispositivos.".to_owned())
+                }
             }
         });
     });
@@ -2600,11 +2677,14 @@ fn SettingsUsers() -> Element {
     if !checked() {
         return rsx! {
             PageShell { id: "settings-page".to_owned(),
-                PageHeader {
-                    title: "Usuarios y roles".to_owned(),
-                    subtitle: Some("Asigna un rol o deshabilita el acceso de cada persona.".to_owned()),
-                }
                 LoadingState {}
+            }
+        };
+    }
+    if profile.is_none() {
+        return rsx! {
+            PageShell { id: "settings-page".to_owned(),
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     }
@@ -2660,6 +2740,7 @@ fn SettingsUsers() -> Element {
                             "Rol".to_owned(),
                             "Acciones".to_owned(),
                         ],
+                        caption: Some("Personal".to_owned()),
                         tbody {
                             for row in rows {
                                 tr {
@@ -2672,21 +2753,26 @@ fn SettingsUsers() -> Element {
                                         SelectField {
                                             label: "Rol".to_owned(),
                                             hide_label: true,
+                                            disabled: busy().as_deref() == Some(format!("role:{}", row.profile_id).as_str()),
+                                            hint: if busy().as_deref() == Some(format!("role:{}", row.profile_id).as_str()) { Some("Guardando rol...".to_owned()) } else { None },
                                             value: row.role.clone().unwrap_or_default(),
                                             onchange: {
                                                 let profile_id = row.profile_id.clone();
                                                 let mut refresh = refresh;
                                                 let mut message = message;
+                                                let mut busy = busy;
                                                 move |value: String| {
                                                     if value.is_empty() {
                                                         return;
                                                     }
                                                     let profile_id = profile_id.clone();
+                                                    busy.set(Some(format!("role:{profile_id}")));
                                                     spawn(async move {
                                                         match api::set_role(&profile_id, &value).await {
                                                             Ok(()) => refresh += 1,
                                                             Err(error) => message.set(error),
                                                         }
+                                                        busy.set(None);
                                                     });
                                                 }
                                             },
@@ -2702,60 +2788,72 @@ fn SettingsUsers() -> Element {
                                             if row.role.is_some() {
                                                 Button {
                                                     variant: ButtonVariant::Danger,
+                                                    disabled: busy().as_deref() == Some(format!("remove:{}", row.profile_id).as_str()),
                                                     onclick: {
                                                         let profile_id = row.profile_id.clone();
                                                         let mut refresh = refresh;
                                                         let mut message = message;
+                                                        let mut busy = busy;
                                                         move |_| {
                                                             let profile_id = profile_id.clone();
+                                                            busy.set(Some(format!("remove:{profile_id}")));
                                                             spawn(async move {
                                                                 match api::remove_member(&profile_id).await {
                                                                     Ok(()) => refresh += 1,
                                                                     Err(error) => message.set(error),
                                                                 }
+                                                                busy.set(None);
                                                             });
                                                         }
                                                     },
-                                                    "Quitar del equipo"
+                                                    if busy().as_deref() == Some(format!("remove:{}", row.profile_id).as_str()) { "Quitando..." } else { "Quitar del equipo" }
                                                 }
                                             }
                                             if row.status == "active" {
                                                 Button {
                                                     variant: ButtonVariant::Danger,
+                                                    disabled: busy().as_deref() == Some(format!("disable:{}", row.profile_id).as_str()),
                                                     onclick: {
                                                         let profile_id = row.profile_id.clone();
                                                         let mut refresh = refresh;
                                                         let mut message = message;
+                                                        let mut busy = busy;
                                                         move |_| {
                                                             let profile_id = profile_id.clone();
+                                                            busy.set(Some(format!("disable:{profile_id}")));
                                                             spawn(async move {
                                                                 match api::disable_profile(&profile_id, true).await {
                                                                     Ok(()) => refresh += 1,
                                                                     Err(error) => message.set(error),
                                                                 }
+                                                                busy.set(None);
                                                             });
                                                         }
                                                     },
-                                                    "Deshabilitar"
+                                                    if busy().as_deref() == Some(format!("disable:{}", row.profile_id).as_str()) { "Deshabilitando..." } else { "Deshabilitar" }
                                                 }
                                             } else {
                                                 Button {
                                                     variant: ButtonVariant::Secondary,
+                                                    disabled: busy().as_deref() == Some(format!("enable:{}", row.profile_id).as_str()),
                                                     onclick: {
                                                         let profile_id = row.profile_id.clone();
                                                         let mut refresh = refresh;
                                                         let mut message = message;
+                                                        let mut busy = busy;
                                                         move |_| {
                                                             let profile_id = profile_id.clone();
+                                                            busy.set(Some(format!("enable:{profile_id}")));
                                                             spawn(async move {
                                                                 match api::disable_profile(&profile_id, false).await {
                                                                     Ok(()) => refresh += 1,
                                                                     Err(error) => message.set(error),
                                                                 }
+                                                                busy.set(None);
                                                             });
                                                         }
                                                     },
-                                                    "Habilitar"
+                                                    if busy().as_deref() == Some(format!("enable:{}", row.profile_id).as_str()) { "Habilitando..." } else { "Habilitar" }
                                                 }
                                             }
                                         }
@@ -2782,6 +2880,7 @@ fn SettingsUsers() -> Element {
                             "Estado".to_owned(),
                             "Acciones".to_owned(),
                         ],
+                        caption: Some("Dispositivos".to_owned()),
                         tbody {
                             for device in device_rows {
                                 tr {
@@ -2795,21 +2894,25 @@ fn SettingsUsers() -> Element {
                                         if device.revoked_at.is_none() {
                                             Button {
                                                 variant: ButtonVariant::Danger,
+                                                disabled: busy().as_deref() == Some(format!("revoke:{}", device.id).as_str()),
                                                 onclick: {
                                                     let device_id = device.id.clone();
                                                     let mut refresh = refresh;
                                                     let mut message = message;
+                                                    let mut busy = busy;
                                                     move |_| {
                                                         let device_id = device_id.clone();
+                                                        busy.set(Some(format!("revoke:{device_id}")));
                                                         spawn(async move {
                                                             match api::revoke_device(&device_id).await {
                                                                 Ok(()) => refresh += 1,
                                                                 Err(error) => message.set(error),
                                                             }
+                                                            busy.set(None);
                                                         });
                                                     }
                                                 },
-                                                "Revocar"
+                                                if busy().as_deref() == Some(format!("revoke:{}", device.id).as_str()) { "Revocando..." } else { "Revocar" }
                                             }
                                         } else {
                                             "—"
@@ -2848,6 +2951,11 @@ fn SettingsProfile() -> Element {
     let mut current_password = use_signal(String::new);
     let mut new_password = use_signal(String::new);
     let mut password_message = use_signal(String::new);
+    let mut mfa_busy = use_signal(String::new);
+    let mut password_busy = use_signal(|| false);
+    let mut message_error = use_signal(|| false);
+    let mut mfa_message_error = use_signal(|| false);
+    let mut password_message_error = use_signal(|| false);
 
     use_effect(move || {
         if initialized() {
@@ -2880,7 +2988,6 @@ fn SettingsProfile() -> Element {
     if !checked() {
         return rsx! {
             PageShell { id: "settings-page".to_owned(),
-                PageHeader { title: "Mi perfil".to_owned(), subtitle: None }
                 LoadingState {}
             }
         };
@@ -2888,21 +2995,20 @@ fn SettingsProfile() -> Element {
     let Some(profile) = current else {
         return rsx! {
             PageShell { id: "settings-page".to_owned(),
-                PageHeader { title: "Mi perfil".to_owned(), subtitle: None }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
     let is_doctor = profile.is_doctor();
     let is_admin = profile.is_administrator();
-    let clinic_label = match profile.clinic {
-        Some(clinic) => format!("Clínica: {}", clinic.name),
+    let subtitle = match profile.clinic {
+        Some(clinic) => format!(
+            "Clínica: {} · Rol: {}",
+            clinic.name,
+            role_label(profile.role.as_deref())
+        ),
         None => "Sin clínica asignada. Un administrador debe asignarte un rol.".to_string(),
     };
-    let subtitle = format!(
-        "{clinic_label} · Rol: {}",
-        role_label(profile.role.as_deref())
-    );
 
     rsx! {
         PageShell { id: "settings-page".to_owned(),
@@ -2947,7 +3053,11 @@ fn SettingsProfile() -> Element {
                     }
                 }
                 if !message().is_empty() {
-                    HintText { text: message() }
+                    if message_error() {
+                        ErrorText { text: message() }
+                    } else {
+                        HintText { text: message() }
+                    }
                 }
                 ActionRow {
                     Button {
@@ -2974,8 +3084,12 @@ fn SettingsProfile() -> Element {
                                     Ok(updated) => {
                                         actor.set(Some(updated));
                                         message.set("Perfil guardado.".to_string());
+                                        message_error.set(false);
                                     }
-                                    Err(error) => message.set(error),
+                                    Err(error) => {
+                                        message.set(error);
+                                        message_error.set(true);
+                                    }
                                 }
                             });
                         },
@@ -3000,23 +3114,37 @@ fn SettingsProfile() -> Element {
                                 label: "Código de 6 dígitos".to_owned(),
                                 value: mfa_code(),
                                 oninput: move |next| mfa_code.set(next),
+                                autocomplete: "one-time-code".to_owned(),
+                                inputmode: Some("numeric".to_owned()),
                             }
                             ActionRow {
                                 Button {
                                     variant: ButtonVariant::Secondary,
+                                    disabled: mfa_code().trim().is_empty() || mfa_busy() == "confirm",
                                     onclick: move |_| {
+                                        if mfa_code().trim().is_empty() || mfa_busy() == "confirm" {
+                                            return;
+                                        }
+                                        mfa_busy.set("confirm".to_string());
                                         spawn(async move {
                                             match auth::confirm_mfa(&mfa_code()).await {
                                                 Ok(_) => {
                                                     mfa_enabled.set(true);
                                                     mfa_secret.set(String::new());
+                                                    mfa_uri.set(String::new());
+                                                    mfa_code.set(String::new());
                                                     mfa_message.set("Verificación activada.".to_string());
+                                                    mfa_message_error.set(false);
                                                 }
-                                                Err(error) => mfa_message.set(error),
+                                                Err(error) => {
+                                                    mfa_message.set(error);
+                                                    mfa_message_error.set(true);
+                                                }
                                             }
+                                            mfa_busy.set(String::new());
                                         });
                                     },
-                                    "Confirmar activación"
+                                    if mfa_busy() == "confirm" { "Confirmando..." } else { "Confirmar activación" }
                                 }
                             }
                         } else if mfa_enabled() {
@@ -3025,22 +3153,34 @@ fn SettingsProfile() -> Element {
                                 value: mfa_password(),
                                 oninput: move |next| mfa_password.set(next),
                                 input_type: "password".to_owned(),
+                                autocomplete: "current-password".to_owned(),
                             }
                             ActionRow {
                                 Button {
                                     variant: ButtonVariant::Danger,
+                                    disabled: mfa_password().trim().is_empty() || mfa_busy() == "disable",
                                     onclick: move |_| {
+                                        if mfa_password().trim().is_empty() || mfa_busy() == "disable" {
+                                            return;
+                                        }
+                                        mfa_busy.set("disable".to_string());
                                         spawn(async move {
                                             match auth::disable_mfa(&mfa_password()).await {
                                                 Ok(_) => {
                                                     mfa_enabled.set(false);
+                                                    mfa_password.set(String::new());
                                                     mfa_message.set("Verificación desactivada.".to_string());
+                                                    mfa_message_error.set(false);
                                                 }
-                                                Err(error) => mfa_message.set(error),
+                                                Err(error) => {
+                                                    mfa_message.set(error);
+                                                    mfa_message_error.set(true);
+                                                }
                                             }
+                                            mfa_busy.set(String::new());
                                         });
                                     },
-                                    "Desactivar verificación"
+                                    if mfa_busy() == "disable" { "Desactivando..." } else { "Desactivar verificación" }
                                 }
                             }
                         } else {
@@ -3058,8 +3198,12 @@ fn SettingsProfile() -> Element {
                                                         mfa_uri.set(uri);
                                                     }
                                                     mfa_message.set("Escanea el URI o copia el secreto en tu app de autenticación.".to_string());
+                                                    mfa_message_error.set(false);
                                                 }
-                                                Err(error) => mfa_message.set(error),
+                                                Err(error) => {
+                                                    mfa_message.set(error);
+                                                    mfa_message_error.set(true);
+                                                }
                                             }
                                         });
                                     },
@@ -3068,7 +3212,11 @@ fn SettingsProfile() -> Element {
                             }
                         }
                         if !mfa_message().is_empty() {
-                            HintText { text: mfa_message() }
+                            if mfa_message_error() {
+                                ErrorText { text: mfa_message() }
+                            } else {
+                                HintText { text: mfa_message() }
+                            }
                         }
                     }
                 }
@@ -3080,34 +3228,50 @@ fn SettingsProfile() -> Element {
                             value: current_password(),
                             oninput: move |next| current_password.set(next),
                             input_type: "password".to_owned(),
+                            autocomplete: "current-password".to_owned(),
                         }
                         TextField {
                             label: "Nueva contraseña".to_owned(),
                             value: new_password(),
                             oninput: move |next| new_password.set(next),
                             input_type: "password".to_owned(),
+                            autocomplete: "new-password".to_owned(),
                         }
                     }
                     ActionRow {
                         Button {
                             variant: ButtonVariant::Secondary,
+                            disabled: current_password().is_empty() || new_password().is_empty() || password_busy(),
                             onclick: move |_| {
+                                if current_password().is_empty() || new_password().is_empty() || password_busy() {
+                                    return;
+                                }
+                                password_busy.set(true);
                                 spawn(async move {
                                     match auth::change_password(&current_password(), &new_password()).await {
                                         Ok(_) => {
                                             current_password.set(String::new());
                                             new_password.set(String::new());
                                             password_message.set("Contraseña cambiada. Sesión renovada.".to_string());
+                                            password_message_error.set(false);
                                         }
-                                        Err(error) => password_message.set(error),
+                                        Err(error) => {
+                                            password_message.set(error);
+                                            password_message_error.set(true);
+                                        }
                                     }
+                                    password_busy.set(false);
                                 });
                             },
-                            "Cambiar contraseña"
+                            if password_busy() { "Cambiando..." } else { "Cambiar contraseña" }
                         }
                     }
                     if !password_message().is_empty() {
-                        HintText { text: password_message() }
+                        if password_message_error() {
+                            ErrorText { text: password_message() }
+                        } else {
+                            HintText { text: password_message() }
+                        }
                     }
                 }
             }
@@ -3139,9 +3303,6 @@ fn Audit() -> Element {
                 return;
             }
             Some(profile) if !profile.is_administrator() => {
-                message.set(
-                    "Acceso denegado. Solo el administrador puede ver la auditoría.".to_string(),
-                );
                 return;
             }
             _ => {}
@@ -3156,19 +3317,19 @@ fn Audit() -> Element {
                     message.set(String::new());
                     rows.set(found);
                 }
-                Err(error) => message.set(error),
+                Err(error) => message.set(if error.is_empty() {
+                    "No se pudo cargar la auditoría.".to_owned()
+                } else {
+                    error
+                }),
             }
             loaded.set(true);
         });
     });
 
-    if !checked() {
+    if !checked() || actor().is_none() {
         return rsx! {
             PageShell { id: "audit-page".to_owned(),
-                PageHeader {
-                    title: "Auditoría".to_owned(),
-                    subtitle: Some("Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto.".to_owned()),
-                }
                 LoadingState {}
             }
         };
@@ -3177,19 +3338,9 @@ fn Audit() -> Element {
     if !is_admin {
         return rsx! {
             PageShell { id: "audit-page".to_owned(),
-                PageHeader {
-                    title: "Auditoría".to_owned(),
-                    subtitle: Some("Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto.".to_owned()),
-                }
                 Notice { tone: NoticeTone::Error,
-                    p { "Acceso denegado. Solo el administrador puede ver la auditoría." }
-                }
-                ButtonLink {
-                    to: Route::SettingsProfile {},
-                    variant: ButtonVariant::Secondary,
-                    active_class: None,
-                    extra_class: String::new(),
-                    "Ir a mi perfil"
+                    h1 { "Acceso denegado" }
+                    p { "Solo el administrador puede ver la auditoría." }
                 }
             }
         };
@@ -3222,18 +3373,21 @@ fn Audit() -> Element {
                 }
                 Button {
                     variant: ButtonVariant::Primary,
+                    disabled: !loaded(),
                     onclick: move |_| generation.set(generation() + 1),
-                    "Filtrar"
+                    if !loaded() { "Filtrando..." } else { "Filtrar" }
                 }
-            }
-            if !loaded() {
-                LoadingState {}
             }
             if !message().is_empty() {
                 ErrorText { text: message() }
             }
-            if rows().is_empty() && loaded() {
-                EmptyState { title: "Sin eventos".to_owned() }
+            if !loaded() {
+                LoadingState {}
+            } else if rows().is_empty() {
+                EmptyState {
+                    title: "Sin eventos".to_owned(),
+                    description: "No hay eventos para estos filtros.".to_owned(),
+                }
             } else {
                 DataTable {
                     columns: vec![
@@ -3244,12 +3398,13 @@ fn Audit() -> Element {
                         "ID entidad".to_owned(),
                         "Metadatos".to_owned(),
                     ],
+                    caption: Some("Eventos de auditoría".to_owned()),
                     tbody {
                         for row in rows() {
                             tr {
                                 key: "{row.id}",
                                 td { "{format_timestamp(&row.at)}" }
-                                td { "{row.actor_name.clone().unwrap_or_else(|| row.actor_id.clone().unwrap_or_default())}" }
+                                td { "{row.actor_name.clone().filter(|name| !name.is_empty()).unwrap_or_else(|| row.actor_id.clone().filter(|id| !id.is_empty()).unwrap_or_else(|| char::from_u32(0x2014).unwrap().to_string()))}" }
                                 td { "{row.action}" }
                                 td { "{row.entity}" }
                                 td { "{row.entity_id}" }
@@ -3282,6 +3437,12 @@ fn Patients() -> Element {
             navigator.replace(Route::AuthPage {});
             return;
         }
+        let Some(profile) = actor() else {
+            return;
+        };
+        if !profile.can_read_patients() {
+            return;
+        }
         let term = query();
         spawn(async move {
             match api::fetch_patients(&term).await {
@@ -3312,10 +3473,6 @@ fn Patients() -> Element {
     if !checked() {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader {
-                    title: "Pacientes".to_owned(),
-                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
-                }
                 LoadingState {}
             }
         };
@@ -3323,11 +3480,7 @@ fn Patients() -> Element {
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader {
-                    title: "Pacientes".to_owned(),
-                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
-                }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
@@ -3335,27 +3488,17 @@ fn Patients() -> Element {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
                 PageHeader {
-                    title: "Pacientes".to_owned(),
-                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
-                }
-                Notice { tone: NoticeTone::Error,
-                    p { strong { "Acceso denegado" } }
-                    p { "Necesitas un rol en la clínica para consultar pacientes." }
+                    title: "Acceso denegado".to_owned(),
+                    subtitle: Some("Necesitas un rol en la clínica para consultar pacientes.".to_owned()),
                 }
             }
         };
     }
-    if !loaded() {
-        return rsx! {
-            PageShell { id: "patients-page".to_owned(),
-                PageHeader {
-                    title: "Pacientes".to_owned(),
-                    subtitle: Some("Busca por nombre o cédula dentro de tu clínica.".to_owned()),
-                }
-                LoadingState {}
-            }
-        };
-    }
+    let empty_description = if query().trim().is_empty() {
+        String::new()
+    } else {
+        "No hay pacientes para esta búsqueda.".to_owned()
+    };
 
     rsx! {
         PageShell { id: "patients-page".to_owned(),
@@ -3380,12 +3523,14 @@ fn Patients() -> Element {
                 wide: true,
             }
             if !message().is_empty() {
-                ErrorText { text: message() }
+                ErrorText { text: "No se pudieron cargar los pacientes.".to_owned() }
             }
-            if patients().is_empty() {
+            if !loaded() {
+                LoadingState { label: "Cargando pacientes...".to_owned() }
+            } else if patients().is_empty() {
                 EmptyState {
                     title: "Sin pacientes".to_owned(),
-                    description: "No hay pacientes para esta búsqueda.".to_owned(),
+                    description: empty_description,
                 }
             } else {
                 div { class: "ui-list",
@@ -3394,8 +3539,8 @@ fn Patients() -> Element {
                             key: "{patient.id}",
                             title: patient.full_name.clone(),
                             meta: vec![
-                                format!("Cédula {}", patient.national_id.clone().unwrap_or_else(|| "—".to_owned())),
-                                format!("Nacimiento {}", patient.birth_date.as_deref().map(format_date).unwrap_or_else(|| "—".to_owned())),
+                                format!("Cédula: {}", patient.national_id.clone().unwrap_or_else(|| "—".to_owned())),
+                                format!("Nacimiento: {}", patient.birth_date.as_deref().map(format_date).unwrap_or_else(|| "—".to_owned())),
                             ],
                             badge: None,
                             ButtonLink {
@@ -3477,7 +3622,6 @@ fn submit_new_patient(
             Ok(api::PatientCreateOutcome::LikelyDuplicate(ids)) => {
                 saving.set(false);
                 warning_ids.set(ids);
-                message.set("Ya existe un paciente con un nombre similar.".to_string());
             }
             Err(error) => {
                 saving.set(false);
@@ -3513,17 +3657,6 @@ fn PatientNew() -> Element {
     if !checked() {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader {
-                    title: "Nuevo paciente".to_owned(),
-                    subtitle: None,
-                    ButtonLink {
-                        to: Route::Patients {},
-                        variant: ButtonVariant::Secondary,
-                        active_class: None,
-                        extra_class: String::new(),
-                        "Cancelar"
-                    }
-                }
                 LoadingState {}
             }
         };
@@ -3531,18 +3664,7 @@ fn PatientNew() -> Element {
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader {
-                    title: "Nuevo paciente".to_owned(),
-                    subtitle: None,
-                    ButtonLink {
-                        to: Route::Patients {},
-                        variant: ButtonVariant::Secondary,
-                        active_class: None,
-                        extra_class: String::new(),
-                        "Cancelar"
-                    }
-                }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
@@ -3551,7 +3673,7 @@ fn PatientNew() -> Element {
             PageShell { id: "patients-page".to_owned(),
                 PageHeader {
                     title: "Nuevo paciente".to_owned(),
-                    subtitle: None,
+                    subtitle: Some("Los datos se guardan en la clínica actual.".to_owned()),
                     ButtonLink {
                         to: Route::Patients {},
                         variant: ButtonVariant::Secondary,
@@ -3602,7 +3724,7 @@ fn PatientNew() -> Element {
             Card {
                 FormGrid { columns: FormColumns::Two,
                     TextField {
-                        label: "Nombres completos".to_owned(),
+                        label: "Nombres y apellidos".to_owned(),
                         value: full_name(),
                         oninput: move |next| full_name.set(next),
                         placeholder: String::new(),
@@ -3709,8 +3831,17 @@ fn PatientNew() -> Element {
             if !warning_ids().is_empty() {
                 Notice { tone: NoticeTone::Warning,
                     div {
-                        p { "{message()}" }
-                        p { "Coincidencias: {warning_ids().join(\", \")}" }
+                        p { strong { "Posible paciente duplicado" } }
+                        p { "Ya existe un paciente con un nombre similar en esta clínica." }
+                        for duplicate_id in warning_ids() {
+                            ButtonLink {
+                                to: Route::PatientDetail { id: duplicate_id },
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Ver ficha"
+                            }
+                        }
                         Button {
                             variant: ButtonVariant::Danger,
                             disabled: saving(),
@@ -3738,6 +3869,7 @@ fn PatientNew() -> Element {
                 Button {
                     variant: ButtonVariant::Primary,
                     disabled: saving(),
+                    loading: saving(),
                     onclick: move |_| {
                         submit_new_patient(
                             saving,
@@ -3750,7 +3882,11 @@ fn PatientNew() -> Element {
                             profile.clone(),
                         );
                     },
-                    "Guardar paciente"
+                    if saving() {
+                        "Guardando..."
+                    } else {
+                        "Guardar paciente"
+                    }
                 }
             }
         }
@@ -3775,6 +3911,9 @@ fn PatientDetail(id: String) -> Element {
         }
         if user().is_none() {
             navigator.replace(Route::AuthPage {});
+            return;
+        }
+        if actor().is_none() {
             return;
         }
         let load_id = load_id.clone();
@@ -3807,7 +3946,6 @@ fn PatientDetail(id: String) -> Element {
     if !checked() {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader { title: "Paciente".to_owned(), subtitle: None }
                 LoadingState {}
             }
         };
@@ -3815,18 +3953,16 @@ fn PatientDetail(id: String) -> Element {
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader { title: "Paciente".to_owned(), subtitle: None }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
     if !profile.can_read_patients() {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader { title: "Paciente".to_owned(), subtitle: None }
-                Notice { tone: NoticeTone::Error,
-                    p { strong { "Acceso denegado" } }
-                    p { "Necesitas un rol en la clínica para consultar pacientes." }
+                PageHeader {
+                    title: "Acceso denegado".to_owned(),
+                    subtitle: Some("No tienes permiso para ver esta ficha.".to_owned()),
                 }
             }
         };
@@ -3834,13 +3970,10 @@ fn PatientDetail(id: String) -> Element {
     let Some(patient) = patient() else {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader { title: "Paciente".to_owned(), subtitle: None }
                 if message().is_empty() {
                     LoadingState {}
                 } else {
-                    Notice { tone: NoticeTone::Error,
-                        p { "{message()}" }
-                    }
+                    ErrorText { text: message() }
                     ButtonLink {
                         to: Route::Patients {},
                         variant: ButtonVariant::Secondary,
@@ -3889,6 +4022,9 @@ fn PatientDetail(id: String) -> Element {
                     "Historial de recetas"
                 }
             }
+            if !message().is_empty() {
+                ErrorText { text: message() }
+            }
             Card {
                 DetailGrid {
                     DetailItem {
@@ -3908,15 +4044,13 @@ fn PatientDetail(id: String) -> Element {
                     }
                 }
             }
-            if !message().is_empty() {
-                ErrorText { text: message() }
-            }
             if confirm_delete() {
                 ConfirmPanel {
                     message: "¿Eliminar este paciente? La ficha se oculta de la búsqueda y queda registrada en auditoría.".to_owned(),
                     confirm_label: "Confirmar eliminación".to_owned(),
                     cancel_label: "Cancelar".to_owned(),
                     busy: deleting(),
+                    busy_label: "Eliminando...".to_owned(),
                     on_cancel: move |_| confirm_delete.set(false),
                     on_confirm: move |_| {
                         if deleting() {
@@ -4038,7 +4172,7 @@ fn PatientEdit(id: String) -> Element {
                         notes.set(patient.notes.unwrap_or_default());
                         initialized.set(true);
                     }
-                    Err(error) => {
+                    Err(_error) => {
                         #[cfg(feature = "desktop")]
                         if let Ok(mut conn) = desktop_local::open_local_db() {
                             if let Ok(found) = desktop_local::list_patients(&mut conn) {
@@ -4063,7 +4197,7 @@ fn PatientEdit(id: String) -> Element {
                             }
                         }
                         if !initialized() {
-                            message.set(error);
+                            message.set("No se pudo leer el paciente.".to_string());
                         }
                     }
                 }
@@ -4074,17 +4208,6 @@ fn PatientEdit(id: String) -> Element {
     if !checked() {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader {
-                    title: "Editar paciente".to_owned(),
-                    subtitle: None,
-                    ButtonLink {
-                        to: Route::PatientDetail { id: patient_id.clone() },
-                        variant: ButtonVariant::Secondary,
-                        active_class: None,
-                        extra_class: String::new(),
-                        "Cancelar"
-                    }
-                }
                 LoadingState {}
             }
         };
@@ -4092,18 +4215,7 @@ fn PatientEdit(id: String) -> Element {
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "patients-page".to_owned(),
-                PageHeader {
-                    title: "Editar paciente".to_owned(),
-                    subtitle: None,
-                    ButtonLink {
-                        to: Route::PatientDetail { id: patient_id.clone() },
-                        variant: ButtonVariant::Secondary,
-                        active_class: None,
-                        extra_class: String::new(),
-                        "Cancelar"
-                    }
-                }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
@@ -4144,6 +4256,24 @@ fn PatientEdit(id: String) -> Element {
         phone: phone(),
         notes: notes(),
     };
+    if !initialized() && message().is_empty() {
+        return rsx! {
+            PageShell { id: "patients-page".to_owned(),
+                PageHeader {
+                    title: "Editar paciente".to_owned(),
+                    subtitle: Some("Los cambios se auditan en la ficha del paciente.".to_owned()),
+                    ButtonLink {
+                        to: Route::PatientDetail { id: patient_id.clone() },
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Cancelar"
+                    }
+                }
+                LoadingState { label: "Cargando...".to_owned() }
+            }
+        };
+    }
 
     rsx! {
         PageShell { id: "patients-page".to_owned(),
@@ -4159,12 +4289,12 @@ fn PatientEdit(id: String) -> Element {
                 }
             }
             if !initialized() && message().is_empty() {
-                LoadingState { label: "Cargando…".to_owned() }
+                LoadingState { label: "Cargando...".to_owned() }
             }
             Card {
                 FormGrid { columns: FormColumns::Two,
                     TextField {
-                        label: "Nombres completos".to_owned(),
+                        label: "Nombres y apellidos".to_owned(),
                         value: full_name(),
                         oninput: move |next| full_name.set(next),
                         placeholder: String::new(),
@@ -4275,6 +4405,7 @@ fn PatientEdit(id: String) -> Element {
                 Button {
                     variant: ButtonVariant::Primary,
                     disabled: saving(),
+                    loading: saving(),
                     onclick: move |_| {
                         submit_edit_patient(
                             saving,
@@ -4286,7 +4417,11 @@ fn PatientEdit(id: String) -> Element {
                             sync,
                         );
                     },
-                    "Guardar cambios"
+                    if saving() {
+                        "Guardando..."
+                    } else {
+                        "Guardar cambios"
+                    }
                 }
             }
         }
@@ -4319,7 +4454,7 @@ fn Templates() -> Element {
                     message.set(String::new());
                     templates.set(rows);
                 }
-                Err(error) => message.set(error),
+                Err(_) => message.set("No se pudo cargar la lista de plantillas.".to_owned()),
             }
             loaded.set(true);
         });
@@ -4328,22 +4463,14 @@ fn Templates() -> Element {
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader {
-                    title: "Plantillas".to_owned(),
-                    subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
-                }
-                LoadingState {}
+                LoadingState { label: if checked() { "Redirigiendo...".to_owned() } else { "Cargando...".to_owned() } }
             }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader {
-                    title: "Plantillas".to_owned(),
-                    subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
-                }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
@@ -4351,12 +4478,8 @@ fn Templates() -> Element {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
                 PageHeader {
-                    title: "Plantillas".to_owned(),
-                    subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
-                }
-                Notice { tone: NoticeTone::Error,
-                    p { strong { "Acceso denegado" } }
-                    p { "Solo doctor y administrador pueden gestionar plantillas." }
+                    title: "Acceso denegado".to_owned(),
+                    subtitle: Some("Solo doctor y administrador pueden gestionar plantillas.".to_owned()),
                 }
             }
         };
@@ -4367,6 +4490,13 @@ fn Templates() -> Element {
                 PageHeader {
                     title: "Plantillas".to_owned(),
                     subtitle: Some("Plantillas del médico y maestras de la clínica, con su versión vigente.".to_owned()),
+                    ButtonLink {
+                        to: Route::TemplateNew {},
+                        variant: ButtonVariant::Primary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Nueva plantilla"
+                    }
                 }
                 LoadingState {}
             }
@@ -4390,7 +4520,7 @@ fn Templates() -> Element {
             if !message().is_empty() {
                 ErrorText { text: message() }
             }
-            if rows.is_empty() {
+            if rows.is_empty() && message().is_empty() {
                 EmptyState { title: "Todavía no hay plantillas.".to_owned(), description: String::new() }
             } else {
                 div { class: "ui-list",
@@ -4400,16 +4530,32 @@ fn Templates() -> Element {
                             title: template.name.clone(),
                             meta: vec![
                                 template_owner_label(&template.owner_type).to_owned(),
+                                template_status_label(&template.status).to_owned(),
                                 template
                                     .current_version
                                     .as_ref()
-                                    .map(|version| format!("Versión {}", version.version_no))
+                                    .map(|version| format!(
+                                        "Versión vigente: {} ({})",
+                                        version.version_no,
+                                        version_status_label(&version.status)
+                                    ))
                                     .unwrap_or_else(|| "Sin versión publicada.".to_owned()),
                             ],
                             badge: Some(rsx! {
                                 TemplateStatusBadge { status: template.status.clone() }
                             }),
                             if template.status != "archived" {
+                                if profile.can_create_prescriptions() && template.status == "published" {
+                                    if let Some(version) = template.current_version.as_ref().filter(|version| version.status == "published") {
+                                        ButtonLink {
+                                            to: Route::PrescriptionNew { patient_id: None, template_id: Some(version.id.clone()) },
+                                            variant: ButtonVariant::Secondary,
+                                            active_class: None,
+                                            extra_class: String::new(),
+                                            "Usar para receta"
+                                        }
+                                    }
+                                }
                                 ButtonLink {
                                     to: Route::TemplateEdit { id: template.id.clone() },
                                     variant: ButtonVariant::Secondary,
@@ -4452,22 +4598,14 @@ fn TemplateNew() -> Element {
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader {
-                    title: "Nueva plantilla".to_owned(),
-                    subtitle: Some("Se crea un borrador; el contenido se define en el editor.".to_owned()),
-                }
-                LoadingState {}
+                LoadingState { label: if checked() { "Redirigiendo...".to_owned() } else { "Cargando...".to_owned() } }
             }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader {
-                    title: "Nueva plantilla".to_owned(),
-                    subtitle: Some("Se crea un borrador; el contenido se define en el editor.".to_owned()),
-                }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
@@ -4528,7 +4666,7 @@ fn TemplateNew() -> Element {
                         min: None,
                         max: None,
                         step: None,
-                        wide: true,
+                        wide: false,
                         hide_label: false,
                     }
                 }
@@ -4587,6 +4725,8 @@ fn TemplateEdit(id: String) -> Element {
     let mut template = use_signal(|| None::<api::Template>);
     let mut saved_draft = use_signal(|| None::<String>);
     let mut confirming_archive = use_signal(|| false);
+    let mut publishing = use_signal(|| false);
+    let mut archiving = use_signal(|| false);
     let mut message = use_signal(String::new);
     let mut generation = use_signal(|| 0);
     let load_id = id.clone();
@@ -4668,7 +4808,14 @@ fn TemplateEdit(id: String) -> Element {
                         }
                     }
                     if template().is_none() {
-                        message.set(error);
+                        message.set(
+                            if error.starts_with("Could not") || error.starts_with("Request failed")
+                            {
+                                "No se pudo cargar la plantilla.".to_owned()
+                            } else {
+                                error
+                            },
+                        );
                     }
                 }
             }
@@ -4678,26 +4825,30 @@ fn TemplateEdit(id: String) -> Element {
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
-                LoadingState {}
+                LoadingState { label: if checked() { "Redirigiendo...".to_owned() } else { "Cargando...".to_owned() } }
             }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
     if !profile.can_manage_templates() {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
-                Notice { tone: NoticeTone::Error,
-                    p { strong { "Acceso denegado" } }
-                    p { "Solo doctor y administrador pueden editar plantillas." }
+                PageHeader {
+                    title: "Acceso denegado".to_owned(),
+                    subtitle: Some("Solo doctor y administrador pueden editar plantillas.".to_owned()),
+                    ButtonLink {
+                        to: Route::Templates {},
+                        variant: ButtonVariant::Secondary,
+                        active_class: None,
+                        extra_class: String::new(),
+                        "Volver a plantillas"
+                    }
                 }
             }
         };
@@ -4705,13 +4856,10 @@ fn TemplateEdit(id: String) -> Element {
     let Some(model) = template() else {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Plantilla".to_owned(), subtitle: None }
                 if message().is_empty() {
                     LoadingState {}
                 } else {
-                    Notice { tone: NoticeTone::Error,
-                        p { "{message()}" }
-                    }
+                    ErrorText { text: message() }
                     ButtonLink {
                         to: Route::Templates {},
                         variant: ButtonVariant::Secondary,
@@ -4779,35 +4927,45 @@ fn TemplateEdit(id: String) -> Element {
                         message.set("Borrador guardado.".to_owned());
                     },
                 }
-                if !message().is_empty() {
-                    ErrorText { text: message() }
-                }
                 ActionRow {
                     Button {
                         variant: ButtonVariant::Primary,
-                        disabled: saved_draft().is_none(),
+                        disabled: saved_draft().is_none() || publishing(),
+                        loading: publishing(),
                         onclick: {
                             let template_id = template_id.clone();
                             move |_| {
+                                if publishing() {
+                                    return;
+                                }
                                 let Some(version_id) = saved_draft() else {
                                     return;
                                 };
                                 let template_id = template_id.clone();
                                 let profile = profile.clone();
+                                publishing.set(true);
                                 spawn(async move {
                                     match publish_template_dispatch(&template_id, &version_id, template().map(|found| (found, profile.clone()))).await {
                                         Ok(published) => {
+                                            publishing.set(false);
                                             saved_draft.set(None);
                                             generation += 1;
                                             template.set(Some(published));
                                             message.set("Versión publicada e inmutable.".to_owned());
                                         }
-                                        Err(error) => message.set(error),
+                                        Err(error) => {
+                                            publishing.set(false);
+                                            message.set(if error.starts_with("Could not") || error.starts_with("Request failed") {
+                                                "No se pudo publicar la versión.".to_owned()
+                                            } else {
+                                                error
+                                            });
+                                        }
                                     }
                                 });
                             }
                         },
-                        "Publicar versión"
+                        if publishing() { "Publicando..." } else { "Publicar versión" }
                     }
                     Button {
                         variant: ButtonVariant::Secondary,
@@ -4828,25 +4986,47 @@ fn TemplateEdit(id: String) -> Element {
                         message: "La plantilla archivada no admite cambios.".to_owned(),
                         confirm_label: "Confirmar archivo".to_owned(),
                         cancel_label: "Cancelar".to_owned(),
-                        busy: false,
+                        busy: archiving(),
+                        busy_label: "Archivando...".to_owned(),
                         on_cancel: move |_| confirming_archive.set(false),
                         on_confirm: move |_| {
+                            if archiving() {
+                                return;
+                            }
                             let template_id = template_id.clone();
+                            archiving.set(true);
                             spawn(async move {
                                 match api::archive_template(&template_id).await {
                                     Ok(archived) => {
+                                        archiving.set(false);
                                         saved_draft.set(None);
                                         confirming_archive.set(false);
                                         generation += 1;
                                         template.set(Some(archived));
                                         message.set("Plantilla archivada.".to_owned());
                                     }
-                                    Err(error) => message.set(error),
+                                    Err(error) => {
+                                        archiving.set(false);
+                                        message.set(if error.starts_with("Could not") || error.starts_with("Request failed") {
+                                            "No se pudo archivar la plantilla.".to_owned()
+                                        } else {
+                                            error
+                                        });
+                                    }
                                 }
                             });
                         },
                         span {}
                     }
+                }
+            }
+            if !message().is_empty() {
+                if matches!(message().as_str(), "Borrador guardado." | "Versión publicada e inmutable." | "Plantilla archivada.") {
+                    Notice { tone: NoticeTone::Success,
+                        p { "{message()}" }
+                    }
+                } else {
+                    ErrorText { text: message() }
                 }
             }
         }
@@ -4862,7 +5042,9 @@ fn TemplatePreview(id: String) -> Element {
     let mut template = use_signal(|| None::<api::Template>);
     let mut selected = use_signal(|| None::<String>);
     let mut margin = use_signal(|| 15_u32);
+    let mut margin_text = use_signal(|| "15".to_owned());
     let mut message = use_signal(String::new);
+    let mut image_sources = use_signal(Vec::<(String, String)>::new);
     let load_id = id.clone();
 
     use_effect(move || {
@@ -4879,14 +5061,72 @@ fn TemplatePreview(id: String) -> Element {
                 Ok(found) => {
                     let chosen = found.current_version.as_ref().or(found.versions.first());
                     selected.set(chosen.map(|version| version.id.clone()));
-                    margin.set(
-                        chosen
-                            .map(|version| forms::template_theme_margin(version.theme.as_deref()))
-                            .unwrap_or(15),
-                    );
+                    let initial_margin = chosen
+                        .map(|version| forms::template_theme_margin(version.theme.as_deref()))
+                        .unwrap_or(15);
+                    margin.set(initial_margin);
+                    margin_text.set(initial_margin.to_string());
                     template.set(Some(found));
                 }
-                Err(error) => message.set(error),
+                Err(error) => message.set(
+                    if error.starts_with("Could not") || error.starts_with("Request failed") {
+                        "No se pudo cargar la vista previa.".to_owned()
+                    } else {
+                        error
+                    },
+                ),
+            }
+        });
+    });
+
+    use_effect(move || {
+        let Some(version_id) = selected() else {
+            return;
+        };
+        let Some(found) = template() else {
+            return;
+        };
+        let Some(doc_json) = found
+            .versions
+            .iter()
+            .find(|version| version.id == version_id)
+            .map(|version| version.doc_json.clone())
+            .or_else(|| {
+                found
+                    .current_version
+                    .as_ref()
+                    .map(|version| version.doc_json.clone())
+            })
+        else {
+            return;
+        };
+        spawn(async move {
+            if let Ok(library) = api::fetch_assets().await {
+                let referenced: Vec<String> = forms::parse_document(&doc_json)
+                    .map(|document| {
+                        let mut ids: Vec<String> =
+                            document.letterhead.logo_asset_id.into_iter().collect();
+                        ids.extend(
+                            document
+                                .images
+                                .iter()
+                                .filter_map(|slot| slot.asset_id.clone()),
+                        );
+                        ids
+                    })
+                    .unwrap_or_default();
+                image_sources.set(
+                    library
+                        .assets
+                        .into_iter()
+                        .filter(|asset| {
+                            (asset.kind == "logo" || asset.kind == "image")
+                                && asset.status == "ready"
+                                && referenced.iter().any(|id| id == &asset.id)
+                        })
+                        .filter_map(|asset| asset.url.map(|url| (asset.id, url)))
+                        .collect(),
+                );
             }
         });
     });
@@ -4894,23 +5134,20 @@ fn TemplatePreview(id: String) -> Element {
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
-                LoadingState {}
+                LoadingState { label: if checked() { "Redirigiendo...".to_owned() } else { "Cargando...".to_owned() } }
             }
         };
     }
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
     if !profile.can_manage_templates() {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
                 Notice { tone: NoticeTone::Error,
                     p { strong { "Acceso denegado" } }
                     p { "Solo doctor y administrador pueden ver la vista previa." }
@@ -4925,7 +5162,7 @@ fn TemplatePreview(id: String) -> Element {
                 if message().is_empty() {
                     LoadingState {}
                 } else {
-                    Notice { tone: NoticeTone::Error, p { "{message()}" } }
+                    ErrorText { text: message() }
                     ButtonLink {
                         to: Route::Templates {},
                         variant: ButtonVariant::Secondary,
@@ -4950,10 +5187,11 @@ fn TemplatePreview(id: String) -> Element {
     let Some(version) = version else {
         return rsx! {
             PageShell { id: "templates-page".to_owned(),
-                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
-                Notice { tone: NoticeTone::Warning,
-                    p { "La plantilla todavía no tiene versiones para previsualizar." }
+                PageHeader {
+                    title: format!("Vista previa A4 — {}", model.name),
+                    subtitle: Some("210 × 297 mm con valores de ejemplo.".to_owned()),
                 }
+                EmptyState { title: "La plantilla todavía no tiene versiones para previsualizar.".to_owned(), description: String::new() }
                 ButtonLink {
                     to: Route::TemplateEdit { id: model.id.clone() },
                     variant: ButtonVariant::Secondary,
@@ -4969,11 +5207,13 @@ fn TemplatePreview(id: String) -> Element {
         .unwrap_or_default();
     let warnings_joined = warnings.join(", ");
     let versions = model.versions.clone();
+    let versions_for_select = versions.clone();
+    let versions_for_margin = versions.clone();
 
     rsx! {
         PageShell { id: "templates-page".to_owned(),
             PageHeader {
-                title: "Vista previa A4".to_owned(),
+                title: format!("Vista previa A4 — {}", model.name),
                 subtitle: Some("210 × 297 mm con valores de ejemplo.".to_owned()),
                 ButtonLink {
                     to: Route::Templates {},
@@ -4996,8 +5236,10 @@ fn TemplatePreview(id: String) -> Element {
                         label: "Versión".to_owned(),
                         value: selected().unwrap_or_default(),
                         onchange: move |value| {
-                            if let Some(version) = model.versions.iter().find(|version| version.id == value) {
-                                margin.set(forms::template_theme_margin(version.theme.as_deref()));
+                            if let Some(version) = versions_for_select.iter().find(|version| version.id == value) {
+                                let theme_margin = forms::template_theme_margin(version.theme.as_deref());
+                                margin.set(theme_margin);
+                                margin_text.set(theme_margin.to_string());
                             }
                             selected.set(Some(value));
                         },
@@ -5015,10 +5257,25 @@ fn TemplatePreview(id: String) -> Element {
                     }
                     TextField {
                         label: "Márgenes (mm)".to_owned(),
-                        value: margin().to_string(),
+                        value: margin_text(),
                         oninput: move |value: String| {
                             if let Ok(parsed) = value.parse::<u32>() {
-                                margin.set(parsed.clamp(5, 40));
+                                let clamped = parsed.clamp(5, 40);
+                                margin.set(clamped);
+                                margin_text.set(clamped.to_string());
+                            } else {
+                                margin_text.set(value);
+                            }
+                        },
+                        onblur: move |_| {
+                            if margin_text().parse::<u32>().is_err() {
+                                let fallback = versions_for_margin
+                                    .iter()
+                                    .find(|version| Some(&version.id) == selected().as_ref())
+                                    .map(|version| forms::template_theme_margin(version.theme.as_deref()))
+                                    .unwrap_or(15);
+                                margin.set(fallback);
+                                margin_text.set(fallback.to_string());
                             }
                         },
                         input_type: "number".to_owned(),
@@ -5032,7 +5289,7 @@ fn TemplatePreview(id: String) -> Element {
                         readonly: false,
                         min: Some("5".to_owned()),
                         max: Some("40".to_owned()),
-                        step: None,
+                        step: Some("1".to_owned()),
                         wide: false,
                         hide_label: false,
                     }
@@ -5042,7 +5299,7 @@ fn TemplatePreview(id: String) -> Element {
                 Notice { tone: NoticeTone::Warning,
                     div {
                         p { strong { "Variables no válidas" } }
-                        p { "{warnings_joined}" }
+                        p { "Variables no válidas: {warnings_joined}" }
                         p { class: "ui-hint", "En la proyección se marcan como texto de advertencia, nunca como {{clave}}." }
                     }
                 }
@@ -5052,6 +5309,7 @@ fn TemplatePreview(id: String) -> Element {
                     doc_json: version.doc_json.clone(),
                     values: forms::sample_values(),
                     margin_mm: margin(),
+                    image_sources: image_sources(),
                 }
             }
         }
@@ -5111,7 +5369,6 @@ fn Prescriptions(status: Option<String>) -> Element {
         let selected_status = status();
         let selected_date = date();
         loading.set(true);
-        loaded.set(false);
         failed_rows.set(Vec::new());
         spawn(async move {
             #[cfg(feature = "desktop")]
@@ -5121,10 +5378,9 @@ fn Prescriptions(status: Option<String>) -> Element {
                     {
                         let mut mapped = Vec::new();
                         for value in found {
-                            if let Ok(mut prescription) =
+                            if let Ok(prescription) =
                                 serde_json::from_value::<api::Prescription>(value)
                             {
-                                prescription.status = "pending_sync".to_owned();
                                 mapped.push(prescription);
                             }
                         }
@@ -5182,7 +5438,11 @@ fn Prescriptions(status: Option<String>) -> Element {
                     message.set(String::new());
                 }
                 Err(error) => {
-                    message.set(error);
+                    message.set(if error.is_empty() {
+                        "No se pudieron cargar las recetas.".to_owned()
+                    } else {
+                        error.clone()
+                    });
                     #[cfg(feature = "desktop")]
                     if let Ok(mut conn) = desktop_local::open_local_db() {
                         if let Ok(found) = desktop_local::list_prescriptions(&mut conn, "") {
@@ -5207,10 +5467,6 @@ fn Prescriptions(status: Option<String>) -> Element {
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader {
-                    title: "Recetas".to_owned(),
-                    subtitle: Some("Historial con filtros por paciente, fecha y estado.".to_owned())
-                }
                 LoadingState {}
             }
         };
@@ -5218,25 +5474,15 @@ fn Prescriptions(status: Option<String>) -> Element {
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader {
-                    title: "Recetas".to_owned(),
-                    subtitle: Some("Historial con filtros por paciente, fecha y estado.".to_owned())
-                }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
     if !profile.can_read_prescriptions() {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader {
-                    title: "Recetas".to_owned(),
-                    subtitle: Some("Historial con filtros por paciente, fecha y estado.".to_owned())
-                }
-                Notice { tone: NoticeTone::Error,
-                    p { strong { "Acceso denegado" } }
-                    p { "Necesitas un rol en la clínica para consultar recetas." }
-                }
+                h1 { "Acceso denegado" }
+                p { "Necesitas un rol en la clínica para consultar recetas." }
             }
         };
     }
@@ -5279,6 +5525,7 @@ fn Prescriptions(status: Option<String>) -> Element {
         };
         age_days > retention_days
     };
+    let filtered = !query().trim().is_empty() || !status().is_empty() || !date().is_empty();
 
     rsx! {
         PageShell { id: "prescriptions-page".to_owned(),
@@ -5300,7 +5547,7 @@ fn Prescriptions(status: Option<String>) -> Element {
                     label: "Paciente".to_owned(),
                     value: query(),
                     oninput: move |value| query.set(value),
-                    placeholder: "Paciente".to_owned(),
+                    placeholder: "Nombre del paciente".to_owned(),
                     wide: false,
                 }
                 SelectField {
@@ -5347,23 +5594,30 @@ fn Prescriptions(status: Option<String>) -> Element {
                 ErrorText { text: message() }
             }
             if loaded() {
-                if visible.is_empty() {
+                if visible.is_empty() && message().is_empty() {
                     EmptyState {
                         title: "Sin recetas".to_owned(),
-                        description: "No hay recetas para estos filtros.".to_owned()
+                        description: if filtered {
+                            "No hay recetas para estos filtros.".to_owned()
+                        } else {
+                            "Todavía no hay recetas en esta clínica.".to_owned()
+                        }
                     }
                 } else {
                     for row in visible {
                         ListRow {
                             key: "{row.id}",
                             title: row.patient_name.clone(),
-                            meta: vec![
-                                prescription_status_label(&row.status).to_owned(),
-                                format_date(&row.created_at),
-                                row.rx_number
-                                    .map(|number| format!("No. {number}"))
-                                    .unwrap_or_else(|| "Sin número".to_owned()),
-                            ],
+                            meta: {
+                                let mut parts = vec![
+                                    prescription_status_label(&row.status).to_owned(),
+                                    format_date(&row.created_at),
+                                ];
+                                if let Some(number) = row.rx_number {
+                                    parts.push(format!("No. {number}"));
+                                }
+                                parts
+                            },
                             badge: Some(rsx! {
                                 PrescriptionStatusBadge { status: row.status.clone() }
                                 if row.status == "pending_sync" {
@@ -5454,6 +5708,8 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
     let mut message = use_signal(String::new);
     let mut saving = use_signal(|| false);
     let mut loaded = use_signal(|| false);
+    let mut patient_error = use_signal(String::new);
+    let mut template_error = use_signal(String::new);
 
     use_effect(move || {
         if loaded() || !checked() {
@@ -5463,38 +5719,61 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
             navigator.replace(Route::AuthPage {});
             return;
         }
+        let Some(current_profile) = actor() else {
+            return;
+        };
+        if !current_profile.can_create_prescriptions() {
+            return;
+        }
         spawn(async move {
             if let Ok(found) = api::fetch_patients("").await {
                 patients.set(found)
             } else {
                 #[cfg(feature = "desktop")]
-                if let Ok(mut conn) = desktop_local::open_local_db() {
-                    if let Ok(found) = desktop_local::list_patients(&mut conn) {
-                        let mut mapped = Vec::new();
-                        for value in found {
-                            if let Ok(patient) = serde_json::from_value::<api::Patient>(value) {
-                                mapped.push(patient);
+                {
+                    if let Ok(mut conn) = desktop_local::open_local_db() {
+                        if let Ok(found) = desktop_local::list_patients(&mut conn) {
+                            let mut mapped = Vec::new();
+                            for value in found {
+                                if let Ok(patient) = serde_json::from_value::<api::Patient>(value) {
+                                    mapped.push(patient);
+                                }
                             }
+                            patients.set(mapped);
+                        } else {
+                            patient_error.set("No se pudieron cargar los pacientes.".to_owned());
                         }
-                        patients.set(mapped);
+                    } else {
+                        patient_error.set("No se pudieron cargar los pacientes.".to_owned());
                     }
                 }
+                #[cfg(not(feature = "desktop"))]
+                patient_error.set("No se pudieron cargar los pacientes.".to_owned());
             }
             if let Ok(found) = api::fetch_templates().await {
                 templates.set(found)
             } else {
                 #[cfg(feature = "desktop")]
-                if let Ok(mut conn) = desktop_local::open_local_db() {
-                    if let Ok(found) = desktop_local::list_templates(&mut conn) {
-                        let mut mapped = Vec::new();
-                        for value in found {
-                            if let Ok(template) = serde_json::from_value::<api::Template>(value) {
-                                mapped.push(template);
+                {
+                    if let Ok(mut conn) = desktop_local::open_local_db() {
+                        if let Ok(found) = desktop_local::list_templates(&mut conn) {
+                            let mut mapped = Vec::new();
+                            for value in found {
+                                if let Ok(template) = serde_json::from_value::<api::Template>(value)
+                                {
+                                    mapped.push(template);
+                                }
                             }
+                            templates.set(mapped);
+                        } else {
+                            template_error.set("No se pudieron cargar las plantillas.".to_owned());
                         }
-                        templates.set(mapped);
+                    } else {
+                        template_error.set("No se pudieron cargar las plantillas.".to_owned());
                     }
                 }
+                #[cfg(not(feature = "desktop"))]
+                template_error.set("No se pudieron cargar las plantillas.".to_owned());
             }
             loaded.set(true);
         });
@@ -5504,21 +5783,38 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
         if !loaded() {
             return;
         }
-        if selected_patient().is_empty() && !prefill_patient.is_empty() {
+        if selected_patient().is_empty()
+            && !prefill_patient.is_empty()
+            && patients()
+                .iter()
+                .any(|patient| patient.id == prefill_patient)
+        {
             selected_patient.set(prefill_patient.clone());
         }
         if selected_template().is_empty() && !prefill_template.is_empty() {
-            selected_template.set(prefill_template.clone());
+            let published_now = templates()
+                .into_iter()
+                .filter(|template| {
+                    template.current_version_id.is_some()
+                        && template
+                            .current_version
+                            .as_ref()
+                            .is_some_and(|version| version.status == "published")
+                })
+                .collect::<Vec<_>>();
+            for template in &published_now {
+                let version_id = template.current_version_id.clone().unwrap_or_default();
+                if template.id == prefill_template || version_id == prefill_template {
+                    selected_template.set(version_id);
+                    break;
+                }
+            }
         }
     });
 
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader {
-                    title: "Nueva receta".to_owned(),
-                    subtitle: Some("Paciente y plantilla publicada.".to_owned())
-                }
                 LoadingState {}
             }
         };
@@ -5526,11 +5822,7 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader {
-                    title: "Nueva receta".to_owned(),
-                    subtitle: Some("Paciente y plantilla publicada.".to_owned())
-                }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
@@ -5539,7 +5831,7 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
             PageShell { id: "prescriptions-page".to_owned(),
                 PageHeader {
                     title: "Nueva receta".to_owned(),
-                    subtitle: Some("Paciente y plantilla publicada.".to_owned())
+                    subtitle: None
                 }
                 Notice { tone: NoticeTone::Error,
                     p { strong { "Acceso denegado" } }
@@ -5566,6 +5858,8 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                     .is_some_and(|version| version.status == "published")
         })
         .collect::<Vec<_>>();
+    let patients_empty = loaded() && patient_error().is_empty() && patients().is_empty();
+    let published_empty = loaded() && template_error().is_empty() && published.is_empty();
 
     rsx! {
         PageShell { id: "prescriptions-page".to_owned(),
@@ -5587,8 +5881,16 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                         value: selected_patient(),
                         onchange: move |value| selected_patient.set(value),
                         wide: false,
-                        hint: None,
-                        error: None,
+                        hint: if patients_empty {
+                            Some("No hay pacientes disponibles.".to_owned())
+                        } else {
+                            None
+                        },
+                        error: if patient_error().is_empty() {
+                            None
+                        } else {
+                            Some(patient_error())
+                        },
                         disabled: false,
                         hide_label: false,
                         option { value: "", "Selecciona un paciente" }
@@ -5601,8 +5903,16 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                         value: selected_template(),
                         onchange: move |value| selected_template.set(value),
                         wide: false,
-                        hint: None,
-                        error: None,
+                        hint: if published_empty {
+                            Some("No hay plantillas publicadas.".to_owned())
+                        } else {
+                            None
+                        },
+                        error: if template_error().is_empty() {
+                            None
+                        } else {
+                            Some(template_error())
+                        },
                         disabled: false,
                         hide_label: false,
                         option { value: "", "Selecciona una plantilla" }
@@ -5668,6 +5978,7 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
             ActionRow {
                 Button {
                     disabled: saving(),
+                    loading: saving(),
                     onclick: move |_| {
                         if saving() {
                             return;
@@ -5854,7 +6165,7 @@ fn PrescriptionPreview(id: String) -> Element {
     let mut message = use_signal(String::new);
     let mut signing = use_signal(|| false);
     let mut needs_ack = use_signal(|| false);
-    let mut generation = use_signal(|| 0_u32);
+    let mut hint_text = use_signal(String::new);
     let prescription_id = id.clone();
 
     use_effect(move || {
@@ -5865,7 +6176,12 @@ fn PrescriptionPreview(id: String) -> Element {
             navigator.replace(Route::AuthPage {});
             return;
         }
-        let _ = generation();
+        let Some(current_profile) = actor() else {
+            return;
+        };
+        if !current_profile.can_read_prescriptions() {
+            return;
+        }
         let load_id = prescription_id.clone();
         spawn(async move {
             if let Ok(found) = api::fetch_prescription(&load_id).await {
@@ -6004,7 +6320,11 @@ fn PrescriptionPreview(id: String) -> Element {
                         }
                     }
                     if preview().is_none() {
-                        message.set(error);
+                        message.set(if error.is_empty() {
+                            "No se pudo cargar la vista previa.".to_owned()
+                        } else {
+                            error
+                        });
                     }
                 }
             }
@@ -6014,7 +6334,6 @@ fn PrescriptionPreview(id: String) -> Element {
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
                 LoadingState {}
             }
         };
@@ -6022,15 +6341,13 @@ fn PrescriptionPreview(id: String) -> Element {
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
     if !profile.can_read_prescriptions() {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader { title: "Vista previa A4".to_owned(), subtitle: None }
                 Notice { tone: NoticeTone::Error,
                     p { strong { "Acceso denegado" } }
                     p { "No tienes permiso para ver esta receta." }
@@ -6045,7 +6362,13 @@ fn PrescriptionPreview(id: String) -> Element {
                 if message().is_empty() {
                     LoadingState { label: "Cargando vista previa...".to_owned() }
                 } else {
-                    ErrorText { text: message() }
+                    ErrorText {
+                        text: if message().is_empty() {
+                            "No se pudo cargar la vista previa.".to_owned()
+                        } else {
+                            message()
+                        }
+                    }
                     ButtonLink {
                         to: Route::Prescriptions { status: None },
                         variant: ButtonVariant::Secondary,
@@ -6061,7 +6384,13 @@ fn PrescriptionPreview(id: String) -> Element {
     let can_sign = is_draft && profile.can_sign_prescriptions();
     let profile_for_ack = profile.clone();
     let subtitle = {
-        let mut parts = vec![prescription_status_label(&current.status).to_owned()];
+        let status_label = match current.status.as_str() {
+            "draft" | "signed" | "superseded" | "voided" | "pending_sync" => {
+                prescription_status_label(&current.status).to_owned()
+            }
+            _ => "Desconocida".to_owned(),
+        };
+        let mut parts = vec![status_label];
         if let Some(number) = current.rx_number {
             parts.push(format!("No. {number}"));
         }
@@ -6139,7 +6468,6 @@ fn PrescriptionPreview(id: String) -> Element {
                                                     signing.set(false);
                                                     sync.set(probe_sync_status().await);
                                                     prescription.set(Some(signed));
-                                                    generation += 1;
                                                 }
                                                 Err(error) => {
                                                     signing.set(false);
@@ -6174,7 +6502,6 @@ fn PrescriptionPreview(id: String) -> Element {
                                                         needs_ack.set(false);
                                                         sync.set(probe_sync_status().await);
                                                         prescription.set(Some(signed));
-                                                        generation += 1;
                                                     }
                                                     Err(error) => message.set(error),
                                                 }
@@ -6184,7 +6511,7 @@ fn PrescriptionPreview(id: String) -> Element {
                                     "Firmar reconociendo las advertencias"
                                 }
                             }
-                    } else {
+                    } else if !is_draft {
                         LinkAction {
                             href: pdf_url.clone(),
                             variant: ButtonVariant::Primary,
@@ -6230,7 +6557,7 @@ fn PrescriptionPreview(id: String) -> Element {
                                             };
                                             match pdf::render(&input) {
                                                 Ok(bytes) => {
-                                                    message.set(format!(
+                                                    hint_text.set(format!(
                                                         "PDF provisional generado ({} bytes) con marca PENDIENTE DE SINCRONIZACIÓN.",
                                                         bytes.len()
                                                     ));
@@ -6277,6 +6604,9 @@ fn PrescriptionPreview(id: String) -> Element {
                     p { "Documento provisional: se muestra sin QR escaneable hasta sincronizar." }
                 }
             }
+            if !hint_text().is_empty() {
+                HintText { text: hint_text() }
+            }
             if !message().is_empty() {
                 ErrorText { text: message() }
             }
@@ -6316,6 +6646,7 @@ fn PrescriptionDetail(id: String) -> Element {
     let mut needs_ack = use_signal(|| false);
     let mut void_reason = use_signal(String::new);
     let mut show_void = use_signal(|| false);
+    let mut voiding = use_signal(|| false);
     let prescription_id = use_signal(|| id.clone());
 
     use_effect(move || {
@@ -6324,6 +6655,12 @@ fn PrescriptionDetail(id: String) -> Element {
         }
         if user().is_none() {
             navigator.replace(Route::AuthPage {});
+            return;
+        }
+        let Some(current_profile) = actor() else {
+            return;
+        };
+        if !current_profile.can_read_prescriptions() {
             return;
         }
         let load_id = prescription_id();
@@ -6440,7 +6777,6 @@ fn PrescriptionDetail(id: String) -> Element {
     if !checked() || user().is_none() {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader { title: "Receta".to_owned(), subtitle: None }
                 LoadingState {}
             }
         };
@@ -6448,15 +6784,30 @@ fn PrescriptionDetail(id: String) -> Element {
     let Some(profile) = actor() else {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader { title: "Receta".to_owned(), subtitle: None }
-                LoadingState { label: "Redirigiendo…".to_owned() }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
+    if !profile.can_read_prescriptions() {
+        return rsx! {
+            PageShell { id: "prescriptions-page".to_owned(),
+                Notice { tone: NoticeTone::Error,
+                    p { strong { "Acceso denegado" } }
+                    p { "No tienes permiso para ver esta receta." }
+                }
+                ButtonLink {
+                    to: Route::Prescriptions { status: None },
+                    variant: ButtonVariant::Secondary,
+                    active_class: None,
+                    extra_class: String::new(),
+                    "Volver a recetas"
+                }
+            }
+        };
+    }
     let Some(current) = prescription() else {
         return rsx! {
             PageShell { id: "prescriptions-page".to_owned(),
-                PageHeader { title: "Receta".to_owned(), subtitle: None }
                 if message().is_empty() && !initialized() {
                     LoadingState {}
                 } else {
@@ -6666,7 +7017,7 @@ fn PrescriptionDetail(id: String) -> Element {
                                     });
                                 }
                             },
-                            "Firmar receta"
+                            if signing() { "Firmando..." } else { "Firmar receta" }
                         }
                     }
                     Button {
@@ -6772,7 +7123,7 @@ fn PrescriptionDetail(id: String) -> Element {
                             "{current.validity.clone().unwrap_or_else(|| \"—\".to_string())}"
                         }
                         DetailItem {
-                            label: "Indicaciones".to_owned(),
+                            label: "Indicaciones generales".to_owned(),
                             wide: true,
                             "{current.instructions.clone().unwrap_or_else(|| \"—\".to_string())}"
                         }
@@ -6783,7 +7134,12 @@ fn PrescriptionDetail(id: String) -> Element {
                             }
                             DetailItem {
                                 label: "Estado del código".to_owned(),
-                                "{verification.status}"
+                                "{match verification.status.as_str() {
+                                    "valid" => "Válido",
+                                    "voided" => "Anulado",
+                                    "superseded" => "Reemplazado",
+                                    _ => "Desconocido",
+                                }}"
                             }
                         }
                         if let Some(reason) = current.void_reason.as_ref() {
@@ -6801,8 +7157,8 @@ fn PrescriptionDetail(id: String) -> Element {
                 description: None,
                 if items().is_empty() {
                     EmptyState {
-                        title: "Sin medicamentos".to_owned(),
-                        description: "Agrega un medicamento al tratamiento.".to_owned()
+                        title: "Sin medicamentos.".to_owned(),
+                        description: String::new()
                     }
                 }
                 for (index, item) in items().into_iter().enumerate() {
@@ -7207,18 +7563,29 @@ fn PrescriptionDetail(id: String) -> Element {
                         message: "La receta quedará anulada.".to_owned(),
                         confirm_label: "Confirmar anulación".to_owned(),
                         cancel_label: "Cancelar".to_owned(),
-                        busy: false,
+                        busy: void_reason().trim().is_empty() || voiding(),
+                        busy_label: "Confirmar anulación".to_owned(),
                         on_confirm: move |_| {
+                            if void_reason().trim().is_empty() {
+                                message.set("Escribe el motivo de anulación.".to_owned());
+                                return;
+                            }
+                            voiding.set(true);
+                            message.set(String::new());
                             let id = prescription_id();
                             let reason = void_reason();
                             let profile = profile_for_void.clone();
                             spawn(async move {
                                 match void_prescription_dispatch(&id, &reason, prescription().map(|found| (found, profile.clone()))).await {
                                     Ok(voided) => {
+                                        voiding.set(false);
                                         show_void.set(false);
                                         prescription.set(Some(voided));
                                     }
-                                    Err(error) => message.set(error),
+                                    Err(error) => {
+                                        voiding.set(false);
+                                        message.set(error);
+                                    }
                                 }
                             });
                         },

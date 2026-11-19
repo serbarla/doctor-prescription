@@ -161,7 +161,7 @@ impl IntoResponse for AuthError {
             ),
             Self::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                json!({ "message": "Internal server error" }),
+                json!({ "message": "No se pudo iniciar la sesión." }),
             ),
         };
         (status, Json(body)).into_response()
@@ -174,7 +174,7 @@ impl From<diesel::result::Error> for AuthError {
             diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UniqueViolation,
                 _,
-            ) => Self::Conflict("An account with this email already exists.".to_owned()),
+            ) => Self::Conflict("Ya existe una cuenta con este correo.".to_owned()),
             _ => Self::Internal,
         }
     }
@@ -297,15 +297,15 @@ pub async fn sign_up(
 
     if email.len() < 3 || !email.contains('@') {
         return Err(AuthError::BadRequest(
-            "Enter a valid email address.".to_owned(),
+            "Ingresa un correo válido.".to_owned(),
         ));
     }
     if name.is_empty() {
-        return Err(AuthError::BadRequest("Enter your name.".to_owned()));
+        return Err(AuthError::BadRequest("Ingresa tu nombre.".to_owned()));
     }
     if request.password.chars().count() < 8 {
         return Err(AuthError::BadRequest(
-            "Password must be at least 8 characters.".to_owned(),
+            "La contraseña debe tener al menos 8 caracteres.".to_owned(),
         ));
     }
 
@@ -370,7 +370,7 @@ pub async fn sign_in(
         )
         .await;
         return Err(AuthError::Unauthorized(
-            "Invalid email or password.".to_owned(),
+            "Correo o contraseña incorrectos.".to_owned(),
         ));
     };
 
@@ -389,7 +389,7 @@ pub async fn sign_in(
         )
         .await;
         return Err(AuthError::Unauthorized(
-            "Invalid email or password.".to_owned(),
+            "Correo o contraseña incorrectos.".to_owned(),
         ));
     }
 
@@ -474,7 +474,9 @@ pub async fn mfa_verify(
     let ticket = request.ticket.trim().to_owned();
     let code = request.code.trim().to_owned();
     if ticket.is_empty() || code.is_empty() {
-        return Err(AuthError::BadRequest("Enter the MFA code.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "Ingresa el código de verificación.".to_owned(),
+        ));
     }
     let token_hash = hash_token(&ticket);
     let at = now();
@@ -484,10 +486,14 @@ pub async fn mfa_verify(
     })
     .await?;
     let Some(session) = session else {
-        return Err(AuthError::Unauthorized("Invalid MFA code.".to_owned()));
+        return Err(AuthError::Unauthorized(
+            "El código de verificación no es válido o ha expirado.".to_owned(),
+        ));
     };
     if session.mfa_pending == 0 {
-        return Err(AuthError::Unauthorized("Invalid MFA code.".to_owned()));
+        return Err(AuthError::Unauthorized(
+            "El código de verificación no es válido o ha expirado.".to_owned(),
+        ));
     }
     let user_id = session.user_id.clone();
     let user_id_lookup = user_id.clone();
@@ -498,7 +504,9 @@ pub async fn mfa_verify(
     })
     .await?;
     let Some(secret) = secret else {
-        return Err(AuthError::Unauthorized("Invalid MFA code.".to_owned()));
+        return Err(AuthError::Unauthorized(
+            "El código de verificación no es válido o ha expirado.".to_owned(),
+        ));
     };
     if !totp_verify(&secret, &code) {
         audit_auth(
@@ -509,7 +517,9 @@ pub async fn mfa_verify(
             json!({}),
         )
         .await;
-        return Err(AuthError::Unauthorized("Invalid MFA code.".to_owned()));
+        return Err(AuthError::Unauthorized(
+            "El código de verificación no es válido o ha expirado.".to_owned(),
+        ));
     }
     let session_id = session.id.clone();
     let expires_at = session_expiry();

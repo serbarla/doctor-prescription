@@ -48,15 +48,6 @@ pub fn SyncStatusIndicator(status: SyncStatus) -> Element {
         div { class: "ui-sync ui-sync--{tone}", role: "status", aria_live: "polite",
             span { class: "ui-sync-dot" }
             span { "{status.label()}" }
-            if status.pending > 0 {
-                span {
-                    if status.pending == 1 {
-                        " · 1 pendiente"
-                    } else {
-                        " · {status.pending} pendientes"
-                    }
-                }
-            }
         }
     }
 }
@@ -232,7 +223,7 @@ pub fn VerificationResultCard(verification: api::VerificationResult) -> Element 
         div { class: "ui-verify-card ui-verify-card--{slug}",
             p { class: "ui-verify-eyebrow", "VERIFICACIÓN PÚBLICA" }
             VerificationSeal { status: verification.status.clone() }
-            h1 { class: "ui-verify-title", "{title}" }
+            h2 { class: "ui-verify-title", "{title}" }
             p { class: "ui-verify-copy", "{copy}" }
             if show_details {
                 dl { class: "ui-verify-details",
@@ -243,13 +234,13 @@ pub fn VerificationResultCard(verification: api::VerificationResult) -> Element 
                         }
                     }
                     div {
-                        dt { "Fecha de emisión" }
+                        dt { "Fecha de receta" }
                         dd {
                             "{verification.issued_at.as_deref().map(crate::ui::format_date).unwrap_or_else(|| \"—\".to_owned())}"
                         }
                     }
                     div {
-                        dt { "No. de receta" }
+                        dt { "Número de receta" }
                         dd {
                             if let Some(number) = verification.rx_number {
                                 "{number:06}"
@@ -391,7 +382,11 @@ pub fn ImageLibrary(
                                 let id = asset.id.clone();
                                 move |_| on_delete.call(id.clone())
                             },
-                            "Eliminar"
+                            if deleting.as_deref() == Some(asset.id.as_str()) {
+                                "Eliminando..."
+                            } else {
+                                "Eliminar"
+                            }
                         }
                     }
                 }

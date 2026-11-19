@@ -690,14 +690,14 @@ pub async fn fetch_patients(query: &str) -> Result<Vec<Patient>, String> {
         format!("/api/patients?q={}", encode_query(query))
     };
     let value = get_json(&path).await?;
-    let response: PatientsResponse =
-        serde_json::from_value(value).map_err(|_| "Could not read the patient list.".to_owned())?;
+    let response: PatientsResponse = serde_json::from_value(value)
+        .map_err(|_| "No se pudieron cargar los pacientes.".to_owned())?;
     Ok(response.patients)
 }
 
 pub async fn fetch_patient(id: &str) -> Result<Patient, String> {
     let value = get_json(&format!("/api/patients/{id}")).await?;
-    serde_json::from_value(value).map_err(|_| "Could not read the patient.".to_owned())
+    serde_json::from_value(value).map_err(|_| "No se pudo leer el paciente.".to_owned())
 }
 
 pub async fn create_patient(
@@ -723,7 +723,7 @@ pub async fn create_patient(
     }
     serde_json::from_value(value)
         .map(PatientCreateOutcome::Created)
-        .map_err(|_| "Could not read the patient.".to_owned())
+        .map_err(|_| "No se pudo leer el paciente.".to_owned())
 }
 
 #[cfg(feature = "desktop")]
@@ -749,12 +749,12 @@ pub async fn create_patient_with_client_id(
     }
     serde_json::from_value(value)
         .map(PatientCreateOutcome::Created)
-        .map_err(|_| "Could not read the patient.".to_owned())
+        .map_err(|_| "No se pudo leer el paciente.".to_owned())
 }
 
 pub async fn update_patient(id: &str, form: &PatientForm) -> Result<Patient, String> {
     let value = put_json(&format!("/api/patients/{id}"), patient_body(form)).await?;
-    serde_json::from_value(value).map_err(|_| "Could not read the patient.".to_owned())
+    serde_json::from_value(value).map_err(|_| "No se pudo leer el paciente.".to_owned())
 }
 
 pub async fn delete_patient(id: &str) -> Result<(), String> {

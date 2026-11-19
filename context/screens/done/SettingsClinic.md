@@ -313,31 +313,12 @@ Line icons only, 1.5px stroke, 20px default, Ink or Deep Teal: `Image` placehold
 
 ## 7. Implementation notes
 
-The shipped component is `fn SettingsClinic()` at `persona-sanus/src/main.rs:1804`, `#[component]` at `:1803`, closing before `SettingsUsers` at `:2120`. It reads `actor` and `checked` contexts; its effect is keyed on `generation` and performs the two redirects described in §2.1, then fetches `api::fetch_clinic_settings()` and `api::fetch_assets()` and sets the local snapshots. It has no `loaded` signal and no `online` read.
-
-Current markup, before the plan:
-
-- Root `div#settings-page`, `.page-head` with `h4` `Clínica`, the shipped subtitle, and a Secondary `Link` `Volver` to `Settings`.
-- One page-level `p.error` for `message`.
-- `section.editor-section` `Datos de la clínica`, `div.form-grid` with four raw `label.field` inputs (name, address, phone, LLM wide), `div.actions` with a raw `button` `Guardar datos`/`Guardando....`.
-- `section.editor-section` `Logo`: optional `img.clinic-logo` with the signed URL and alt, else `p.hint`; raw file input with `accept="image/jpeg,image/png"`, disabled while `uploading`; the handler probes `is_server_reachable`, reads bytes, calls `api::upload_logo`, sets `Logo actualizado.` or the error, increments `generation`, clears `uploading`.
-- `section.editor-section` `Biblioteca de imágenes`: `p.hint` `Uso de la biblioteca: {used} de {limit}.` when the snapshot exists; a `.asset-row` loop with `strong` name (`original_name` else raw id), a hint with `width × height · size bytes · sha256` prefix; a Danger `button` `Eliminar` calling `api::delete_asset`, then `Imagen eliminada.` + generation; a raw file input `Subir imagen de la biblioteca...` that checks reachability, reads bytes, `api::upload_asset`, sets `Imagen agregada a la biblioteca.` + generation, clears `uploading`.
-- `section.editor-section` `Exportación de datos`: optional retention/grace `.hint` lines, explanation `.hint`, `a.button.secondary` to `/api/clinic/export`.
-
-Plan step 16 deltas and gaps:
-
-- Root becomes `PageShell id="settings-page"`. The page head becomes `PageHeader` `Clínica` with the shipped subtitle and Secondary `ButtonLink` `Volver` to `/settings`. Four `SectionCard`s carry the current `h2` labels: `Datos de la clínica`, `Logo`, `Biblioteca de imágenes`, `Exportación de datos`.
-- Data card uses `FormGrid columns=Two` with `TextField` `Nombre`, `Dirección`, `Teléfono`, and `TextField wide` `Plantilla del enlace LLM`; `ActionRow` holds the one Primary `Guardar datos` with `loading: saving()`. Add a read-only hint for `Zona horaria: {timezone}`. Do not add a days input: `retention_days` is not in `ClinicSettings` and the shipped update does not accept it. Record this sitemap/API gap in §7 rather than inventing a field.
-- Logo card uses a 48px `img.ui-asset-preview` when `clinic.logo.url` is present (halt on error), the empty hint otherwise, and `FileField` with the exact label/accept; keep the upload body in a named closure `upload_logo`. Disable it when `!online || uploading()` and show the offline hint. The handler keeps the reachability probe as a defense, because the context may be stale.
-- Library card uses `ImageLibrary` with `assets`, `used`, `limit`, `uploading`, `deleting`, `online`, `on_delete`, `on_upload`; keep delete/upload bodies in named closures `delete_image` / `upload_image`; they call the same `api::delete_asset` / `api::upload_asset` and increment `generation` on success. The logo does not appear in `assets`. `QuotaMeter` uses `used`/`limit`.
-- Export card becomes a `SectionCard` with two `HintText` date lines, one explanation, and a Secondary `LinkAction` to `/api/clinic/export`. Disable it offline; do not synthesize a client file.
-- Keep `message` page-level but move success copy to `HintText`/`Notice Success`; only failures stay in `ErrorText`. Today a success and a failure share `.error`, so the target must split them. This is copy/status wiring, not a new state.
-- The shipped image row prints the raw asset id and a 12-character sha256 prefix. Target uses `original_name` or `Imagen {first 8 id chars}` and never shows the hash; the hash is metadata, not user copy. The `0 × 0` fallback becomes `—`.
-- The shipped file handler sets `uploading` false on all paths; keep that. Do not add a per-row pending flag beyond the existing pending status from `ImageLibrary`.
-- Keep the `generation` counter as the refresh trigger. A successful save, logo upload, library upload, or delete increments it; the effect re-reads. Do not optimistically mutate the library vector.
-- The sync context is `Signal<SyncStatus>`; pass `online` into both upload fields and the library. The data form may stay editable offline, but `Guardar datos` needs the server; on failure, keep values and show the transport error. There is no outbox for settings or images.
-
-Verification commands, from the repo root; none is recorded here as executed:
+- Shipped component: `fn SettingsClinic()` at `persona-sanus/src/main.rs:2351` (`#[component]` at `:2350`, closing before `SettingsUsers` at `:2636`). Reads `actor`/`checked`; signals `message`, `status`, `saving`, `uploading`, `deleting`, `generation`, `settings`, `library`. `online` is `sync().online` (`main.rs:2510`).
+- Gates and fetch (`main.rs:2360-2415`): effect keyed on `generation`/`checked`; no session → `navigator.replace(Route::AuthPage {})`, non-Administrator → `navigator.replace(Route::SettingsProfile {})`, Administrator → `api::fetch_clinic_settings()` (fallback `No se pudo cargar la configuración de la clínica.`) then `api::fetch_assets()` (fallback `No se pudo cargar la biblioteca de imágenes.`). No `loaded` signal; gates render `PageShell id="settings-page"` + `LoadingState` (`Cargando...` default) / `LoadingState` `Redirigiendo...` (`main.rs:2405-2415`).
+- Render (`main.rs:2503-2635`): `PageShell` + `PageHeader` (`Clínica`, `Datos de la clínica, logo y biblioteca de imágenes.`, Secondary `ButtonLink` `Volver` → `Settings`); `ErrorText` for `message`, `HintText` for `status` (success/failure split shipped); four `SectionCard`s — `Datos de la clínica` (`FormGrid columns=Two`, `TextField` `Nombre`/`Dirección`/`Teléfono`/wide `Plantilla del enlace LLM` with placeholder `https://chat.openai.com/?q=` at `:2542`, read-only `HintText` `Zona horaria: {timezone}`, Primary `Guardar datos`/`Guardando...` at `:2573`, success `Datos de la clínica actualizados.`); `Logo` (`img.ui-asset-preview` alt `Logo de la clínica` or `La clínica todavía no tiene logo.`, `FileField` `Subir logo (JPEG o PNG, máximo 10 MB)` `accept="image/jpeg,image/png"`, `disabled: !online || uploading()`); `Biblioteca de imágenes` (`ImageLibrary { assets, used, limit, uploading, deleting, online, on_delete, on_upload }`, `ui/domain.rs:318`, with `QuotaMeter` at `ui/domain.rs:295`); `Exportación de datos` (read-only retention/grace `HintText`s, explanation, `ActionRow` with Secondary `LinkAction` `Exportar datos (JSON)` → `/api/clinic/export` online, disabled Secondary `Button` offline).
+- Upload/delete closures keep the reachability probe: logo/library upload check `http::is_server_reachable()` and set `Subir imágenes requiere conexión.`; success sets `Logo actualizado.` / `Imagen agregada a la biblioteca.` / `Imagen eliminada.` and increments `generation`; failure keeps values and writes `message`. `uploading` clears on all paths; `deleting` is per-asset.
+- `ImageLibrary` (`ui/domain.rs:318-380`): filters `kind == "image"`, `QuotaMeter` `Uso de la biblioteca: {used} de {limit}.` with `role="progressbar"`, pending rows show Cream `Procesando` badge with no thumbnail, ready rows show 48px thumbnail or `Image` icon placeholder, name or `Imagen {first 8 id chars}`, `{width} × {height}` with `—` fallback, `format_bytes(size_bytes)`, Danger `Eliminar`/`Eliminando...` disabled offline or while deleting; upload disabled offline/uploading/at-limit with hints `Subir imágenes requiere conexión.` / `La biblioteca está llena.`; empty state `Sin imágenes` / `Sube una imagen JPEG o PNG de hasta 10 MB.` No sha256 prefix renders.
+- Verification commands, from the repo root; none is recorded here as executed:
 
 ```sh
 cd persona-sanus && cargo check
@@ -357,6 +338,7 @@ A browser pass as Administrator and as Doctor is needed for the redirect; an off
 - Do not add: an editable timezone, retention-days input, or computed retention date.
 - Do not add: a public object URL, raw bucket key, or image URL in copy/analytics/logs.
 - Do not add: a new route, endpoint, table, column, role, permission, or API argument.
+- Do not add: a sha256 hash or raw asset id as user copy; a client-synthesized export file; a logo entry in the library list.
 
 ## 8. Spec references
 

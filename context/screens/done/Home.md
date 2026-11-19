@@ -202,9 +202,9 @@ Line icons only, 1.5px stroke, monochrome Ink or Deep Teal (Mist for the platfor
 
 ## 7. Implementation notes
 
-- Current shipped code is the minimal `#hero` block in `persona-sanus/src/main.rs:1282-1295`; the target markup is step 11 of `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md`, which builds the primitives this spec consumes (`persona-sanus/src/ui/` does not exist yet).
-- `Home` stays inside the Navbar layout — the bar itself is specified in `context/screens/done/Header.md`. `context/architecture.md:227` records that `#[layout(Navbar)]` is not closed with `#[end_layout]`, so the navbar currently wraps `/` and `/login` too — Home assumes a navbar is present.
-- CTA resolution reads the same `Signal<Option<Me>>` context the Navbar uses; Home adds no fetch, no endpoint, and no permission logic beyond `can_create_prescriptions()`.
+- Shipped: `Home` at `persona-sanus/src/main.rs:1322`, root `div#home-page`, inside `#[layout(Navbar)]` (`main.rs:66`, never closed — the navbar wraps `/` and `/login`; owned by `context/screens/done/Header.md`). It composes the shipped primitives in `persona-sanus/src/ui/`: `Hero` (title `Recetas claras, verificables y listas para firmar.` at `main.rs:1345`, subtitle, `ActionRow` with one Primary `ButtonLink` + Secondary `LinkAction` `Verificar una receta` → `#verificar`, microcopy, `TrustSecurityRow`), `SectionBand` `#como-funciona` (three `NumberedStepCard`s, step 3 tagged `Verificable`) and `#verificar` (Mint, `SectionHeader` + `Card` > `VerificationCodeForm` Secondary + `TrustSecurityRow`), ending with `Footer { surface: FooterSurface::Home }` at `main.rs:1414`.
+- CTA resolution (`main.rs:1329-1342`) reads the same `Signal<Option<Me>>` context the Navbar uses, in §3.3 order: no session → `Emitir receta` → `/login`; `can_create_prescriptions()` → `Emitir receta` → `/prescriptions/new`; role that cannot create → `Ver recetas` → `/prescriptions`; no profile/role → `Completar perfil` → `/settings/profile`. Home adds no fetch, no endpoint, and no permission logic beyond `can_create_prescriptions()`.
+- Verify form submit pushes `Route::Verify { code }` (trimmed/uppercased inside `VerificationCodeForm`, `persona-sanus/src/ui/domain.rs:259`); Home renders no verification result.
 - Verify, in order:
   - `cargo check` passes;
   - `dx build --release --fullstack` succeeds;

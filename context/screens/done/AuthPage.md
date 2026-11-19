@@ -318,42 +318,12 @@ Only the `ErrorText` Alert glyph is an icon: line-based, 1.5px stroke, 16px, Plu
 
 ## 7. Implementation notes
 
-Current shipped component is `AuthPage` in `persona-sanus/src/main.rs:1462-1698`; the two rendered branches are the early return at `:1477-1498` and the submit form at `:1629-1697`. Both roots are `div#echo` (`:1480`, `:1631`), which plan step 17 deletes as a style hook.
+Shipped: `AuthPage` at `persona-sanus/src/main.rs:1585`, inside `#[layout(Navbar)]` (`main.rs:66`). Both branches are `PageShell id="auth-page"`; there is no `div#echo` root.
 
-Shipped English markup and the exact target replacement:
-
-| Shipped | Line | Target |
-|---|---|---|
-| `h4` `Signed in` | `1481` | `PageHeader` title `Sesión iniciada`; `PageShell id="auth-page"` root |
-| `p` `{session.name}` and `p` `{session.email}` | `1482-1483` | `Card` > `DetailGrid` > `DetailItem` labels `Nombre` and `Correo`, values unchanged |
-| `button` `Sign out` | `1484-1494` | `Button` Ghost `Cerrar sesión`; same handler and `/` destination |
-| `h4` `Welcome back` / `Create your account` | `1633` | `h1.ui-auth-title` `Bienvenido de nuevo` / `Crea tu cuenta` inside `.ui-auth-head` |
-| `button` `Sign in` / `Sign up` | `1641`, `1648` | Ghost `Button`s `Iniciar sesión` / `Crear cuenta` in `div.ui-segmented`, active class `is-active` |
-| `input` placeholder `Name` | `1652-1656` | `TextField` label `Nombre`, sign-up only |
-| `input` placeholder `Email` | `1658-1663` | `TextField` label `Correo`, `input_type="email"`, `autocomplete="email"` |
-| `input` placeholder `Password` | `1664-1669` | `TextField` label `Contraseña`, `input_type="password"`, `autocomplete` per mode |
-| `input` placeholder `Código de verificación` | `1670-1675` | `TextField` label `Código de verificación`, `autocomplete="one-time-code"` |
-| `button` `Verificar código` | `1676-1680` | Primary `Button` with the same label; `loading: submitting()` |
-| `button` `Please wait...` / `Sign up` / `Sign in` | `1685-1695` | Primary `Button` `loading: submitting()`; label `Procesando...` while busy, else `Crear cuenta` / `Iniciar sesión` |
-| `error` `Fill in every field.` | `1511` | `Completa todos los campos.` |
-| `error` `The auth server did not return an active session.` | `1562`, `1618` | `No se pudo iniciar la sesión.` |
-
-The target composes primitives rather than raw inputs: `PageShell id="auth-page"`; signed-out `div.ui-auth-shell` > `div.ui-auth-head` > `h1.ui-auth-title`; `div.ui-segmented` > two Ghost `Button`s with `extra_class` `is-active` on the current mode; `Card` > `FormGrid columns: One`; labeled `TextField` controls; `ErrorText` after the fields when `error()` is non-empty; `ActionRow` with the one Primary `Button` (`button_type: "button"`, `loading: submitting()`, `onclick` the existing `submit` closure, `extra_class: "ui-button--block"`). Keep the click closure; do not add a native `<form>` submit or a second submit path.
-
-The MFA branch composes the same shell with an `h1` `Bienvenido de nuevo` and a `Card` > `FormGrid columns: One`: one `TextField` `Código de verificación` (`autocomplete: "one-time-code"`, `required: true`), `ErrorText`, and an `ActionRow` whose Primary is `Verificar código` (`loading: submitting()`, `onclick: verify_mfa`) and whose Secondary is `Volver`. The mode switch, `Nombre`, `Correo`, `Contraseña`, and credential submit are absent while `mfa_ticket()` is non-empty. `Volver` clears `mfa_ticket`, `mfa_code`, and `error`, then returns focus to the credential form; it makes no request.
-
-The shipped markup keeps the credential fields and the mode switch in the DOM while the MFA field and `Verificar código` render below them; the target above replaces the credential stage instead of stacking the two. That is a presentation change only: `submit`, `verify_mfa`, the ticket, and the MFA gate stay as written.
-
-Keep these behavior blocks, changing only labels and placement:
-
-- `submit`: guard on `submitting`; trim name and email; preserve the password; reject any empty required field with `Completa todos los campos.`; call `auth::sign_up` or `auth::sign_in`; handle `is_mfa_required` before any session work. On the challenge branch set `mfa_ticket`, clear `submitting`, and leave `error` empty; never store the ticket in the URL. Do not call `register_current_device` or `fetch_me` before the challenge is verified.
-- The `Ok` path: capture the desktop session token; parse with `auth::parse_session_user`; refresh with `auth::fetch_session()`; prefer the fresh value, else the parsed one; call `api::register_current_device()` and ignore its result; call `api::fetch_me()`; persist the local session on desktop; set `actor`, `user`, and `checked`; push `Route::Dashboard {}` only when the session is `Some`; otherwise set the §3.6 fallback and stay put.
-- `verify_mfa`: guard `submitting`; read the ticket and trimmed code; reject empty with `Ingresa el código de verificación.`; call `auth::verify_mfa(&ticket, &code)`; reuse the same session parse, refresh, silent device registration, profile fetch, desktop persistence, context set, and `/dashboard` push. On `Err`, clear `submitting`, keep the ticket, and show the returned message verbatim. Do not clear the ticket on an invalid code and do not add a retry counter.
-- The signed-in early return: keep `if let Some(session) = current` and the sign-out sequence `auth::sign_out()` (result ignored), `clear_persisted_session()`, `actor.set(None)`, `user.set(None)`, `navigator.push(Route::Home {})`. The navbar's sign-out handler is separate and unchanged.
-
-The error surface must stay byte-for-byte server text. To make the screen fully `es-EC`, localize the sentences at their source: the sign-up validation and unique-email conflict, the sign-in unauthorized sentence, the MFA empty/invalid sentences, and the internal/transport failures. The page must not match English text or translate condition by condition; it renders `message` as received. Preserve statuses: 400 validation, 401 unauthorized, 409 duplicate account, 429 rate limit, 500 fallback. The five-minute ticket and 30-day cookie are server constants; add no client timer.
-
-The silent device call is `api::register_current_device()` at `persona-sanus/src/api.rs:545`: it posts to `/api/devices/register` with `deviceId` from `device::device_id()`, `platform` from `device::platform()`, `name` from `device::name()`, and `appVersion` from `CARGO_PKG_VERSION`, then maps the response to `()`. `api_server::register_device` requires an actor and links the session's `device_id`; a failure is not a sign-in failure and must not surface. This page adds no device UI. `App` also calls it when a live session is restored (`main.rs:1245`).
+- Signed-in early return (`main.rs:1600-1633`): `PageHeader` `Sesión iniciada` + `Card` > `DetailGrid` (`Nombre` / `Correo`) + `ActionRow` (Secondary `Panel` → `/dashboard`, Ghost `Cerrar sesión` → sign-out sequence ignored-result + `clear_persisted_session()` + `actor`/`user` cleared + push `/`). No Primary, no footer.
+- Signed-out stage (`main.rs:1772-1934`): `.ui-auth-shell` > `.ui-auth-head` (`h1.ui-auth-title` `Bienvenido de nuevo` / `Crea tu cuenta` at `main.rs:1776`), `div.ui-segmented` (Ghost `Iniciar sesión` / `Crear cuenta`, `is-active` on the current mode), `Card` > `FormGrid columns: One` with labeled `TextField`s (`Nombre` sign-up only, `Correo` `input_type="email"`, `Contraseña` with `password_autocomplete` per mode), `ErrorText` when `error()` is non-empty, and one Primary `Button` (`loading: submitting()`, `Procesando...` while busy, else `Crear cuenta` / `Iniciar sesión`).
+- MFA branch (`main.rs:1870-1929`): while `mfa_ticket()` is non-empty the mode switch and credential fields unmount; the same shell shows `TextField` `Código de verificación` (`autocomplete="one-time-code"`), `ErrorText`, Primary `Verificar código` (`verify_mfa`), and Secondary `Volver` (clears ticket + error, no request). `submit` / `verify_mfa` keep the behavior in §2.7/§4: trimmed non-empty client gate (`Completa todos los campos.` / `Ingresa el código de verificación.`), server text rendered verbatim in `ErrorText`, session parse → `fetch_session` refresh → silent `register_current_device()` → `fetch_me()` → desktop persist → contexts set → push `/dashboard` only when a session exists, else `No se pudo iniciar la sesión.`
+- Footer: `Footer { surface: FooterSurface::Auth }` at `main.rs:1932`, last child of the signed-out `PageShell` (never the signed-in branch); navbar and footer copy are owned by `Header.md` §3 / `Footer.md` §3 and are not restated here.
 
 Verification, in order:
 

@@ -101,6 +101,6 @@ pub fn prescription_status_label(status: &str) -> &'static str {
         "superseded" => "Reemplazada",
         "voided" => "Anulada",
         "pending_sync" => "Provisional",
-        _ => "Desconocida",
+        _ => "Desconocido",
     }
 }

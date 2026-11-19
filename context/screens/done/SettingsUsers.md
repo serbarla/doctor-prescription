@@ -332,32 +332,13 @@ Line icons only, 1.5px stroke, 20px, Ink or Plum: `Alert` in the error notice; n
 
 ## 7. Implementation notes
 
-The shipped component is `fn SettingsUsers()` at `persona-sanus/src/main.rs:2120`, `#[component]` at `:2119`, closing before `SettingsProfile` at `:2318`. It reads `actor` and `checked`; holds `users`, `devices`, `refresh`, `message`; one effect runs on `refresh` and `checked`.
-
-Current behavior:
-
-- `!checked()` paints `div#echo > p` `Cargando...`.
-- A non-Administrator paints `div#echo` with `Acceso denegado` and `Solo el administrador puede gestionar usuarios y roles.`, then a `Link` `Ir a mi perfil`. It does not redirect. Target keeps the `Notice` Error surface: the hub's `/settings` redirect is a different route and does not apply here.
-- The effect needs an actor; without one it replaces `/login`. With an actor it calls `api::fetch_users()` then `api::fetch_devices()`; each `Err` writes the same `message`, so the second failure overwrites the first.
-- Staff rows are raw `div`; each renders `display_name`, `email`, `Alta: {format_date(created_at)}`, `Estado: {status_label(status)}`, a native `select` of `Sin rol`/`Administrador`/`Doctor`/`Enfermería`/`Secretaría`, `Quitar del equipo` when a role exists, and `Habilitar`/`Deshabilitar` by status.
-- The select calls `api::set_role(profile_id, value)` on change, ignores an empty value, and bumps `refresh` on success. The buttons call `api::remove_member` / `api::disable_profile(profile_id, bool)` and bump `refresh`. Every failure writes the shared `message`; no per-row state exists.
-- Devices render only when `!device_rows.is_empty()`. There is no `Sin dispositivos` empty state in the shipped markup, which is a gap: target must render the card with `EmptyState`, not hide it.
-- Device rows print `{profile_name} · {device_name_label}`, `{platform_label} · Última conexión: {last_seen_label}`, `Versión: {app_version}` when set, `Estado: Revocado` when revoked, and a Danger `Revocar` only when active.
-- `message` renders in an unstyled `p`; target uses `ErrorText` and does not paint success copy through it.
-- No confirm panel exists for remove/disable/revoke. Add an inline `ConfirmPanel` for `Quitar del equipo` and `Revocar` if the product requires a second step; do not add a modal or a browser `confirm()`. Re-enable is direct.
-
-Plan step 16 adoption:
-
-- `PageShell id="settings-page"`; `PageHeader` `Usuarios y roles` with the shipped subtitle; no header action.
-- `SectionCard` `Personal` holds `DataTable` with the six columns and one `<tr>` per profile. Cells are plain text; the role cell is a `SelectField hide_label`; the action cell is a wrapping `ActionRow` of Secondary/Danger buttons. The table caption is `Personal`; each `th` has `scope="col"`.
-- `SectionCard` `Dispositivos` holds the description and a `DataTable` with the six columns and one `<tr>` per device. The action cell is Danger `Revocar` only for an active device. The table caption is `Dispositivos`.
-- Add `EmptyState` inside each card when its vector is empty, with the §3 copy. Keep the card mounted; do not replace the page.
-- Add a per-action pending key (or one `busy: Option<String>`), disable only that control, and drive the §3.4 labels. Do not optimistic-update the cell. Clear the key on success, failure, and cancel.
-- Add inline confirmation for remove and revoke if required; the confirm button uses Danger, the cancel Secondary, and the panel is not focus-trapped. Re-enable is direct. The server's last-Administrator refusal remains the authority; never pre-disable based on a local count.
-- Keep the `refresh` counter and the two existing API calls. Do not add an endpoint, pagination, search, role creation, invite, device purge, or session editor.
-- Translate the shipped English server messages at their source (`auth_server`/`service`), not in this page: `The clinic needs an administrator.`, `Unknown role.`, `Profile not found.`, `Member not found.`, `Solo el administrador puede gestionar usuarios y roles.` belongs to this page and is already Spanish. The page prints whatever arrives.
-
-Verification commands, from the repo root; none is recorded here as executed:
+- Shipped component: `fn SettingsUsers()` at `persona-sanus/src/main.rs:2636` (`#[component]` at `:2635`, closing before `SettingsProfile` at `:2926`). Reads `actor`/`checked`; holds `users`, `devices`, `refresh`, `message`, and `busy: Option<String>` (per-action pending key, shipped).
+- Gates and fetch (`main.rs:2646-2670`): effect on `refresh`/`checked`; no session → `navigator.replace(Route::AuthPage {})`; non-Administrator → no fetch (denied surface below); Administrator → `api::fetch_users()` then `api::fetch_devices()`, each `Err` writes `No se pudieron cargar los usuarios y dispositivos.` (second failure overwrites with the same string; see report note).
+- Render (`main.rs:2672-2925`): `!checked()` → `PageShell` + `LoadingState` (`Cargando...`); checked without profile → `LoadingState` `Redirigiendo...`; non-Administrator → `PageShell` + `PageHeader` (`Usuarios y roles`, shipped subtitle) + `Notice tone=Error` (`Acceso denegado`, `Solo el administrador puede gestionar usuarios y roles.`) + Secondary `ButtonLink` `Ir a mi perfil` → `SettingsProfile` (`main.rs:2688-2710`) — no redirect, no fetch.
+- Administrator render: `PageShell` + `PageHeader`, `ErrorText` for `message`, then `SectionCard` `Personal` and `SectionCard` `Dispositivos` (description `Equipos registrados y su último acceso.`). Each card renders `EmptyState` when its vector is empty — `Sin usuarios` / `No hay usuarios para mostrar.` and `Sin dispositivos` / `No hay equipos registrados.` (the former shipped gap is fixed; the card stays mounted) — and `DataTable` otherwise with `caption: Some("Personal")` / `Some("Dispositivos")` (caption ships in `ui/feedback.rs:160-165`, `th scope="col"`), six columns per §2, one `<tr>` per row.
+- Staff rows: `display_name`, `email`, `Alta: {format_date}`, `Estado` badge, role `SelectField` (`Sin rol` disabled placeholder, `Administrador`/`Doctor`/`Enfermería`/`Secretaría`) calling `api::set_role(profile_id, value)` on change and ignoring empty; actions `Habilitar`/`Deshabilitar` (`api::disable_profile`), `Quitar del equipo` when a role exists (`api::remove_member`). Device rows: `{profile_name} · {device_name_label}`, `platform_label`, version or `—`, `last_seen_label`, `DeviceStatusBadge`, Danger `Revocar` (`api::revoke_device`) only when active, `—` when revoked. Success bumps `refresh`; failure writes the server message verbatim (`The clinic needs an administrator.`, `Unknown role.`) to `message`/`ErrorText`.
+- Per-action busy (shipped): `busy` keys `role:{id}`/`remove:{id}`/`disable:{id}`/`enable:{id}`/`revoke:{id}` disable only that control and drive `Guardando rol...` (hint), `Quitando...`, `Deshabilitando...`/`Habilitando...`, `Revocando...`; cleared on success, failure, and cancel. No optimistic cell edit. Remove/disable/revoke are direct — no confirm panel ships (the spec makes confirmation conditional, so none is required).
+- Verification commands, from the repo root; none is recorded here as executed:
 
 ```sh
 cd persona-sanus && cargo check
@@ -366,7 +347,7 @@ caveman-blocks run persona-smoke --dir persona-sanus --port 8091
 python3 .blocks/markdown-table-check.py --path context/screens/done/SettingsUsers.md --strict
 ```
 
-The smoke script covers auth, not this admin table. A browser pass needs: Administrator with at least two profiles and two devices; Doctor denied; role change; disable/enable; remove with confirm; revoke; last-Administrator refusal (set a clinic with one admin); unknown role through a stale client (or service test); 320px stacked rows.
+The smoke script covers auth, not this admin table. A browser pass needs: Administrator with at least two profiles and two devices; Doctor denied; role change; disable/enable; remove; revoke; last-Administrator refusal (set a clinic with one admin); unknown role through a stale client (or service test); 320px stacked rows.
 
 - Do not add: an invite, create-user, delete-profile, hard-delete, password reset, MFA reset, session editor, or email-resend control or endpoint.
 - Do not add: billing, price, trial, plan, `sync_locked`, entitlement, or image-quota copy (D-04).
@@ -378,6 +359,7 @@ The smoke script covers auth, not this admin table. A browser pass needs: Admini
 - Do not add: pagination, search, sort, bulk role change, or select-all.
 - Do not add: a new route, endpoint, table, column, role, permission, query parameter, or API argument.
 - Do not add: a role value not in `administrator|doctor|nursing|secretary`, or a blank role submitted as a change.
+- Do not add: an empty-card hide (return to the shipped gap), a table without `caption`/`scope`, or a per-row error surface that replaces the page-level `ErrorText`.
 
 ## 8. Spec references
 

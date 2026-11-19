@@ -289,36 +289,12 @@ Line icons only, 1.5px stroke, 20px, Ink or Plum: `Alert` in `ErrorText`; `Filte
 
 ## 7. Implementation notes
 
-The shipped component is `fn Audit()` at `persona-sanus/src/main.rs:2634`, `#[component]` at `:2633`, closing before `Patients` at `:2757`. Signals: `action`, `entity`, `q`, `rows: Vec<api::AuditRow>`, `message`, `generation: u32`.
-
-Current behavior:
-
-- `!checked()` paints `div#audit-page > p` `Cargando...`.
-- `!is_admin` (no profile or a non-Administrator) paints `div#audit-page > div.notice > h4` `Acceso denegado` + `p` `{message}`. For a non-Administrator the effect sets `Acceso denegado. Solo el administrador puede ver la auditoría.`; for no profile the string can be empty, so the notice may have a blank body. Target uses a fixed reason sentence in both cases.
-- The effect reads `generation`, then `checked`; it redirects a missing actor to `Route::AuthPage {}`, but for a non-Administrator it only sets `message` and does not redirect. It calls `api::fetch_audit(&action(), &entity(), &q())` and stores rows or the error. It does not have a `loaded` signal, so an empty `rows` initially can flash `Sin eventos` before the first fetch resolves. Target adds `loaded`.
-- The shipped filter controls are raw `input`s with placeholders `Acción (p. ej. sensitive_read)`, `Entidad (p. ej. patient)`, `Buscar en entidad o metadatos` and a raw `button` `Filtrar`. The button increments `generation`.
-- The shipped table is a raw `<table>` with `<thead><tr><th>` for `Fecha`, `Actor`, `Acción`, `Entidad`, `ID entidad`, `Metadatos`. It has no `<caption>`, no `scope`, and no empty state. It always prints `tr` per row containing:
-  - `row.at` raw (RFC3339), not `format_timestamp`;
-  - `row.actor_name.clone().unwrap_or_else(|| row.actor_id.clone().unwrap_or_default())`;
-  - `row.action`, `row.entity`, `row.entity_id`;
-  - `row.metadata` raw `Value` (serialized JSON), no `code.ui-mono`, no wrap.
-- The empty vector paints an empty `<tbody>`: no `Sin eventos`, no description.
-- Every failure writes `message`; it is painted in a raw `p` above the table, not `ErrorText`; no `role="alert"`.
-- The page has no pagination, export, date range, actor picker, or mutation control.
-
-Plan step 16 adoption and the deltas:
-
-- `PageShell id="audit-page"`; `PageHeader` `Auditoría` with the shipped subtitle unchanged; no header action.
-- `FilterBar` with three `TextField`s: labels `Acción`, `Entidad`, `Buscar`; the shipped placeholder examples are supplementary. The Primary `Button` `Filtrar` is the sole filled action; busy label `Filtrando...`; the button increments `generation` only once per activation.
-- Add `loaded: Signal<bool>` initialized false. The effect sets it false when a new generation starts and true in both the success and error arm after the fetch settles. The result slot renders `LoadingState` `Cargando...` while false; an empty vector only after true renders `EmptyState`; a non-empty vector renders `DataTable`.
-- Replace the raw `table` with `DataTable columns=[...] caption="Eventos de auditoría"`. Each row is `<tr>` with six `<td>`; metadata is `<code class="ui-mono">{metadata.to_string()}</code>` as escaped Dioxus text. Dioxus escapes `{...}` by default; never use `inner_html` here.
-- `format_timestamp(row.at)` for the date cell. `actor_name` → `actor_id` → `—` fallback.
-- Denial: `Notice tone=Error` with `Acceso denegado` + `Solo el administrador puede ver la auditoría.`; no filters and no fetch. Keep the client gate and rely on the server `403` as well.
-- Failure: `ErrorText` with the returned message or `No se pudo cargar la auditoría.`; keep filters. If rows from a previous success exist, say whether they stay: target keeps them under the error rather than blanking the audit trail.
-- Empty: `EmptyState` `Sin eventos` / `No hay eventos para estos filtros.`; no result counter; no fake “last updated”.
-- No pagination/export is added. If the server already bounds the rows, the page paints that bound; do not invent a page size or total.
-
-Verification commands, from the repo root; none is recorded here as executed:
+- Shipped component: `fn Audit()` at `persona-sanus/src/main.rs:3273` (`#[component]` at `:3272`, closing before `Patients` at `:3419`). Reads `actor`/`checked`; signals `action`, `entity`, `q`, `rows`, `message`, `generation`, and `loaded: Signal<bool>` (shipped).
+- Effect (`main.rs:3282-3310`): on `generation`/`checked`; no session → `navigator.replace(Route::AuthPage {})`; non-Administrator → return with no fetch; Administrator → `loaded.set(false)`, `api::fetch_audit(&action, &entity, &q)` (only non-empty params built by the helper), rows or `message` (fallback `No se pudo cargar la auditoría.`), then `loaded.set(true)` in both arms.
+- Gates (`main.rs:3312-3334`): `!checked() || actor().is_none()` → `PageShell id="audit-page"` + `LoadingState` (`Cargando...`); non-Administrator → `PageShell` + `Notice tone=Error` with `h1` `Acceso denegado` + fixed `Solo el administrador puede ver la auditoría.` (no blank-body case ships; no filters, no fetch).
+- Render (`main.rs:3336-3418`): `PageShell` + `PageHeader` (`Auditoría`, `Registro de solo anexación con retención de 5 años. Filtra por acción, entidad o texto.`); `FilterBar` with `TextField`s `Acción`/`Entidad`/`Buscar` (labels + shipped placeholders `Acción (p. ej. sensitive_read)` / `Entidad (p. ej. patient)` / `Buscar en entidad o metadatos`) + Primary `Button` `Filtrar`/`Filtrando...` (`disabled: !loaded()`, increments `generation` once per activation); `ErrorText` for `message`.
+- Result slot (`main.rs:3396-3418`): `!loaded()` → `LoadingState` (no empty flash — the former gap is fixed); empty rows after load → `EmptyState` `Sin eventos` / `No hay eventos para estos filtros.`; otherwise `DataTable` with `caption: Some("Eventos de auditoría")` (caption and `th scope="col"` ship in `ui/feedback.rs:160-165`), columns `Fecha`/`Actor`/`Acción`/`Entidad`/`ID entidad`/`Metadatos`, `format_timestamp(&row.at)`, actor `actor_name` → `actor_id` → `—` (U+2014), verbatim `action`/`entity`/`entity_id`, metadata as escaped `<code class="ui-mono">{row.metadata}</code>` (Dioxus text, never `innerHTML`). No pagination, export, date/actor filter, or mutation control ships.
+- Verification commands, from the repo root; none is recorded here as executed:
 
 ```sh
 cd persona-sanus && cargo check
@@ -338,6 +314,7 @@ The smoke script covers auth, not this Administrator table. A browser pass needs
 - Do not add: rich text, `contenteditable`, HTML rendering, markdown rendering, or `inner_html` of metadata/actions (D-21).
 - Do not add: a second Primary, a filled row action, or a colour-only event status.
 - Do not add: a new route, endpoint, table, column, role, permission, query parameter, or API argument.
+- Do not add: an un-captioned or scope-less table, an empty-state flash before first load, or a client-side retention/TTL filter.
 
 ## 8. Spec references
 

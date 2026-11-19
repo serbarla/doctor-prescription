@@ -631,7 +631,13 @@ fn save_document(
                 message.set("Borrador guardado.".to_owned());
                 on_saved.call((version.id, doc_json, margin));
             }
-            Err(error) => message.set(error),
+            Err(error) => message.set(
+                if error.starts_with("Could not") || error.starts_with("Request failed") {
+                    "No se pudo guardar el borrador.".to_owned()
+                } else {
+                    error
+                },
+            ),
         }
     });
 }
@@ -792,7 +798,7 @@ pub fn TemplateDocumentForm(
                     hint: None,
                     error: None,
                     disabled: false,
-                    hide_label: true,
+                    hide_label: false,
                     for key in TEMPLATE_VARIABLES {
                         option { value: "{key}", "{variable_label(key)} — {key}" }
                     }
@@ -804,7 +810,7 @@ pub fn TemplateDocumentForm(
                 }
             }
             TextAreaField {
-                label: "Cuerpo".to_owned(),
+                label: "Cuerpo de la receta".to_owned(),
                 value: document().body.clone(),
                 oninput: move |value| document.write().body = value,
                 placeholder: String::new(),
@@ -814,7 +820,7 @@ pub fn TemplateDocumentForm(
                 required: false,
                 disabled: false,
                 readonly: false,
-                hide_label: true,
+                hide_label: false,
                 rows: None,
             }
             TextAreaField {
@@ -1059,7 +1065,7 @@ pub fn TemplateDocumentForm(
                 "Agregar medicamento"
             }
         }
-        if !message().is_empty() {
+        if !message().is_empty() && message() != "Borrador guardado." {
             ErrorText { text: message() }
         }
         ActionRow {

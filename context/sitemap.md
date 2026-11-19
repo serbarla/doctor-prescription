@@ -80,7 +80,7 @@ All routes below sit under `#[layout(Navbar)]`: persistent nav (Dashboard, Patie
 
 | Route | Name | Roles | PRD | Status | Purpose |
 |---|---|---|---|---|---|
-| `/dashboard` | Dashboard | Administrator, Doctor, Nursing, Secretary | §7 (base) | 🟡 | Implemented: auth-checked page that redirects signed-out users to `/login` and shows the session identity. ⬜ Role-aware content: recent prescriptions, drafts, pending sync (desktop), quick actions (New prescription, New patient, New template). |
+| `/dashboard` | Dashboard | Administrator, Doctor, Nursing, Secretary | §7 (base) | ✅ | Role-aware home: session identity, quick actions (New prescription, New patient, New template), recent prescriptions, drafts, and pending-sync widget (desktop). Auth-checked; signed-out users redirect to `/login`. |
 | `/patients` | Patients — list | Doctor, Nursing, Secretary, Administrator | §5.1 FR-001/003 | ✅ | Search by name and cédula; list scoped by `clinic_id`. Entry to create/detail. |
 | `/patients/new` | Patients — create | Doctor, Nursing, Secretary | FR-001/002 | ✅ | Create patient (names, cédula, age/birth date, sex, phone, notes). Deduplication warning on cédula / likely duplicate. |
 | `/patients/:id` | Patient detail | Doctor, Nursing, Secretary (role-filtered); Administrator (read-only) | FR-001/003, §4 flow 5 | 🟡 | Demographics, edit/delete actions, *New prescription*, and the prescription history link are implemented. Actions: *New prescription*, *Edit* (not for the read-only Administrator). |
@@ -171,7 +171,7 @@ Spec phases (`specs/01`–`14`) are the execution order and may deliver roadmap 
 
 | Milestone | Sitemap delivered |
 |---|---|
-| M0 — foundation | `/login` ✅, `/dashboard` ✅ (auth check only; role-aware content ⬜), `/patients*` ✅ (Rx history spec 07-G), `/settings/users` ✅, roles + authorized service layer ✅, Docker Compose deployment ✅ |
+| M0 — foundation | `/login` ✅, `/dashboard` ✅ (role-aware: session, quick actions, recent, drafts, sync widget), `/patients*` ✅ (Rx history spec 07-G), `/settings/users` ✅, roles + authorized service layer ✅, Docker Compose deployment ✅ |
 | M1 — forms + PDF | `/templates*` ✅, `/prescriptions/new` ✅, `/prescriptions/:id` ✅, `/prescriptions/:id/preview` ✅, `/verify/:code` ✅, `printpdf` A4 renderer + QR ✅, logo/one-image upload ✅ (specs 05-E–08-H) |
 | M2 — offline | Same routes on desktop cache/outbox ✅, preallocated number blocks + provisional PDFs ✅, SSE/polling sync indicators ✅, 30-day retention states in `/prescriptions` ✅ (specs 10-J/11-K) |
 | M3 — hardening | `/audit` ✅, MFA on `/login` ✅, device registration/revocation ✅ (spec 04-D), `/settings/clinic` ✅ (spec 06-F), verification rate limiting ✅ (spec 09-I); auto-update channel ships, signed installers OPEN (`specs/divergences/13-M-signed-installers.md`) |

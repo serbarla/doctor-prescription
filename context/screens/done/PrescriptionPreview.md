@@ -318,25 +318,18 @@ Line icons only, 1.5px stroke, 20px default, Ink or Plum: the Alert glyph in the
 
 ## 7. Implementation notes
 
-The shipped component is `fn PrescriptionPreview(id: String) -> Element` at `persona-sanus/src/main.rs:4939`, `#[component]` at `:4938`, closing before `PrescriptionDetail` at `:5380`. Its effect gates on `checked()` and the session, fetches `api::fetch_prescription` and `api::fetch_prescription_preview`, and on desktop rebuilds a provisional payload from the local cache when the preview endpoint fails. The rendered branch starts at `:5175`.
+The shipped component is `fn PrescriptionPreview(id: String)` at `persona-sanus/src/main.rs:6155`, `#[component]` at `:6154`, closing at `:6624` before `PrescriptionDetail` at `:6627`. It composes the adopted `ui/` primitives: `PageShell` (`id="prescriptions-page"`), `PageHeader`, `ActionRow`, `Button`, `ButtonLink`, `LinkAction`, `Notice`, `ErrorText`, `HintText`, and `LoadingState`, plus `forms::A4Preview` inside `.ui-preview-canvas` (`persona-sanus/src/ui/`, `persona-sanus/src/forms.rs`).
 
-Signals and branches to preserve:
+Shipped state (present tense):
 
-- `preview`, `prescription`, `message`, `signing`, `needs_ack`, `generation`; the effect depends on `generation` and resets on each sign.
-- `is_draft = current.status == "draft"`, `can_sign = is_draft && profile.can_sign_prescriptions()`. This screen does not check ownership; the sign endpoint does, and its refusal stays in `message`. The detail screen's stricter owner gate is not copied here.
-- `patient_name` from the `patient.name` entry, fallback `Receta`; `values` from every `PreviewVariable`; `image_sources` from `PreviewImageSource.asset_id`/`data_url`; `DocumentMeta` from code, number, issued_at, provisional, QR.
-- `pdf_url = /api/prescriptions/{current.id}/pdf`; `preview_id`, `pdf_doc`, `pdf_values`, `pdf_meds`, `pdf_rx`, `pdf_issued` are cloned before `rsx!` for the provisional render.
-- Sign uses `sign_prescription_dispatch(&preview_id, false, offline)`; the acknowledgment branch uses `true`; success replaces `prescription`, refreshes sync with `probe_sync_status`, increments `generation`; error sets `message`, and only the `variables desconocidas` substring reveals the acknowledgment control.
-- Provisional local render builds `pdf::PdfInput` with `RenderMode::Provisional`, margin 12, title `Receta-{preview_id}.pdf`, desktop `cached_doc_assets`, and reports `bytes.len()`; it writes no file. A real local download is a separate change.
-- Print is an anchor to the same PDF URL with `target="_blank"` and `rel="noopener noreferrer"`. Share is a wasm-only `web_sys::window().navigator().share_with_data` with `ShareData.title = "Receta médica"` and `url = origin + pdf_url`.
-- No PDF is generated on load; `pdf::render` runs only in the provisional explicit-action branch on desktop.
+- Signals: `preview`, `prescription`, `message`, `signing`, `needs_ack`, `hint_text`; the effect gates on `checked()` and the session, fetches `api::fetch_prescription` and `api::fetch_prescription_preview`, and on desktop rebuilds a provisional payload from the local cache when the preview endpoint fails (clearing `message` on a cache hit).
+- Gates: no session renders `PageShell` + `LoadingState` (default label); no profile renders `LoadingState` `Redirigiendo...`; no read permission renders `Notice tone=Error` `Acceso denegado` / `No tienes permiso para ver esta receta.`; fetch in flight renders `LoadingState` `Cargando vista previa...`.
+- Header: `PageHeader` title `Vista previa A4 — {patient_name}` (`Receta` fallback when `patient.name` is absent) with subtitle `{status} · No. {number} · {issued_at}` and Secondary `ButtonLink` `Volver a la receta`. Status labels come from `prescription_status_label` (`ui/format.rs:97-106`: `Borrador`, `Firmada`, `Reemplazada`, `Anulada`, `Desconocido` fallback), except unknown statuses, which the subtitle renders as `Desconocida` (`main.rs:6389`) — see resolution note below.
+- Sign branch: `can_sign = status == "draft" && profile.can_sign_prescriptions()` (`main.rs:6382`); no ownership check client-side (the server authorizes). Sign is Primary `Button` `Firmar y emitir` / `Firmando...` (`aria-busy` while `signing`); the acknowledgment Secondary `Firmar reconociendo las advertencias` appears only when the error contains `variables desconocidas` and re-dispatches with acknowledgment true. Success replaces `prescription` and reprobes sync; failure keeps the draft and renders the API message.
+- Non-draft branch: download is Primary `LinkAction` `Descargar PDF`, print is Secondary `LinkAction` `Imprimir` (same `/api/prescriptions/{id}/pdf` URL, `target="_blank"`, `rel="noopener noreferrer"`). Desktop provisional payloads add Secondary `Button` `PDF provisional (local)` which renders `pdf::render` with `RenderMode::Provisional` and reports `PDF provisional generado ({bytes} bytes) con marca PENDIENTE DE SINCRONIZACIÓN.` as `HintText` without writing a file. Wasm adds Secondary `Button` `Compartir` opening Web Share with title `Receta médica` and the absolute download URL; cancel/reject is silent. No PDF renders on load.
+- Provisional presentation: `Notice tone=Warning` `Documento provisional: se muestra sin QR escaneable hasta sincronizar.`; otherwise `ErrorText` carries load/sign/render failures and `HintText` the byte report. `forms::A4Preview` keeps its props and geometry unchanged inside `.ui-preview-canvas`.
 
-Plan step 15 adoption:
-
-- Root becomes `PageShell id="prescriptions-page"`; the raw page head becomes `PageHeader` with the existing `h4` as `title` and the existing `p` as `subtitle`; the back `Link` becomes a Secondary `ButtonLink` or `LinkAction` `Volver a la receta`.
-- The action region becomes `ActionRow`; sign is `Button` Primary, acknowledgment is Secondary, download/print/share are `LinkAction`, the provisional local render is Secondary `Button`. Preserve the mutually exclusive primary.
-- The provisional `.notice` becomes `Notice tone=Warning`; `.error` becomes `ErrorText`; the byte report becomes `HintText`. The `.preview-scroll` wrapper becomes `.ui-preview-canvas`; `forms::A4Preview` keeps its props and geometry unchanged.
-- Add no new endpoint, route, query parameter, load-time render, or share payload field.
+Resolved by rule: §3.2's freeze table says `Desconocida` for this page, so the subtitle maps unknown to `Desconocida` locally; the shared `prescription_status_label` (`ui/format.rs:104`) curiously falls back to `Desconocido` for other screens. Table wins over vocabulary rule.
 
 Verification commands, from the repo root; none is recorded here as executed:
 

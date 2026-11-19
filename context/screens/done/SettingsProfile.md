@@ -295,30 +295,12 @@ Line icons only, 1.5px stroke, 20px, Ink or Plum: `Alert` in errors; `Check` may
 
 ## 7. Implementation notes
 
-The shipped component is `fn SettingsProfile()` at `persona-sanus/src/main.rs:2319`, `#[component]` at `:2318`, closing before `Audit` at `:2633`. Signals: `initialized`, `display_name`, `specialty`, `license_no`, `national_id`, `phone`, `email`, `message`, `saving`, `mfa_enabled`, `mfa_secret`, `mfa_uri`, `mfa_code`, `mfa_message`, `mfa_password`, `current_password`, `new_password`, `password_message`. The current root is `div#echo`.
-
-Current behavior to preserve:
-
-- One effect runs once (`initialized` guard) after `checked`: no session replaces `/login`; otherwise it seeds `display_name` from `Me.profile.display_name`, and for `Me.doctor` seeds specialty/license/national id/phone/email, then calls `auth::mfa_status()` and stores the boolean. A status error is swallowed.
-- `is_doctor = profile.is_doctor()`; `is_admin = profile.is_administrator()`. MFA card renders when `is_doctor || is_admin`. Admin does not get the doctor fields.
-- Save calls `api::update_profile` with all six strings, sets `saving`, clears `message`, and on success replaces `actor` with the returned `Me` and sets `Perfil guardado.`; on failure sets the returned message verbatim. `saving` is mutable in the shipped code.
-- MFA enroll calls `auth::enroll_mfa()`, reads `secret` and `uri` through `http::string_field`, sets both, and shows the hint `Escanea el URI o copia el secreto en tu app de autenticación.` It does not draw a QR.
-- Confirm calls `auth::confirm_mfa(&mfa_code())`; on success `mfa_enabled = true`, clears secret and URI, and sets `Verificación activada.`; on failure keeps the pending values and shows the message. There is no empty-code client guard, so an empty request goes to the server and returns its error.
-- Disable calls `auth::disable_mfa(&mfa_password())`; on success sets `mfa_enabled = false` and `Verificación desactivada.`; on failure keeps the password and shows the message. There is no empty-password guard.
-- Password change calls `auth::change_password(&current_password(), &new_password())`; on success clears both fields and sets `Contraseña cambiada. Sesión renovada.`; on failure keeps both and shows the error. There is no client minimum/length or confirm field; the server and transport enforce.
-
-Plan step 16 adoption:
-
-- Root becomes `PageShell id="settings-page"`; the page head becomes `PageHeader` `Mi perfil` with the clinic/role subtitle. Keep both gates: `LoadingState` `Cargando...` before `checked`, `Redirigiendo...` when checked without a profile.
-- `Datos del perfil` becomes `SectionCard` with `Card` + `FormGrid columns=Two`; `Nombre visible`/`Especialidad`/`Número de licencia`/`Cédula`/`Teléfono`/`Correo` become `TextField`s. The six-field order is shipped: display name, then the doctor fields in specialty, license, national id, phone, email order. `Guardar` is the only Primary, busy `Guardando...`.
-- `ui-columns` holds two `SectionCard`s: `Verificación en dos pasos` and `Cambiar contraseña`. The MFA card keeps the disabled state for non-Doctor/non-Administrator. All MFA/password actions are Secondary; disable MFA is Danger. Inputs use type password/passcode semantics; the code field is `one-time-code`, not a password.
-- Messages: page save uses `ErrorText`/`HintText` in the profile card; MFA uses its own message line; password uses its own. Do not merge three independent outcomes into one page-level `message`. Success uses `HintText`/`Notice Success`; only failure uses Plum `ErrorText`.
-- Secret/URI use `.ui-break`; add `aria-describedby` from the code field to the enrolling hint. Keep the secret out of the URL. Clear both after confirm.
-- Add the missing client-side empty guards for MFA code, disable password, and both password fields: they prevent a pointless request and show the local hint; they do not replace the server rules. No length/strength meter.
-- `saving` is already mutable; keep the one-shot save guard so double click cannot send two PUTs. Add a per-action busy flag for MFA confirm/disable and password change if the server calls overlap; labels `Confirmando...`, `Desactivando...`, `Cambiando...`. Do not disable unrelated cards.
-- The profile PUT remains one request with all six strings. Do not split it by role; the server decides which fields apply. Do not add a doctor-only endpoint.
-
-Verification commands, from the repo root; none is recorded here as executed:
+- Shipped component: `fn SettingsProfile()` at `persona-sanus/src/main.rs:2926` (`#[component]` at `:2925`, closing before `Audit` at `:3273`). Reads `actor`/`checked`; signals `initialized`, `display_name`, `specialty`, `license_no`, `national_id`, `phone`, `email`, `message` (+`message_error`), `saving`, `mfa_enabled`, `mfa_secret`, `mfa_uri`, `mfa_code`, `mfa_message` (+`mfa_message_error`), `mfa_password`, `mfa_busy`, `current_password`, `new_password`, `password_message` (+`password_message_error`), `password_busy`.
+- Load effect (`main.rs:2940-2980`): once (`initialized` guard) after `checked`; no session → `navigator.replace(Route::AuthPage {})`; seeds `display_name` from `Me.profile.display_name` and, for `Me.doctor`, specialty/license/national id/phone/email; calls `auth::mfa_status()` once and stores the boolean (failure swallowed, toggle stays off). Gates render `PageShell id="settings-page"` + `LoadingState` (`Cargando...`) / `LoadingState` `Redirigiendo...` (checked without profile).
+- Render (`main.rs:2982-3272`): `PageShell` + `PageHeader` (`Mi perfil`, `Clínica: {name} · Rol: {role}` or `Sin clínica asignada. Un administrador debe asignarte un rol.` at `:3000-3001`); `SectionCard` `Datos del perfil` (`FormGrid columns=Two`, `TextField`s `Nombre visible`, and for Doctor only `Especialidad`/`Número de licencia`/`Cédula`/`Teléfono`/`Correo` (`input_type="email"`), second blank `FormGrid` row for non-Doctor); per-card `ErrorText`/`HintText` split on `message_error`; `ActionRow` Primary `Guardar`/`Guardando...` (`:3086`) via `api::update_profile` with all six strings, success `Perfil guardado.` + `actor` replaced, failure keeps values.
+- MFA card (`Verificación en dos pasos`, only `is_doctor() || is_administrator()`): off copy + Secondary `Activar verificación` → `auth::enroll_mfa()` → `Secreto: {secret}` / `URI: {uri}` in `p.ui-break` (selectable text, never QR) + hint `Escanea el URI o copia el secreto en tu app de autenticación.` + `Código de 6 dígitos` `TextField` (`autocomplete="one-time-code"`, `inputmode="numeric"` at `:3107-3108`, `ui/form.rs:54,74` carries `inputmode`) + Secondary `Confirmar activación`/`Confirmando...` (`mfa_busy`): confirm disabled when `mfa_code().trim().is_empty()` (empty guard shipped), success clears secret/URI/code and sets `Verificación activada.`, failure keeps pending values. On: `Contraseña para desactivar` + Danger `Desactivar verificación`/`Desactivando...`, disabled when password empty (empty guard shipped), success `Verificación desactivada.`, failure keeps password. Per-card message split `ErrorText`/`HintText` on `mfa_message_error`.
+- Password card (`Cambiar contraseña`): `HintText` `Al cambiarla se invalidan las demás sesiones.`, `FormGrid columns=Two` with `Contraseña actual`/`Nueva contraseña` (password type/autocomplete), Secondary `Cambiar contraseña` disabled when either field empty or `password_busy` (empty guard shipped), `auth::change_password` success clears both fields and sets `Contraseña cambiada. Sesión renovada.`, failure keeps both. Messages split `ErrorText`/`HintText` on `password_message_error`; `ui-columns` holds the MFA and password `SectionCard`s.
+- Verification commands, from the repo root; none is recorded here as executed:
 
 ```sh
 cd persona-sanus && cargo check
@@ -338,6 +320,7 @@ The smoke script covers sign-in/MFA at a high level, not the profile card. A bro
 - Do not add: rich text, WYSIWYG, `contenteditable`, HTML/markdown rendering, or a formatting toolbar (D-21).
 - Do not add: a second Primary, a filled Danger button, a modal, a toast, or an autosave.
 - Do not add: a new route, endpoint, table, column, role, permission, or API argument.
+- Do not add: a neutral MFA-status-failure hint claiming `Activada`, a doctor field for a non-Doctor, or a length/strength meter client-side (server enforces).
 
 ## 8. Spec references
 

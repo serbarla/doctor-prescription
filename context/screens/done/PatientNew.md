@@ -272,26 +272,17 @@ Line icons only, 1.5px stroke, 20px default, Ink or Plum. The page uses the Aler
 
 ## 7. Implementation notes
 
-The shipped component is `fn PatientNew()` at `persona-sanus/src/main.rs:2954`, `#[component]` at `:2953`, closing before `PatientDetail` at `:3127`. It holds `full_name`, `national_id`, `birth_date`, `sex`, `phone`, `notes`, `warning_ids`, `message`, and `saving`, plus the shared contexts. Its effect redirects signed-out users; its render path denies non-writers with `div.notice` `Acceso denegado` and the body `Solo doctor, enfermería y secretaría pueden crear pacientes.`; the form is a raw `div.form-grid` with six `label.field` controls and `div.actions`; the duplicate notice prints `warning_ids().join(", ")` and a `button` `Crear de todas formas`.
+Shipped: `fn PatientNew()` at `persona-sanus/src/main.rs:3621` (`#[component]` at `:3620`), closing at `:3902`. It holds `full_name`, `national_id`, `birth_date`, `sex`, `phone`, `notes`, `warning_ids`, `message`, and `saving` (`main.rs:3627-3635`), plus the `user`, `actor`, `checked`, and `sync` contexts. The plan step-13 adoption is landed: `PageShell id="patients-page"`, `PageHeader` with Secondary `ButtonLink` `Cancelar`, `Card` + `FormGrid columns=Two` (`main.rs:3732-3838`), warning `Notice`, `ErrorText`, and `ActionRow` with one Primary `Button`. The raw `div.form-grid`, the `div.notice` printing joined UUIDs, and the `.error` paragraph are gone.
 
-`submit_new_patient` (`:2880-2952`) is the behavior to preserve:
+`submit_new_patient` (`main.rs:3548-3618`) is preserved:
 
-- It returns while `saving`.
-- It validates the trimmed name and the non-empty birth date.
-- It sets `saving`, clears `message`, and spawns.
-- On `!http::is_server_reachable()`, the desktop branch clears `saving` before the local call, passes the JSON payload and profile id, navigates to `PatientDetail` on success, and sets `message` on failure. If the branch is not compiled, control falls through to the API call rather than returning; that is the shipped shape and is harmless on web.
-- On `api::create_patient(&form, confirm)`, `Created` navigates to `PatientDetail`; `LikelyDuplicate(ids)` clears `saving`, stores the ids, and sets `Ya existe un paciente con un nombre similar.`; `Err` sets the message and clears `saving`.
+- It returns while `saving` (`main.rs:3560-3562`), validates the trimmed name (`Ingresa el nombre del paciente.`) and a non-empty birth date (`valid_birth_date`, `main.rs:5324`; `Ingresa una fecha de nacimiento válida.`), then sets `saving`, clears `message`, and spawns.
+- On `!http::is_server_reachable()`, the desktop branch (`main.rs:3574-3602`) clears `saving` before the local call, passes the camelCase JSON payload and profile id to `desktop_local::create_local_patient`, navigates to `PatientDetail` on success, and sets `message` on failure. On web the branch is not compiled and control falls through to the API call.
+- On `api::create_patient(&form, confirm)` (`api.rs:703`), `Created(patient)` navigates to `PatientDetail`; `LikelyDuplicate(ids)` (`warning: "likely_duplicate"`, `api.rs:712`) clears `saving` and stores the ids — the shipped `Ya existe un paciente con un nombre similar.` message is gone; `Err` sets the message and clears `saving`. The exact-cédula `409` arrives as `Err` and renders in `ErrorText`; there is no override.
 
-Plan step 13 adoption:
+Duplicate notice shipped (`main.rs:3839-3872`): `Notice tone=Warning` with title `Posible paciente duplicado`, description `Ya existe un paciente con un nombre similar en esta clínica.`, one Secondary `ButtonLink` `Ver ficha` per id to `/patients/{id}`, and a Danger `Button` `Crear de todas formas` that resubmits the captured form with `confirm=true` (`confirmDuplicate: true`, `api.rs:707-709`). No raw UUID and no other patient's fields are printed.
 
-- Root becomes `PageShell id="patients-page"`; the page-head becomes `PageHeader` with the shipped `h4` as `title` and the shipped `p` as `subtitle`; the header `Link.button.secondary` becomes `ButtonLink` Secondary `Cancelar`.
-- The raw `.form-grid` becomes `Card` + `FormGrid columns=Two`; the six fields become `TextField`/`SelectField`/`TextAreaField` with the same labels, values, `oninput`/`onchange`, `wide` for notes, `input_type="date"` for birth date and `"tel"` for phone. Do not add placeholders, required markers, or client masks.
-- The duplicate `div.notice` becomes `Notice tone=Warning` with a title and description; each raw id becomes a Secondary `ButtonLink` `Ver ficha` to `/patients/{id}`; the retry becomes a Danger `Button` `Crear de todas formas`.
-- The raw `.error` paragraph becomes `ErrorText`; the `.actions` div becomes `ActionRow`; the final button becomes the one Primary `Button`.
-- The shipped warning string `Ya existe un paciente con un nombre similar.` is replaced by the clearer §3.2 notice title/description; the behavior (no insert, `confirm=false`, ids retained) is unchanged.
-- The exact-cédula `409` is already an `Err`; render its server message in `ErrorText` and do not show the confirm notice. Do not add an override.
-
-Do not change `api::create_patient` arguments, `confirm` semantics, the `PatientForm` field set, the desktop `create_local_patient` payload, the clinic/doctor derivation, the guard method, or the navigation target. Do not add an age field: the PRD lists age/birth date, and the shipped form uses birth date as the single source, so age is not a second input.
+Gates shipped (`main.rs:3643-3706`): `!checked()` → `PageShell` + `PageHeader` + `LoadingState` (`Cargando...`); no session → replace `/login`; `actor() == None` → `LoadingState` `Redirigiendo...`; `!can_write_patients()` → `Notice tone=Error` `Acceso denegado` with the denied body and Secondary `Volver a pacientes`. The form sends no `clinicId` and no `createdBy`.
 
 Verification commands, run from the repo root; none is recorded here as executed:
 

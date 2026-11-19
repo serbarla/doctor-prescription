@@ -51,6 +51,8 @@ pub fn TextField(
     min: Option<String>,
     max: Option<String>,
     step: Option<String>,
+    inputmode: Option<String>,
+    #[props(default)] onblur: Option<EventHandler<FocusEvent>>,
     #[props(default)] hide_label: bool,
 ) -> Element {
     let invalid = error.is_some();
@@ -70,7 +72,13 @@ pub fn TextField(
                 min: min.unwrap_or_default(),
                 max: max.unwrap_or_default(),
                 step: step.unwrap_or_default(),
+                inputmode: inputmode.unwrap_or_default(),
                 oninput: move |event| oninput.call(event.value()),
+                onblur: move |event| {
+                    if let Some(onblur) = onblur {
+                        onblur.call(event)
+                    }
+                },
             }
         }
     }

@@ -306,27 +306,18 @@ Line icons only, 1.5px stroke, 20px default, Ink or Plum: the Alert glyph in the
 
 ## 7. Implementation notes
 
-The shipped component is `fn Templates()` at `persona-sanus/src/main.rs:3567`, `#[component]` at `:3566`, closing before `TemplateNew` at `:3679`. It reads `user`, `actor`, and `checked` contexts, holds `templates: Signal<Vec<api::Template>>`, `message`, and `refresh: Signal<i32>`, and runs one effect keyed on `refresh`.
+Shipped: `#[component] fn Templates()` at `persona-sanus/src/main.rs:4461-4462`, closing at `:4603`. It reads `user`, `actor`, and `checked` contexts (`:4463-4465`), holds `templates`, `message`, `loaded: Signal<bool>` (`:4467-4469`), and an unused `refresh` signal (`:4470`). The effect (`:4472-4491`) returns while `!checked()`, replaces to `Route::AuthPage {}` when the user is absent, calls `api::fetch_templates()` once, stores rows or the frozen fallback `No se pudo cargar la lista de plantillas.` (`:4487`), and sets `loaded` true in both arms (`:4489`).
 
 Current behavior, in order:
 
-- `!checked()` returns `div#templates-page` with `p` `Cargando...`; a missing `actor()` after the check returns the same root with `Redirigiendo...`.
-- `!profile.can_manage_templates()` returns `div#templates-page` with `div.notice` (`h4` `Acceso denegado`, the reason `Solo doctor y administrador pueden gestionar plantillas.`) and no list link.
-- The effect calls `api::fetch_templates()` and stores the result or the error in `message`. It has no `loaded` signal, so an empty vector paints the empty hint immediately after the session gate and before the fetch resolves; target adds `loaded` as §2.2 says.
-- The raw root has no `PageShell`; the header is `.page-head` with `h4` `Plantillas`, the shipped subtitle `Plantillas del médico y maestras de la clínica, con su versión vigente.`, and `Link.button` `Nueva plantilla`.
-- A non-empty `message` paints `p.error`; the list is `.template-list`; each row is `div.template-row` with two or three `p.patient-meta` lines and a trailing `.actions` div.
-- Non-archived rows render `Link.button.secondary` `Editar` to `Route::TemplateEdit { id }` and `Vista previa` to `Route::TemplatePreview { id }`. Archived rows render no actions.
-- The list paints `template_owner_label(&template.owner_type) · template_status_label(&template.status)` and either `Versión vigente: {version.version_no} ({version_status_label(&version.status)})` or `Sin versión publicada.`
+- Session gates render `PageShell id="templates-page"` with `LoadingState` `Cargando...` / `Redirigiendo...` (`:4493-4506`).
+- Denial renders `PageShell` + `PageHeader` `Acceso denegado` / `Solo doctor y administrador pueden gestionar plantillas.` with no action, list, or back link (`:4507-4516`).
+- Loading gate renders the full `PageHeader` (`Plantillas` + subtitle, no Primary) plus `LoadingState` while `!loaded()` (`:4517-4527`).
+- Settled list renders `PageHeader` with Primary `ButtonLink` `Nueva plantilla` to `Route::TemplateNew {}` (`:4531-4542`), `ErrorText` when `message` is non-empty (`:4543-4545`), and `EmptyState` title-only `Todavía no hay plantillas.` when rows are empty and no error (`:4546-4547`); otherwise `div.ui-list` of `ListRow`s (`:4549-4599`).
+- Each `ListRow` carries `template.name`, meta `[template_owner_label, template_status_label, version line]` where the version line is `Versión vigente: {n} ({version_status_label})` or `Sin versión publicada.` (`:4554-4566`), a `TemplateStatusBadge` (`:4567-4569`), and — for non-archived rows — Secondary `Editar`, `Vista previa`, plus `Usar para receta` to `Route::PrescriptionNew { patient_id: None, template_id: Some(current_version.id) }` only when the profile can create prescriptions, the template is `published`, and the current version's status is exactly `published` (`:4570-4596`).
+- Labels come from `template_owner_label` / `template_status_label` / `version_status_label` (imported from `persona-sanus/src/ui/format.rs`, `main.rs:42-43`); primitives (`PageShell`, `PageHeader`, `ListRow`, `TemplateStatusBadge`, `EmptyState`, `LoadingState`, `ErrorText`, `ButtonLink`) come from `persona-sanus/src/ui/` (`main.rs:44-50`).
 
-Plan step 14 adoption:
-
-- Root becomes `PageShell id="templates-page"`; the raw page head becomes `PageHeader` with the existing `h4` as `title` and the existing `p` as `subtitle`; the raw `Link.button` becomes a Primary `ButtonLink` `Nueva plantilla` in the header actions.
-- Add `loaded: Signal<bool>` initialized false, set true in both the success and error arms of the fetch, after the vector assignment. The list slot renders `LoadingState` while false; `EmptyState` only when `loaded && rows.is_empty() && message.is_empty()`; `ErrorText` when the message is non-empty, with the empty state suppressed.
-- Replace `.template-list`/`template-row` with one `ListRow` per template: title `template.name`; meta `[owner_label, status_label]`; a trailing `TemplateStatusBadge` carrying the template status; the version line as the row's supporting text. Do not add a second badge inside the meta line; the meta words and the badge already repeat the state deliberately.
-- Actions remain Secondary `ButtonLink`s: `Editar`, `Vista previa` when the template is not archived. Add `Usar para receta` only when `template.status == "published"`, the current version exists and its status is exactly `"published"`, and `profile.can_create_prescriptions()`; target `Route::PrescriptionNew { patient_id: None, template_id: Some(current_version_id) }`. The query carries the version id, never `template.id`.
-- Translation ownership: the page uses `template_owner_label`, `template_status_label`, and `version_status_label` from `main.rs`; target moves them to `src/ui/format.rs` unchanged as part of plan step 3. Do not fork them here.
-- The fetch error currently lands in `message` and is painted raw. Target keeps the signal for diagnostics but paints the frozen `es-EC` fallback from §3.5. A fetch failure is not an empty list.
-- There is no desktop cache branch in this component; do not add one. The local template cache belongs to the editor and the desktop sync layer, not to this index.
+Resolved: the loading gate now paints header + Primary `Nueva plantilla` (`:4480-4486`, §2.2 fixed). Residual (§3.4/§6): row action accessible names stay plain labels — `ButtonLink` over dioxus-router `Link` cannot carry `aria-label`, so `Editar {name}` / `Vista previa de {name}` / `Usar {name} para una receta` need a router upgrade.
 
 Verification commands, from the repo root; none is recorded here as executed:
 

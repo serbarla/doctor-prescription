@@ -22,11 +22,11 @@ The in-process scheduler runs the daily backup job (`BACKUP_INTERVAL_SECONDS`, d
 
 - `VACUUM INTO` writes a WAL-consistent snapshot to `$BACKUP_DIR/app-YYYYMMDD.db`. The compose file bind-mounts a host directory outside the `persona-data` volume: `${PERSONA_BACKUP_DIR:-./backups}:/backups`.
 - `$BACKUP_DIR` is PHI space: the MinIO mirror holds raw clinical images and a failed encryption step can leave a plaintext SQLite snapshot. Create the host directory with mode `0700` before the first backup, keep it outside any synced or backed-up-as-code directory (git checkout, dotfiles repo, cloud-sync folders), and never commit it. The default `./backups` is excluded by the root `.gitignore` (`/backups/`, `*.db.age`). If you set `PERSONA_BACKUP_DIR` to another path, it carries the same rules: inside the checkout it must satisfy `git check-ignore -v "$PERSONA_BACKUP_DIR"`; outside the repo it still needs mode `0700` and exclusion from host backup/sync tooling.
-- The snapshot is encrypted with `age` to `$BACKUP_AGE_RECIPIENT` (an `age1…` recipient) and the plaintext file is deleted. If the recipient is unset or `age` fails, no plaintext is left on disk and the failure is recorded in `audit_log` (`backup_daily`).
+- The snapshot is encrypted with `age` to `$BACKUP_AGE_RECIPIENT` (an `age1…` recipient) and the plaintext file is deleted on success. An unset recipient aborts before the snapshot is taken, so no plaintext is written, and the failure is recorded in `audit_log` (`backup_daily`); an `age` execution failure can leave the plaintext file on disk (see the verification note below — tracked in `specs/divergences/13-M-backup-file-safety.md`).
 - The same cadence mirrors the MinIO bucket with `mc mirror` into `$BACKUP_DIR/minio-YYYYMMDD`. A DB-only backup breaks reprints because `template_version_assets` pins objects; the mirror is required, not optional.
 - RPO ≤ 24 h, RTO ≤ 4 h. Restore: stop the app, decrypt with the age key, place the file at the `DATABASE_URL` path, restart, verify `/health` and a sign-in.
 
-Verify backups: `ls backups/` shows `app-*.db.age` daily; `SELECT action, metadata_json, at FROM audit_log WHERE action = 'backup_daily' ORDER BY at DESC LIMIT 5;` shows `{"path": …, "encrypted": true}` per run.
+Verify backups: `ls backups/` shows `app-*.db.age` daily; `SELECT action, metadata_json, at FROM audit_log WHERE action = 'backup_daily' ORDER BY at DESC LIMIT 5;` shows `{"path": …, "encrypted": true}` per run. Treat that audit row as unconfirmed until you test-restore one file: an interrupted `age` run can leave the plaintext snapshot on disk, and the `mc mirror` result is not checked before success is recorded — known gaps tracked in `specs/divergences/13-M-backup-file-safety.md` and `specs/divergences/13-M-backup-minio-mirror.md`. Keep `backups/` out of git and mode-private (tracked in `13-M-backup-repo-exclusion.md`).
 
 ## 3. Key custody
 
@@ -44,7 +44,7 @@ One scheduler runs in the server process. Jobs are idempotent and restart-safe; 
 | Job | Cadence | What it does |
 |---|---|---|
 | Session purge | `JOBS_INTERVAL_SECONDS` (default 3600) | Deletes `sessions` rows with `expires_at < now`. `get_session` still rejects expired sessions on every read. |
-| Stale asset cleanup | same | Deletes `assets` rows with `status='pending'` created more than one hour ago, plus their objects. |
+| Stale asset cleanup | same | Deletes `assets` rows with `status='pending'` created more than one hour ago, plus their objects. Object-delete failures are currently swallowed (tracked in `specs/divergences/13-M-stale-asset-cleanup.md`): if MinIO was down, verify the object is gone after the run. |
 | Retention trim | same | Trims clinics past `data_grace_ends_at` (enabled by default, `RETENTION_TRIM_ENABLED=true`). Deletes only rows created after `server_retention_until`, children before parents, never a row referenced by a retained record. See spec 13-M objective 2 for the table list. |
 | Daily backup | `BACKUP_INTERVAL_SECONDS` (default 86400) | Section 2 above. |
 
@@ -57,6 +57,8 @@ Production prerequisite: counsel sign-off on prescription retention under MSP/AC
 ## 6. Updates
 
 Desktop installs check `UPDATE_MANIFEST_URL` at launch. The manifest (`version`, `rolloutPercent`, `url`, `signature`) is served by `GET /api/updates/manifest` and signed with the server-side ed25519 key over `version|rolloutPercent|url`. The client verifies signature and version before staging, honors the staged rollout bucket, and keeps the previous binary (`.prev`) for rollback. A bad signature is refused and the running version is untouched. Updates never carry clinical data.
+
+Current caveats (tracked in `specs/divergences/13-M-update-channel.md` and `13-M-signed-installers.md`): rollout evaluation hashes an empty device id when `PERSONA_DEVICE_ID` is unset, so intermediate percentages act as 0% or 100%; the artifact download enforces no HTTPS and the manifest carries no artifact digest; installers are not yet signed/notarized. Until those close, publish only at `UPDATE_MANIFEST_ROLLOUT=0` (kill switch) or 100 to a controlled host over HTTPS.
 
 ## 7. Incidents
 

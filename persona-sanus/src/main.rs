@@ -3526,7 +3526,7 @@ fn PatientDetail(id: String) -> Element {
         spawn(async move {
             match api::fetch_patient(&load_id).await {
                 Ok(found) => patient.set(Some(found)),
-                Err(error) => {
+                Err(_error) => {
                     #[cfg(feature = "desktop")]
                     if let Ok(mut conn) = desktop_local::open_local_db() {
                         if let Ok(found) = desktop_local::list_patients(&mut conn) {
@@ -3543,9 +3543,7 @@ fn PatientDetail(id: String) -> Element {
                             }
                         }
                     }
-                    if patient().is_none() {
-                        message.set(error);
-                    }
+                    message.set("No se pudo cargar la ficha del paciente.".to_string());
                 }
             }
         });
@@ -3676,9 +3674,9 @@ fn PatientDetail(id: String) -> Element {
                                 Ok(()) => {
                                     navigator.push(Route::Patients {});
                                 }
-                                Err(error) => {
+                                Err(_error) => {
                                     deleting.set(false);
-                                    message.set(error);
+                                    message.set("No se pudo eliminar el paciente.".to_string());
                                 }
                             }
                         });

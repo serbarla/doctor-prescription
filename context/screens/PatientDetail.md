@@ -262,7 +262,7 @@ Never `#000000`. Never a chromatic border except the Danger control's Ember Ring
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers (`format_date`, `sex_label`) the ficha renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `DetailGrid`, `Badge`, `ConfirmPanel`, and `ErrorText` the detail regions use. |
-| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `PatientDetail`: header action order, demographics `Card`, inline delete confirm, one Primary `Nueva receta`. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted ficha runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers (`format_date`, `sex_label`) the ficha renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `Card`, `DetailGrid`, `DetailItem`, `Badge`, `ConfirmPanel`, `ErrorText`, and `ActionRow` the detail regions use. |
+| `specs/done/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `PatientDetail`: header action order, demographics `Card`, inline delete `ConfirmPanel`, one Primary `Nueva receta`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted ficha runs only on `.ui-*` classes. |

@@ -253,7 +253,7 @@ python3 .blocks/markdown-table-check.py --path context/screens/PatientEdit.md --
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the edit form uses. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `TextField`, `SelectField`, `TextAreaField`, `FormGrid`, and `ErrorText` the edit form renders. |
-| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `PatientEdit`: same fields in `FormGrid`, one Primary `Guardar cambios`. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the edit form uses. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `Card`, `FormGrid`, `TextField`, `SelectField`, `TextAreaField`, `ErrorText`, and `ActionRow` the edit form renders. |
+| `specs/done/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `PatientEdit`: same fields in `FormGrid`, one Primary `Guardar cambios`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes. |

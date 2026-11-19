@@ -352,9 +352,9 @@ The smoke script covers authenticated navigation; a browser pass is needed for t
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers the list renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `ListRow`, `EmptyState`, and `LoadingState`, the list's result surface. |
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `TemplateStatusBadge`, the status badge each row renders. |
-| `specs/22-V-ui-templates.md` | `22-V` adopts `Templates`: `PageShell id="templates-page"`, the `loaded` gate, one Primary `Nueva plantilla`. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers (`template_status_label`, `template_owner_label`) the list renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `ListRow`, `EmptyState`, `LoadingState`, and `Notice`, the list result surface. |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `TemplateStatusBadge`, the status badge each row renders. |
+| `specs/done/22-V-ui-templates.md` | `22-V` adopts `Templates`: `PageShell id="templates-page"`, the `loaded` gate, one Primary `Nueva plantilla`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes. |
 

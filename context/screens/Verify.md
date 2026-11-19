@@ -256,9 +256,9 @@ The result card's visible hierarchy is 14 / 16 / 22. `--font-grenette` is not us
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `LinkAction`, and format helpers the verification page uses. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the code field shell, error/hint text, and empty/loading states the typed-code form renders. |
-| `specs/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds the brand primitives (`SectionHeader`, `TrustSecurityRow`, `VerificationTag`) the public verification page composes. |
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `VerificationCodeForm`, `VerificationResultCard`, and `VerificationSeal`, the whole result surface. |
-| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts `Verify`: doctor, date, and prescription number only, plus the always-available path to another code. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy selectors so the adopted verification markup runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the verification page uses. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PillBadge`, `LoadingState`, `Notice`, `SectionCard`, `ErrorText`, and `HintText` the typed-code form and result branch render. |
+| `specs/done/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `LogoLockup` and `TrustSecurityRow`, composed on this public page. `SectionHeader` and `VerificationTag` belong to `Home`/`A4PreviewCard`, not this page. |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `VerificationCodeForm`, `VerificationResultCard`, and `VerificationSeal`, the whole result surface. |
+| `specs/done/20-T-shell-auth-home-and-verify.md` | `20-T` adopts `Verify`: doctor, date, and prescription number only, plus the always-available path to another code. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy selectors so the adopted verification markup runs only on `.ui-*` classes. |

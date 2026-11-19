@@ -357,9 +357,9 @@ python3 .blocks/markdown-table-check.py --path context/screens/PrescriptionPrevi
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `LinkAction`, and format helpers the preview actions use.
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the action row, loading states, and notices the sign/download states render.
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds the prescription status badge and sync-status indicators the provisional offline preview shows (FR-043).
-| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionPreview`: exactly one Primary — `Firmar y emitir` for drafts, `Descargar PDF` otherwise.
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted preview runs only on `.ui-*` classes.
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `LinkAction`, and format helpers (`prescription_status_label`) the preview actions use. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `ActionRow`, `Notice`, `ErrorText`, `HintText`, and `LoadingState` the sign/download states render. |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `PrescriptionStatusBadge` vocabulary only; this page renders the status as `PageHeader` subtitle text, not a badge, and shows no `SyncStatusIndicator` (FR-043 lives in the navbar). |
+| `specs/done/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionPreview`: exactly one Primary — `Firmar y emitir` for drafts, `Descargar PDF` otherwise; provisional `Notice`, `.ui-preview-canvas`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted preview runs only on `.ui-*` classes. |
 

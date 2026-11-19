@@ -336,7 +336,7 @@ python3 .blocks/markdown-table-check.py --path context/screens/TemplateNew.md --
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the create form uses. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the form controls, `Card`/`FormGrid`/`ActionRow`, and `ErrorText` the page renders. |
-| `specs/22-V-ui-templates.md` | `22-V` adopts `TemplateNew`: owner/type hint, `FormGrid` fields, one Primary save action. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the create form uses. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `Card`, `FormGrid`, `TextField`, `HintText`, `ErrorText`, and `ActionRow` the page renders. |
+| `specs/done/22-V-ui-templates.md` | `22-V` adopts `TemplateNew`: owner/type `HintText`, `FormGrid` fields, one Primary `Crear plantilla`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes. |

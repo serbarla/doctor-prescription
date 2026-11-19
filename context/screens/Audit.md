@@ -343,7 +343,7 @@ The smoke script covers auth, not this Administrator table. A browser pass needs
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the audit table renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `FilterBar`, `DataTable`, `LoadingState`, `EmptyState`, and `ErrorText` the page uses. |
-| `specs/24-X-ui-settings-detail-and-audit.md` | `24-X` adopts `Audit`: admin guard notice, `loaded` gate, filter-driven append-only rows. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted table runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers (`format_date`, `format_timestamp`, `role_label`) the audit table renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `FilterBar`, `TextField`, `DataTable`, `LoadingState`, `EmptyState`, `ErrorText`, `Notice`, and `Button` the page uses. |
+| `specs/done/24-X-ui-settings-detail-and-audit.md` | `24-X` adopts `Audit`: `PageShell id="audit-page"`, admin guard `Notice`, the `loaded` gate, `FilterBar` with primary `Filtrar`, filter-driven append-only rows. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted table runs only on `.ui-*` classes and tokens. |

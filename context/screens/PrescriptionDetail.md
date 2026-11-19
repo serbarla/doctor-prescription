@@ -334,8 +334,8 @@ Line icons only, 1.5px stroke, 24-unit view box, Ink or Deep Teal (Mist for the 
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the detail page renders.
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the edit `FormGrid`, `ConfirmPanel`, `ErrorText`, and action rows the draft/signed states use.
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `RxBlockIndicator` and `LlmExplainLink` (FR-012), the block status and external explain action.
-| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionDetail`: the `allocating` signal, role/state primary matrix, `Vista previa A4` header action.
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted detail runs only on `.ui-*` classes.
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the detail page renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `SectionCard`, `Card`, `FormGrid`, `DetailGrid`, `EmptyState`, `ConfirmPanel`, `ErrorText`, `HintText`, and `ActionRow` the draft/signed states use. |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `RxBlockIndicator` (with `allocating` state) and `LlmExplainLink` (FR-012), the block status and external explain action. |
+| `specs/done/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionDetail`: the `allocating` signal, role/state primary matrix (`Guardar borrador` / `Firmar receta`), `Vista previa A4` header action. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted detail runs only on `.ui-*` classes. |

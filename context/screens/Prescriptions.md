@@ -366,9 +366,9 @@ The smoke script covers `/prescriptions` for an authenticated actor; the pending
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers (`format_date`, `prescription_status_label`) the rows render.
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `FilterBar`, `SearchField`, `SelectField`, `LoadingState`, and `EmptyState`, the list's filter and result surface.
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds the prescription status badges the rows and filters show.
-| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `Prescriptions`: `FilterBar` filters, the `loaded` gate, one Primary `Nueva receta`.
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes.
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers (`format_date`, `prescription_status_label`) the rows render. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `FilterBar`, `SearchField`, `SelectField`, `TextField`, `ListRow`, `Badge`, `SectionCard`, `LoadingState`, `EmptyState`, and `ErrorText`, the list filter and result surface. |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `PrescriptionStatusBadge`, the badge each row renders. |
+| `specs/done/23-W-ui-prescriptions.md` | `23-W` adopts `Prescriptions`: `FilterBar` filters, the `loaded` gate, one Primary `Nueva receta`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes. |
 

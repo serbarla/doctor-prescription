@@ -372,7 +372,7 @@ Verification, in order:
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the auth forms use. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the `TextField` controls, `ErrorText`, and loading states the sign-in, sign-up, and MFA forms render. |
-| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts `AuthPage`: keyboard-usable sign-in/sign-up switch, es-EC copy, MFA-only challenge state. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy auth-page selectors so the adopted markup runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the auth forms use. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `Card`, `FormGrid`, `TextField`, `DetailGrid`, `ErrorText`, `HintText`, and `LoadingState` the sign-in, sign-up, and MFA forms render. |
+| `specs/done/20-T-shell-auth-home-and-verify.md` | `20-T` adopts `AuthPage`: `PageShell id="auth-page"`, keyboard-usable sign-in/sign-up switch, es-EC copy, MFA-only challenge state with one Primary `Verificar código`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy auth-page selectors so the adopted markup runs only on `.ui-*` classes. |

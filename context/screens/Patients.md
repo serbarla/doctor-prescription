@@ -263,7 +263,7 @@ Never `#000000`. Never a chromatic border: row, input, and empty borders use the
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers (`format_date`) the list renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SearchField`, `ListRow`, `EmptyState`, and `LoadingState`, the list's whole result surface. |
-| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `Patients`: `PageShell id="patients-page"`, the `loaded` gate, one Primary `Nuevo paciente`. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers (`format_date`) the list renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `SearchField`, `ListRow`, `EmptyState`, `LoadingState`, `ErrorText`, and `Notice`, the list whole result surface. |
+| `specs/done/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `Patients`: `PageShell id="patients-page"`, the `loaded` gate, one Primary `Nuevo paciente`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes. |

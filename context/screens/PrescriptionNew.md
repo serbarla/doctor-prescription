@@ -336,7 +336,7 @@ python3 .blocks/markdown-table-check.py --path context/screens/PrescriptionNew.m
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the draft form uses.
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SelectField`, `TextAreaField`, `TextField`, `FormGrid`, and `ErrorText` the form renders.
-| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionNew`: patient/template selects in `FormGrid`, one Primary `Crear borrador`, published-template filter unchanged.
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes.
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the draft form uses. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `Card`, `FormGrid`, `SelectField`, `TextAreaField`, `TextField`, `ErrorText`, and `ActionRow` the form renders. |
+| `specs/done/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionNew`: patient/template selects in `FormGrid`, one Primary `Crear borrador`, published-template filter unchanged. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes. |

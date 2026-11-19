@@ -316,7 +316,7 @@ Line icons only, 1.5px stroke, Ink or Deep Teal. `ErrorText` carries its Alert g
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the editor renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the form controls substituted into `forms::TemplateDocumentForm`, plus `ConfirmPanel` and `ErrorText`. |
-| `specs/22-V-ui-templates.md` | `22-V` adopts `TemplateEdit`: raw inputs replaced by `TextField`/`TextAreaField`/`SelectField`, one Primary `Publicar versión`, archive confirm panel. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted editor runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the editor renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `SectionCard`, `Card`, `FormGrid`, `TextField`, `TextAreaField`, `SelectField`, `HintText`, `ConfirmPanel`, `ErrorText`, and `ActionRow` substituted into `forms::TemplateDocumentForm`. |
+| `specs/done/22-V-ui-templates.md` | `22-V` adopts `TemplateEdit`: raw inputs replaced by `TextField`/`TextAreaField`/`SelectField`, one Primary `Publicar versión`, archive `ConfirmPanel`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted editor runs only on `.ui-*` classes. |

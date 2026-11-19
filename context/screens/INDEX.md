@@ -30,6 +30,7 @@
 7. `## 6. Accessibility` — landmarks, heading order, tab order, focus, labels, contrast.
 8. `## 7. Implementation notes` — current shipped code and what changes, the exact verify commands (`cargo check`, `dx build --release --fullstack`, `curl`, `caveman-blocks run persona-smoke …`), and the closing **Do not add** list.
 
+9. `## 8. Spec references` — a table keyed by spec, naming the `specs/done/` UI spec file (paths never `specs/NN-…` once done) that supplies each UI element or adopts this screen, phrased from that spec §7/§8 result (`15-O`–`25-Y`).
 ### 1.3 Authority order (never restate, always reference)
 
 | Question | Owner |

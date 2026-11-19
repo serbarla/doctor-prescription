@@ -247,8 +247,8 @@ None. The hub is a text index: no line icons, no logo, no QR glyph, no document 
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, `LinkAction`, and format helpers the settings hub renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the card and link-grid layout primitives the hub's destination tiles compose. |
-| `specs/19-S-ui-gallery-and-dev-route.md` | `19-S` builds the debug-only `/dev/ui` gallery the hub's `Sistema de diseño` link targets. |
-| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `Settings`: `PageShell id="settings-page"`, the `ui-link-grid` destination tiles, preserved role redirects. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted hub runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers the settings hub renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, and the `ui-link-grid` layout whose destination tiles the hub composes. |
+| `specs/done/19-S-ui-gallery-and-dev-route.md` | `19-S` builds the debug-only `/dev/ui` gallery the hub `Sistema de diseño` link targets (`#[cfg(debug_assertions)]` only). |
+| `specs/done/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `Settings`: `PageShell id="settings-page"`, `ui-link-grid` destination tiles, preserved role redirects, no Primary. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted hub runs only on `.ui-*` classes. |

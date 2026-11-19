@@ -217,9 +217,9 @@ Line icons only, 1.5px stroke, monochrome Ink or Deep Teal (Mist for the platfor
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, `LinkAction`, and format helpers Home's CTA row and copy use. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the `Card`, `ActionRow`, notice, and empty/loading primitives the Home bands compose. |
-| `specs/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `Hero`, `SectionHeader`, `NumberedStepCard`, `A4PreviewCard`, `A4Mock`, `VerificationTag`, and `TrustSecurityRow`, Home's core regions. |
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `VerificationCodeForm`, the form rendered in the `#verificar` band. |
-| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts Home: one filled primary CTA, no partner strip, es-EC copy frozen by the UI plan. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy page-ID width rules in `assets/main.css`, leaving Home's bands on tokens and `.ui-container`. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, `LinkAction`, and format helpers Home CTA row and copy use. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SectionBand`, `Card`, `ActionRow`, `Notice`, `EmptyState`, and `LoadingState` the Home bands compose. |
+| `specs/done/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `Hero`, `SectionHeader`, `NumberedStepCard`, `A4PreviewCard`, `A4Mock`, `VerificationTag`, `TrustSecurityRow`, and `LogoLockup`, Home core regions. `TrustLogoStrip` is never rendered by Home (`17-Q` §7). |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `VerificationCodeForm`, the form rendered in the `#verificar` band (Secondary variant on Home). |
+| `specs/done/20-T-shell-auth-home-and-verify.md` | `20-T` adopts Home: one filled primary CTA, no partner strip, no `TrustLogoStrip`, es-EC copy frozen by the UI plan. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy page-ID width rules in `assets/main.css`, leaving Home bands on tokens and `.ui-container`. |

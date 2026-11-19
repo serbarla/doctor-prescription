@@ -383,8 +383,8 @@ The smoke script covers auth, not this admin table. A browser pass needs: Admini
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers (`format_date`, `role_label`) the table renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `DataTable`, `SelectField`, and the danger/secondary action buttons the roster uses. |
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `AccountStatusBadge`, the account status cell each row shows. |
-| `specs/24-X-ui-settings-detail-and-audit.md` | `24-X` adopts `SettingsUsers`: the staff `DataTable`, role change, disable/remove, and device revocation actions. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted table runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers (`format_date`, `last_seen_label`, `platform_label`, `device_name_label`, `role_label`) the tables render. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `SectionCard`, `DataTable`, `SelectField`, `EmptyState`, `Notice`, and `ErrorText` the roster and devices tables use. |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `AccountStatusBadge` (account cell) and `DeviceStatusBadge` (device cell). |
+| `specs/done/24-X-ui-settings-detail-and-audit.md` | `24-X` adopts `SettingsUsers`: the staff `DataTable`, role change, disable/remove, and device revocation actions, no Primary. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted tables run only on `.ui-*` classes. |

@@ -221,9 +221,9 @@ The filled `Cross` glyph inside the logo mark (`Icon` `Cross`, `fill="currentCol
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Icon`, `Button`, `NavLink`, and format helpers (`role_label`, `status_label`) the navbar band renders. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the badge, notice, and layout primitives reused by the navbar's session and sync groups. |
-| `specs/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `LogoLockup`, the brand mark the navbar renders at the left. |
-| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `SyncStatusIndicator` (FR-043), the sync state the navbar's right group shows. |
-| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts the navbar: five role-guarded destinations, no Home text link, session-aware right group. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy `#navbar` style hook; the id stays semantic on `header.ui-navbar`. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Icon`, `Button`, `ButtonLink`, `NavLink`, and format helpers (`role_label`) the navbar band renders. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `Badge`, `PillBadge`, and `Notice` reused by the navbar session and sync groups. |
+| `specs/done/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `LogoLockup`, the brand mark the navbar renders at the left. |
+| `specs/done/18-R-ui-domain-and-billing.md` | `18-R` builds `SyncStatusIndicator` (FR-043), the sync state the navbar right group shows; no link is inside it. |
+| `specs/done/20-T-shell-auth-home-and-verify.md` | `20-T` adopts the navbar: five role-guarded `NavLink` destinations, no Home text link, session-aware right group, signed-out Ghost `Iniciar sesión`. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy `#navbar` style hook; the id stays semantic on `header.ui-navbar`. |

@@ -323,7 +323,7 @@ A browser pass is needed for: a template with one version and no images; a versi
 
 | Spec | Connection |
 |---|---|
-| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the preview controls use. |
-| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SelectField`, `TextField`, and the warning `Notice` the version/margin controls render. |
-| `specs/22-V-ui-templates.md` | `22-V` adopts `TemplatePreview`: `.ui-preview-canvas` A4 wrap, margin clamped 5–40, warning `Notice` for invalid variables. |
-| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted preview runs only on `.ui-*` classes. |
+| `specs/done/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the preview controls use. |
+| `specs/done/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `PageShell`, `PageHeader`, `Card`, `FormGrid`, `SelectField`, `TextField`, warning `Notice`, and `ErrorText` the version/margin controls render. |
+| `specs/done/22-V-ui-templates.md` | `22-V` adopts `TemplatePreview`: `.ui-preview-canvas` A4 wrap, margin clamped 5–40, warning `Notice` for invalid variables, no Primary. |
+| `specs/done/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted preview runs only on `.ui-*` classes. |

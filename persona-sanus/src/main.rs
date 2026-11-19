@@ -4834,6 +4834,7 @@ fn Prescriptions(status: Option<String>) -> Element {
     let user = use_context::<Signal<Option<SessionUser>>>();
     let actor = use_context::<Signal<Option<Me>>>();
     let checked = use_context::<Signal<bool>>();
+    let sync = use_context::<Signal<SyncStatus>>();
     let navigator = use_navigator();
     let mut rows = use_signal(Vec::<api::Prescription>::new);
     let mut query = use_signal(String::new);
@@ -4990,6 +4991,40 @@ fn Prescriptions(status: Option<String>) -> Element {
         .into_iter()
         .filter(|row| search.is_empty() || row.patient_name.to_lowercase().contains(&search))
         .collect::<Vec<_>>();
+    let retention_days = profile
+        .clinic
+        .as_ref()
+        .and_then(|clinic| clinic.retention_days)
+        .unwrap_or(30);
+    #[cfg(feature = "desktop")]
+    let desktop_offline = !sync().online;
+    #[cfg(not(feature = "desktop"))]
+    let desktop_offline = false;
+    let selected_view = status();
+    let local_view = selected_view == "pending_sync" || selected_view == "failed";
+    let is_expired = |row: &api::Prescription| -> bool {
+        if local_view || !desktop_offline {
+            return false;
+        }
+        if !matches!(row.status.as_str(), "signed" | "superseded" | "voided") {
+            return false;
+        }
+        let age_days = match chrono::DateTime::parse_from_rfc3339(&row.created_at)
+            .map(|parsed| parsed.with_timezone(&chrono::Utc))
+        {
+            Ok(created) => (chrono::Utc::now() - created).num_days(),
+            Err(_) => {
+                match chrono::NaiveDate::parse_from_str(
+                    row.created_at.get(..10).unwrap_or(&row.created_at),
+                    "%Y-%m-%d",
+                ) {
+                    Ok(date) => (chrono::Utc::now().date_naive() - date).num_days(),
+                    Err(_) => return false,
+                }
+            }
+        };
+        age_days > retention_days
+    };
 
     rsx! {
         PageShell { id: "prescriptions-page".to_owned(),
@@ -5087,6 +5122,40 @@ fn Prescriptions(status: Option<String>) -> Element {
                                 active_class: None,
                                 extra_class: String::new(),
                                 "Abrir"
+                            }
+                            if matches!(row.status.as_str(), "signed" | "superseded" | "voided") {
+                                if is_expired(&row) {
+                                    a {
+                                        class: "ui-button ui-button--secondary",
+                                        aria_disabled: "true",
+                                        tabindex: "-1",
+                                        "Descargar PDF"
+                                    }
+                                    a {
+                                        class: "ui-button ui-button--secondary",
+                                        aria_disabled: "true",
+                                        tabindex: "-1",
+                                        "Imprimir"
+                                    }
+                                    HintText { text: "Requiere conexión para regenerar esta receta.".to_owned() }
+                                } else {
+                                    LinkAction {
+                                        href: format!("/api/prescriptions/{}/pdf", row.id),
+                                        variant: ButtonVariant::Secondary,
+                                        target: None,
+                                        rel: None,
+                                        extra_class: String::new(),
+                                        "Descargar PDF"
+                                    }
+                                    LinkAction {
+                                        href: format!("/api/prescriptions/{}/pdf", row.id),
+                                        variant: ButtonVariant::Secondary,
+                                        target: Some("_blank".to_owned()),
+                                        rel: Some("noopener noreferrer".to_owned()),
+                                        extra_class: String::new(),
+                                        "Imprimir"
+                                    }
+                                }
                             }
                         }
                     }

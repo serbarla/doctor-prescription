@@ -1898,13 +1898,11 @@ fn Dashboard() -> Element {
                     rx_message.set(String::new());
                 }
                 Err(error) => {
-                    rx_message.set(
-                        if error.is_empty() {
-                            "No se pudieron cargar las recetas.".to_owned()
-                        } else {
-                            error
-                        },
-                    );
+                    rx_message.set(if error.is_empty() {
+                        "No se pudieron cargar las recetas.".to_owned()
+                    } else {
+                        error
+                    });
                 }
             }
             rx_loaded.set(true);

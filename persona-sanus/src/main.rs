@@ -5095,8 +5095,10 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
     let navigator = use_navigator();
     let mut patients = use_signal(Vec::<api::Patient>::new);
     let mut templates = use_signal(Vec::<api::Template>::new);
-    let mut selected_patient = use_signal(|| patient_id.clone().unwrap_or_default());
-    let mut selected_template = use_signal(|| template_id.clone().unwrap_or_default());
+    let mut selected_patient = use_signal(String::new);
+    let mut selected_template = use_signal(String::new);
+    let prefill_patient = patient_id.unwrap_or_default();
+    let prefill_template = template_id.unwrap_or_default();
     let mut diagnosis = use_signal(String::new);
     let mut validity = use_signal(String::new);
     let mut instructions = use_signal(String::new);
@@ -5147,6 +5149,18 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
             }
             loaded.set(true);
         });
+    });
+
+    use_effect(move || {
+        if !loaded() {
+            return;
+        }
+        if selected_patient().is_empty() && !prefill_patient.is_empty() {
+            selected_patient.set(prefill_patient.clone());
+        }
+        if selected_template().is_empty() && !prefill_template.is_empty() {
+            selected_template.set(prefill_template.clone());
+        }
     });
 
     if !checked() || user().is_none() {

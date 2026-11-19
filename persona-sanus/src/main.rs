@@ -1866,12 +1866,49 @@ fn Dashboard() -> Element {
     let user = use_context::<Signal<Option<SessionUser>>>();
     let actor = use_context::<Signal<Option<Me>>>();
     let checked = use_context::<Signal<bool>>();
+    let sync = use_context::<Signal<SyncStatus>>();
     let navigator = use_navigator();
+    let mut rows = use_signal(Vec::<api::Prescription>::new);
+    let mut rx_message = use_signal(String::new);
+    let mut rx_loaded = use_signal(|| false);
+    let mut rx_started = use_signal(|| false);
 
     use_effect(move || {
         if checked() && user().is_none() {
             navigator.replace(Route::AuthPage {});
         }
+    });
+
+    use_effect(move || {
+        if rx_started() || !checked() || user().is_none() {
+            return;
+        }
+        let Some(profile) = actor() else {
+            return;
+        };
+        if !profile.can_read_prescriptions() {
+            rx_started.set(true);
+            return;
+        }
+        rx_started.set(true);
+        spawn(async move {
+            match api::fetch_prescriptions("", "", "").await {
+                Ok(found) => {
+                    rows.set(found);
+                    rx_message.set(String::new());
+                }
+                Err(error) => {
+                    rx_message.set(
+                        if error.is_empty() {
+                            "No se pudieron cargar las recetas.".to_owned()
+                        } else {
+                            error
+                        },
+                    );
+                }
+            }
+            rx_loaded.set(true);
+        });
     });
 
     if !checked() {
@@ -1887,11 +1924,62 @@ fn Dashboard() -> Element {
         return rsx! {
             PageShell { id: "dashboard-page".to_owned(),
                 PageHeader { title: "Panel".to_owned(), subtitle: None }
+                LoadingState { label: "Redirigiendo...".to_owned() }
             }
         };
     };
     let profile = actor();
-    let subtitle = format!("{} · {}", session.name, session.email);
+    let has_role = profile
+        .as_ref()
+        .is_some_and(|profile| profile.can_read_prescriptions());
+    let can_create = profile
+        .as_ref()
+        .is_some_and(|profile| profile.can_create_prescriptions());
+    let can_write = profile
+        .as_ref()
+        .is_some_and(|profile| profile.can_write_patients());
+    let can_templates = profile
+        .as_ref()
+        .is_some_and(|profile| profile.can_manage_templates());
+    let is_admin = profile
+        .as_ref()
+        .is_some_and(|profile| profile.is_administrator());
+    let subtitle = if profile.is_some() {
+        session.name.clone()
+    } else {
+        session.email.clone()
+    };
+    let status = sync();
+    let show_sync = has_role && (status.pending > 0 || status.failed > 0);
+    let recent = rows()
+        .into_iter()
+        .take(5)
+        .map(|row| {
+            let mut meta = vec![
+                prescription_status_label(&row.status).to_owned(),
+                format_date(&row.created_at),
+            ];
+            if let Some(number) = row.rx_number {
+                meta.push(format!("No. {number}"));
+            }
+            (row.id, row.patient_name, meta, row.status)
+        })
+        .collect::<Vec<_>>();
+    let drafts = rows()
+        .into_iter()
+        .filter(|row| row.status == "draft")
+        .take(5)
+        .map(|row| {
+            let mut meta = vec![
+                prescription_status_label(&row.status).to_owned(),
+                format_date(&row.created_at),
+            ];
+            if let Some(number) = row.rx_number {
+                meta.push(format!("No. {number}"));
+            }
+            (row.id, row.patient_name, meta, row.status)
+        })
+        .collect::<Vec<_>>();
 
     rsx! {
         PageShell { id: "dashboard-page".to_owned(),
@@ -1916,6 +2004,175 @@ fn Dashboard() -> Element {
                             "{clinic.name}"
                         } else {
                             "Sin clínica asignada."
+                        }
+                    }
+                }
+            }
+            Card {
+                div { class: "ui-actions",
+                    if !has_role {
+                        ButtonLink {
+                            to: Route::SettingsProfile {},
+                            variant: ButtonVariant::Secondary,
+                            active_class: None,
+                            extra_class: String::new(),
+                            "Completar perfil"
+                        }
+                    } else {
+                        if can_create {
+                            ButtonLink {
+                                to: Route::PrescriptionNew { patient_id: None, template_id: None },
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Nueva receta"
+                            }
+                        }
+                        if can_write {
+                            ButtonLink {
+                                to: Route::PatientNew {},
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Nuevo paciente"
+                            }
+                        }
+                        if can_templates {
+                            ButtonLink {
+                                to: Route::TemplateNew {},
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Nueva plantilla"
+                            }
+                        }
+                        if is_admin {
+                            ButtonLink {
+                                to: Route::SettingsUsers {},
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Usuarios y roles"
+                            }
+                            ButtonLink {
+                                to: Route::SettingsClinic {},
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Clínica y biblioteca"
+                            }
+                            ButtonLink {
+                                to: Route::Audit {},
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Auditoría"
+                            }
+                            ButtonLink {
+                                to: Route::SettingsProfile {},
+                                variant: ButtonVariant::Secondary,
+                                active_class: None,
+                                extra_class: String::new(),
+                                "Mi perfil"
+                            }
+                        }
+                    }
+                }
+            }
+            if has_role {
+                SectionCard { title: "Recetas recientes".to_owned(), description: None,
+                    if !rx_loaded() {
+                        LoadingState { label: "Cargando recetas...".to_owned() }
+                    } else if !rx_message().is_empty() {
+                        ErrorText { text: rx_message() }
+                    } else if recent.is_empty() {
+                        EmptyState {
+                            title: "Sin recetas recientes".to_owned(),
+                            description: "Todavía no hay recetas en esta clínica.".to_owned()
+                        }
+                    } else {
+                        for (id, name, meta, row_status) in recent {
+                            ListRow {
+                                key: "{id}",
+                                title: name,
+                                meta,
+                                badge: Some(rsx! {
+                                    PrescriptionStatusBadge { status: row_status }
+                                }),
+                                ButtonLink {
+                                    to: Route::PrescriptionDetail { id },
+                                    variant: ButtonVariant::Secondary,
+                                    active_class: None,
+                                    extra_class: String::new(),
+                                    "Abrir"
+                                }
+                            }
+                        }
+                    }
+                    if rx_loaded() && rx_message().is_empty() {
+                        ButtonLink {
+                            to: Route::Prescriptions { status: None },
+                            variant: ButtonVariant::Secondary,
+                            active_class: None,
+                            extra_class: String::new(),
+                            "Ver todas"
+                        }
+                    }
+                }
+            }
+            if can_create {
+                SectionCard { title: "Borradores".to_owned(), description: None,
+                    if !rx_loaded() {
+                        LoadingState { label: "Cargando recetas...".to_owned() }
+                    } else if !rx_message().is_empty() {
+                        ErrorText { text: rx_message() }
+                    } else if drafts.is_empty() {
+                        EmptyState {
+                            title: "Sin borradores".to_owned(),
+                            description: "No hay borradores en curso.".to_owned()
+                        }
+                    } else {
+                        for (id, name, meta, row_status) in drafts {
+                            ListRow {
+                                key: "{id}",
+                                title: name,
+                                meta,
+                                badge: Some(rsx! {
+                                    PrescriptionStatusBadge { status: row_status }
+                                }),
+                                ButtonLink {
+                                    to: Route::PrescriptionDetail { id },
+                                    variant: ButtonVariant::Secondary,
+                                    active_class: None,
+                                    extra_class: String::new(),
+                                    "Abrir"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if show_sync {
+                SectionCard { title: "Sincronización".to_owned(), description: None,
+                    div { class: "ui-stack",
+                        span { "{status.label()}" }
+                        if status.pending > 0 {
+                            Link {
+                                class: "ui-sync-link",
+                                to: Route::Prescriptions { status: Some("pending_sync".to_owned()) },
+                                if status.pending == 1 {
+                                    "· 1 pendiente"
+                                } else {
+                                    "· {status.pending} pendientes"
+                                }
+                            }
+                        }
+                        if status.failed > 0 {
+                            Link {
+                                class: "ui-sync-link",
+                                to: Route::Prescriptions { status: Some("failed".to_owned()) },
+                                "{status.failed} con error"
+                            }
                         }
                     }
                 }

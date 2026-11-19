@@ -48,8 +48,8 @@ pub use form::{CheckboxField, FileField, SearchField, SelectField, TextAreaField
 #[allow(unused_imports)]
 pub use format::{
     device_name_label, format_date, format_timestamp, last_seen_label, optional_date,
-    platform_label, prescription_status_label, role_label, sex_label, status_label,
-    template_owner_label, template_status_label, version_status_label,
+    platform_label, prescription_status_label, role_label, sex_label, template_owner_label,
+    template_status_label, version_status_label,
 };
 #[cfg(debug_assertions)]
 #[allow(unused_imports)]

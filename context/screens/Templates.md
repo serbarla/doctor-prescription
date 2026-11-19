@@ -346,5 +346,15 @@ The smoke script covers authenticated navigation; a browser pass is needed for t
 - Do not add: billing, price, trial, plan, entitlement, image quota, or `sync_locked` copy.
 - Do not add: rich text, WYSIWYG, `contenteditable`, HTML payload, or markdown rendering.
 - Do not add: a second Primary, a filled row action, an icon-only control, or a row click that is not a link.
-- Do not add: a new route, endpoint, table, column, role, permission, or client-side clinic/owner filter.
+- Do not add: a new route, endpoint, table, column, role, permission, or a client-side clinic/owner filter.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `ButtonLink`, and format helpers the list renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `ListRow`, `EmptyState`, and `LoadingState`, the list's result surface. |
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `TemplateStatusBadge`, the status badge each row renders. |
+| `specs/22-V-ui-templates.md` | `22-V` adopts `Templates`: `PageShell id="templates-page"`, the `loaded` gate, one Primary `Nueva plantilla`. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted list runs only on `.ui-*` classes. |
 

@@ -216,3 +216,14 @@ The filled `Cross` glyph inside the logo mark (`Icon` `Cross`, `fill="currentCol
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` still returns `"ok": true`;
   - `caveman-blocks run markdown-table-check --path context/screens/Header.md` passes.
 - Do not add: a sixth nav entry, a dropdown or hamburger, a filled teal action in the band, a search field, an avatar, a notification bell, a sticky or fixed position, a language switcher, legal text, or a sync label that hides a non-zero count.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Icon`, `Button`, `NavLink`, and format helpers (`role_label`, `status_label`) the navbar band renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the badge, notice, and layout primitives reused by the navbar's session and sync groups. |
+| `specs/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `LogoLockup`, the brand mark the navbar renders at the left. |
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `SyncStatusIndicator` (FR-043), the sync state the navbar's right group shows. |
+| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts the navbar: five role-guarded destinations, no Home text link, session-aware right group. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy `#navbar` style hook; the id stays semantic on `header.ui-navbar`. |

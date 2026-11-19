@@ -257,3 +257,12 @@ Never `#000000`. Never a chromatic border except the Danger control's Ember Ring
 - **Plan confirm copy versus shipped.** The plan supplies the Danger trigger label `Eliminar paciente` and confirm label `Confirmar eliminación`; the shipped component supplies the confirmation sentence `¿Eliminar este paciente? La ficha se oculta de la búsqueda y queda registrada en auditoría.` and the busy label `Eliminando...`. Keep all four; do not shorten the sentence into a modal title or add a success state. No excluded field is added: no `created_at`, `updated_at`, `id`, clinic, prescription count, photo, signature, stamp, billing, quota, PDF, QR, or edit input; the edit route remains the only writer.
 - Verification commands, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/PatientDetail.md --strict`.
 - Do not add: an inline edit form, a hard delete, an archive toggle, a cascade, a delete endpoint beyond `api::delete_patient`, a local delete, an outbox row, a success toast, a modal, a focus trap, created/updated timestamps, the patient id, clinic identity, a prescription count, an embedded prescription list, a patient photo or avatar, a signature or stamp image, an asset preview, billing/price/trial/plan/quota/`sync_locked` copy, a PDF or QR action, a rich-text or `contenteditable` surface, a patient-filtered history parameter, a second history link, a second Primary action, or an `Editar`/delete control for the read-only Administrator.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers (`format_date`, `sex_label`) the ficha renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `DetailGrid`, `Badge`, `ConfirmPanel`, and `ErrorText` the detail regions use. |
+| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `PatientDetail`: header action order, demographics `Card`, inline delete confirm, one Primary `Nueva receta`. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted ficha runs only on `.ui-*` classes. |

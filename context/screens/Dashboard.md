@@ -309,3 +309,13 @@ python3 .blocks/markdown-table-check.py --path context/screens/Dashboard.md --st
 - Do not add: rich text, markdown rendering, `contenteditable`, or HTML injection (D-21).
 - Do not add: PHI in the URL, page title, analytics, or logs.
 - Do not add: client-side clinic or role filtering that re-implements the server's scope.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers (`role_label`) the dashboard renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the `SectionCard`, `DetailGrid`, `Badge`, and `LoadingState` the dashboard's blocks use. |
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `SyncStatusIndicator`, the pending-sync widget (FR-043) the dashboard shows on desktop. |
+| `specs/21-U-ui-dashboard-settings-and-patients.md` | `21-U` adopts `Dashboard`: `PageShell id="dashboard-page"`, `LoadingState` while `checked` is false, session `SectionCard`. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy page-ID width rules so the adopted page runs on `.ui-page`/`.ui-container`. |

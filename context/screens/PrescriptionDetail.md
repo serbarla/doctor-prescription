@@ -329,3 +329,13 @@ Line icons only, 1.5px stroke, 24-unit view box, Ink or Deep Teal (Mist for the 
   - `cd persona-sanus && dx build --release --fullstack`
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` (expects `"ok": true`; shell/auth paths only)
 - Do not add: a new route or endpoint; billing, price, trial, plan, or `sync_locked` copy; a signature or stamp image, upload, file field, or signature canvas; a rich-text, WYSIWYG, `contenteditable` surface or formatting toolbar; a `superseded_by` field, audit fetch, or audit page; an in-place edit of a signed row; a second filled teal action; drag-only reordering; PDF, print, share, QR, or A4 rendering here; a patient name, cédula, diagnosis, medication, or verification code in the URL; automatic LLM navigation or any PHI in the external link; English UI copy; a modal focus trap in the void confirmation; an invented success animation, badge, or count.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the detail page renders.
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the edit `FormGrid`, `ConfirmPanel`, `ErrorText`, and action rows the draft/signed states use.
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `RxBlockIndicator` and `LlmExplainLink` (FR-012), the block status and external explain action.
+| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionDetail`: the `allocating` signal, role/state primary matrix, `Vista previa A4` header action.
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted detail runs only on `.ui-*` classes.

@@ -367,3 +367,12 @@ Verification, in order:
 - `caveman-blocks run markdown-table-check --path context/screens/AuthPage.md --strict` passes.
 
 - Do not add: password reset or a "forgot password" link; email verification or resend; SSO, OAuth, magic link, or social sign-in; role, clinic, or invitation selection; a remember-me checkbox; terms, privacy, or consent acceptance; a show-password/reveal toggle; a password confirmation field; a strength meter; a client-side email regex or eight-character check; a native form submit; an MFA countdown, attempt limit, resend, or local expiry decision; a device list, device name, registration status, or retry control; a profile-completion prompt; a second filled Primary; a link to `/settings/billing`; billing, price, trial, plan, or `sync_locked` copy; a signature, stamp, or ink image; a rich-text or `contenteditable` surface; a patient field, PHI, or patient example; a new route, endpoint, table, column, role, or permission; storing the ticket, email, or password in browser storage or the URL; auto-redirecting a signed-in visitor away from `/login`.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the auth forms use. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the `TextField` controls, `ErrorText`, and loading states the sign-in, sign-up, and MFA forms render. |
+| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts `AuthPage`: keyboard-usable sign-in/sign-up switch, es-EC copy, MFA-only challenge state. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy auth-page selectors so the adopted markup runs only on `.ui-*` classes. |

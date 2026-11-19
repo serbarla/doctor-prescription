@@ -331,3 +331,12 @@ python3 .blocks/markdown-table-check.py --path context/screens/PrescriptionNew.m
 - Do not add: autosave, draft restoration, toast, modal, success banner, confirmation dialog, retry timer, or background re-fetch; success is navigation, failure is inline text.
 - Do not add: English UI copy, restated navbar/footer strings, a second Primary, a filled danger/secondary action, chromatic borders, or shadows on the page.
 - Do not add: medication, diagnosis, patient name, or any free text to the URL; the query carries only the two opaque ids.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, and format helpers the draft form uses.
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies `SelectField`, `TextAreaField`, `TextField`, `FormGrid`, and `ErrorText` the form renders.
+| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionNew`: patient/template selects in `FormGrid`, one Primary `Crear borrador`, published-template filter unchanged.
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted form runs only on `.ui-*` classes.

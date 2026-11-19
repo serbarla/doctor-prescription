@@ -251,3 +251,14 @@ The result card's visible hierarchy is 14 / 16 / 22. `--font-grenette` is not us
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` returns `"ok": true` but does not cover `/verify/:code`: its `ORDERED` stages are `fmt`, `check`, `clippy`, `build`, `health`, `home`, `login`, `dashboard`, `signup`, `session`, `signout`, `session_after_signout`, `signin` (`.blocks/persona-smoke.py:38-44`), and `persona-probe`'s default `FULL` flow has the same list. The probe's `verify` flow checks the `/api/verify/{code}` statuses, 429, and no-PHI payload, not this page's copy or geometry.
   - `python3 .blocks/markdown-table-check.py --path context/screens/Verify.md --strict`
 - Do not add: a navbar or any shell chrome; a hand-rolled footer or a second disclosure line; a footer wordmark; patient, cédula, diagnosis, medication, or clinical-note fields or values; a PDF, QR download, print, share, or export affordance; a generated QR image; a code-less `/verify` route, a hash form, or a query-param form; a new endpoint, table, column, role, or permission; a second Primary action; a public marketing hero or trust-logo strip; a signature or stamp image; billing, price, trial, plan, or `sync_locked` copy; rich text, a WYSIWYG, or contenteditable; localStorage/sessionStorage/cookie caching or a desktop verification cache; an outbox or `pending_sync` branch; the shipped English labels `Doctor`, `Fecha`, `No.`; the shipped `Cargando...` string; a fifth status title or a raw API status; a 429 countdown, retry loop, or client-side rate-limit display.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `LinkAction`, and format helpers the verification page uses. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the code field shell, error/hint text, and empty/loading states the typed-code form renders. |
+| `specs/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds the brand primitives (`SectionHeader`, `TrustSecurityRow`, `VerificationTag`) the public verification page composes. |
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds `VerificationCodeForm`, `VerificationResultCard`, and `VerificationSeal`, the whole result surface. |
+| `specs/20-T-shell-auth-home-and-verify.md` | `20-T` adopts `Verify`: doctor, date, and prescription number only, plus the always-available path to another code. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy selectors so the adopted verification markup runs only on `.ui-*` classes. |

@@ -353,3 +353,13 @@ python3 .blocks/markdown-table-check.py --path context/screens/PrescriptionPrevi
 - Do not add: a signature or stamp image, field, or draw control; rich text, `contenteditable`, or a formatting toolbar; an edit, reorder, void, or supersede control on this page; billing, price, trial, plan, or `sync_locked` copy or state.
 - Do not add: a fake QR, fake verification code, or fake final number in the provisional state; PHI in the URL, share title, QR payload, logs, or alt text; a numeric A4 scale control or a fourth page size; an invented print or download success state.
 
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `LinkAction`, and format helpers the preview actions use.
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the action row, loading states, and notices the sign/download states render.
+| `specs/18-R-ui-domain-and-billing.md` | `18-R` builds the prescription status badge and sync-status indicators the provisional offline preview shows (FR-043).
+| `specs/23-W-ui-prescriptions.md` | `23-W` adopts `PrescriptionPreview`: exactly one Primary — `Firmar y emitir` for drafts, `Descargar PDF` otherwise.
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted preview runs only on `.ui-*` classes.
+

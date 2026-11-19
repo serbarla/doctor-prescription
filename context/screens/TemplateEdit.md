@@ -311,3 +311,12 @@ Line icons only, 1.5px stroke, Ink or Deep Teal. `ErrorText` carries its Alert g
 - Preserve both surfaces: web calls the API; desktop keeps the cache read on template-load failure and the local publish plus outbox branch. Do not add a local draft-save branch, do not queue archive, and do not let a cached copy hide a server refusal. Keep the generation key and dispatch bodies behaviorally identicalech.
 - Verify, in order: `cd persona-sanus && cargo check`; `dx build --release --fullstack`; `caveman-blocks run persona-smoke --dir persona-sanus --port 8091`; `python3 .blocks/markdown-table-check.py --path context/screens/TemplateEdit.md --strict`. These are commands to run; this file records no pass claim.
 - Do not add: a rich-text editor, WYSIWYG, formatting toolbar, `contenteditable`, HTML body, or Markdown preview; a signature or stamp image, upload, field, or placeholder; an image upload or delete control, file picker, drag-and-drop asset zone, quota prompt, or second asset endpoint on this route; a new route, role, permission, table, column, API argument, or asset kind; patient data, PHI, sample values, a patient picker, or prescription content; billing, price, trial, plan, entitlement, invoice, payment, or `sync_locked` copy or state; a second Primary action, filled Danger button, or extra primary in archived or denied states; an unarchive or restore action; version history, diff, duplicate, rename, delete-template, PDF, or print action; a draft-save outbox branch or a fake offline save; optimistic publish or archive; a colour-only archived, saved, busy, or error indication; or English UI copy.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `Button`, `ButtonLink`, and format helpers the editor renders. |
+| `specs/16-P-ui-forms-feedback-and-layout.md` | `16-P` supplies the form controls substituted into `forms::TemplateDocumentForm`, plus `ConfirmPanel` and `ErrorText`. |
+| `specs/22-V-ui-templates.md` | `22-V` adopts `TemplateEdit`: raw inputs replaced by `TextField`/`TextAreaField`/`SelectField`, one Primary `Publicar versión`, archive confirm panel. |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes legacy page-ID selectors so the adopted editor runs only on `.ui-*` classes. |

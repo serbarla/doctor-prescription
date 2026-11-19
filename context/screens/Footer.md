@@ -184,3 +184,11 @@ On `/login` only: the `TrustSecurityRow` primitive exactly as defined — `Shiel
   - `caveman-blocks run persona-smoke --dir persona-sanus --port 8091` still passes;
   - `caveman-blocks run markdown-table-check --path context/screens/Footer.md` passes.
 - Do not add: a pricing or trial band, a partner logo strip, a newsletter or email field, social or app-store badges, a privacy/terms/contact/ARCO link, a language switcher, a second filled teal action, a `LinkAction` or any button-shaped link, a second `LogoLockup` on `/verify/:code`, a hand-rolled shield-only law-line variant, or a sticky footer.
+
+## 8. Spec references
+
+| Spec | Connection |
+|---|---|
+| `specs/15-O-ui-tokens-actions-and-formatting.md` | `15-O` supplies the tokens, `LinkAction`, `NavLink`, and format helpers the planned footer band uses. |
+| `specs/17-Q-ui-brand-and-marketing-components.md` | `17-Q` builds `LogoLockup` and `TrustSecurityRow`, the two primitives the footer composes; no spec in 15–25 adopts `Footer`, so it stays planned (`INDEX.md` §2.1). |
+| `specs/25-Y-ui-legacy-css-cleanup-and-docs.md` | `25-Y` removes the legacy page-ID selectors so the planned footer composes only `.ui-*` classes and tokens. |

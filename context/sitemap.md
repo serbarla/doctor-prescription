@@ -72,6 +72,7 @@ flowchart TD
 | `/` | Home | Public verifier, unauthenticated visitor | §7 | ✅ | Landing; entry to `/login` and explanation of `/verify/:code`. No authenticated-user redirect yet (⬜). |
 | `/login` | AuthPage | All staff (pre-auth) | §4 flow 1, §7 | ✅ | Sign in / sign up (Diesel-backed auth module). MFA (TOTP) for enrolled doctors/administrators and silent device registration for desktop/web clients (`devices`, §9) ship (specs 04-D, 12-L). |
 | `/verify/:code` | Public verification | Public verifier (no account) | §3, §4 flow 4, §5.6 FR-050, FR-033/034 | ✅ | Scan QR target `https://<domain>/verify/{code}`. Shows "Receta auténtica — issued by Dr. …, date …, No. …" + status (`valid` / `voided` / `superseded` / `not found`). No PHI. Rate-limited per IP. Also supports re-typing the printed verification code (FR-034). Only the path form is routed; Dioxus does not match `#/verify/:code`. |
+| `/dev/ui` | Component gallery | Developer (debug builds only) | — implementation detail, not PRD | ✅ debug-only | Debug-only developer surface, not a product route: the design-token and `.ui-*` component gallery. Only compiled in debug builds — release builds answer `solo existe en compilaciones de desarrollo` and expose no gallery. |
 
 ### 1.2 Authenticated shell
 

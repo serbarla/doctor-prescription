@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::api;
+use crate::ui::{
+    ActionRow, Button, ButtonVariant, Card, ErrorText, FormColumns, FormGrid, HintText,
+    SectionCard, SelectField, TextAreaField, TextField,
+};
 
 pub const SCHEMA_VERSION: u32 = 1;
 
@@ -472,7 +476,7 @@ pub fn A4Preview(
     let document = match parse_document(&doc_json) {
         Ok(document) => document,
         Err(error) => {
-            return rsx! { p { class: "error", "{error}" } };
+            return rsx! { ErrorText { text: error } };
         }
     };
     let values = if values.is_empty() {
@@ -660,158 +664,223 @@ pub fn TemplateDocumentForm(
     };
 
     rsx! {
-        div {
-            class: "template-editor",
-            section {
-                class: "editor-section",
-                h4 { "Membrete" }
-                div {
-                    class: "form-grid",
-                    label {
-                        class: "field",
-                        span { "Logo de la clínica" }
-                        select {
-                            value: "{document().letterhead.logo_asset_id.clone().unwrap_or_default()}",
-                            onchange: move |event| {
-                                let value = event.value();
-                                document.write().letterhead.logo_asset_id =
+        SectionCard { title: "Membrete".to_owned(), description: None,
+            FormGrid { columns: FormColumns::Two,
+                SelectField {
+                    label: "Logo de la clínica".to_owned(),
+                    value: document().letterhead.logo_asset_id.clone().unwrap_or_default(),
+                    onchange: move |value: String| {
+                        document.write().letterhead.logo_asset_id =
+                            if value.is_empty() { None } else { Some(value) };
+                    },
+                    wide: false,
+                    hint: None,
+                    error: None,
+                    disabled: false,
+                    hide_label: false,
+                    option { value: "", "Sin logo" }
+                    for asset in library_rows.iter() {
+                        option { value: "{asset.id}", "{asset_label(asset)}" }
+                    }
+                }
+                TextField {
+                    label: "Color principal".to_owned(),
+                    value: document().letterhead.colors.primary.clone(),
+                    oninput: move |value| {
+                        document.write().letterhead.colors.primary = value;
+                    },
+                    input_type: "color".to_owned(),
+                    placeholder: String::new(),
+                    hint: None,
+                    error: None,
+                    autocomplete: "off".to_owned(),
+                    spellcheck: false,
+                    required: false,
+                    disabled: false,
+                    readonly: false,
+                    min: None,
+                    max: None,
+                    step: None,
+                    wide: false,
+                    hide_label: false,
+                }
+                TextField {
+                    label: "Color de acento".to_owned(),
+                    value: document().letterhead.colors.accent.clone(),
+                    oninput: move |value| {
+                        document.write().letterhead.colors.accent = value;
+                    },
+                    input_type: "color".to_owned(),
+                    placeholder: String::new(),
+                    hint: None,
+                    error: None,
+                    autocomplete: "off".to_owned(),
+                    spellcheck: false,
+                    required: false,
+                    disabled: false,
+                    readonly: false,
+                    min: None,
+                    max: None,
+                    step: None,
+                    wide: false,
+                    hide_label: false,
+                }
+                TextField {
+                    label: "Márgenes (mm)".to_owned(),
+                    value: margin().to_string(),
+                    oninput: move |value: String| {
+                        if let Ok(parsed) = value.parse::<u32>() {
+                            margin.set(parsed.clamp(5, 40));
+                        }
+                    },
+                    input_type: "number".to_owned(),
+                    placeholder: String::new(),
+                    hint: None,
+                    error: None,
+                    autocomplete: "off".to_owned(),
+                    spellcheck: false,
+                    required: false,
+                    disabled: false,
+                    readonly: false,
+                    min: Some("5".to_owned()),
+                    max: Some("40".to_owned()),
+                    step: None,
+                    wide: false,
+                    hide_label: false,
+                }
+                TextAreaField {
+                    label: "Datos del médico".to_owned(),
+                    value: document().letterhead.doctor_details.clone(),
+                    oninput: move |value| {
+                        document.write().letterhead.doctor_details = value;
+                    },
+                    placeholder: String::new(),
+                    wide: true,
+                    hint: None,
+                    error: None,
+                    required: false,
+                    disabled: false,
+                    readonly: false,
+                    hide_label: false,
+                    rows: None,
+                }
+                TextAreaField {
+                    label: "Datos de la clínica".to_owned(),
+                    value: document().letterhead.clinic_details.clone(),
+                    oninput: move |value| {
+                        document.write().letterhead.clinic_details = value;
+                    },
+                    placeholder: String::new(),
+                    wide: true,
+                    hint: None,
+                    error: None,
+                    required: false,
+                    disabled: false,
+                    readonly: false,
+                    hide_label: false,
+                    rows: None,
+                }
+            }
+        }
+        SectionCard { title: "Cuerpo".to_owned(), description: None,
+            div { class: "ui-variable-row",
+                SelectField {
+                    label: "Variable".to_owned(),
+                    value: picker(),
+                    onchange: move |value| picker.set(value),
+                    wide: false,
+                    hint: None,
+                    error: None,
+                    disabled: false,
+                    hide_label: true,
+                    for key in TEMPLATE_VARIABLES {
+                        option { value: "{key}", "{variable_label(key)} — {key}" }
+                    }
+                }
+                Button {
+                    variant: ButtonVariant::Secondary,
+                    onclick: insert_variable,
+                    "Insertar variable"
+                }
+            }
+            TextAreaField {
+                label: "Cuerpo".to_owned(),
+                value: document().body.clone(),
+                oninput: move |value| document.write().body = value,
+                placeholder: String::new(),
+                wide: true,
+                hint: None,
+                error: None,
+                required: false,
+                disabled: false,
+                readonly: false,
+                hide_label: true,
+                rows: None,
+            }
+            TextAreaField {
+                label: "Pie de página".to_owned(),
+                value: document().footer.clone(),
+                oninput: move |value| document.write().footer = value,
+                placeholder: String::new(),
+                wide: true,
+                hint: None,
+                error: None,
+                required: false,
+                disabled: false,
+                readonly: false,
+                hide_label: false,
+                rows: None,
+            }
+        }
+        SectionCard { title: "Imágenes".to_owned(), description: None,
+            HintText {
+                text: "Elige imágenes de la biblioteca de la clínica. La biblioteca admite una imagen en esta versión.".to_owned()
+            }
+            for index in 0..document().images.len() {
+                Card {
+                    key: "image-{index}",
+                    FormGrid { columns: FormColumns::Two,
+                        SelectField {
+                            label: "Imagen".to_owned(),
+                            value: document().images[index].asset_id.clone().unwrap_or_default(),
+                            onchange: move |value: String| {
+                                document.write().images[index].asset_id =
                                     if value.is_empty() { None } else { Some(value) };
                             },
-                            option { value: "", "Sin logo" }
-                            for asset in library_rows.iter() {
+                            wide: false,
+                            hint: None,
+                            error: None,
+                            disabled: false,
+                            hide_label: false,
+                            option { value: "", "Sin imagen" }
+                            for asset in library_rows.iter().filter(|asset| asset.kind == "image") {
                                 option { value: "{asset.id}", "{asset_label(asset)}" }
                             }
                         }
-                    }
-                    label {
-                        class: "field",
-                        span { "Color principal" }
-                        input {
-                            r#type: "color",
-                            value: "{document().letterhead.colors.primary}",
-                            oninput: move |event| {
-                                document.write().letterhead.colors.primary = event.value();
+                        TextField {
+                            label: "Leyenda".to_owned(),
+                            value: document().images[index].caption.clone(),
+                            oninput: move |value| {
+                                document.write().images[index].caption = value;
                             },
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: true,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: false,
+                            hide_label: false,
                         }
                     }
-                    label {
-                        class: "field",
-                        span { "Color de acento" }
-                        input {
-                            r#type: "color",
-                            value: "{document().letterhead.colors.accent}",
-                            oninput: move |event| {
-                                document.write().letterhead.colors.accent = event.value();
-                            },
-                        }
-                    }
-                    label {
-                        class: "field",
-                        span { "Márgenes (mm)" }
-                        input {
-                            r#type: "number",
-                            min: "5",
-                            max: "40",
-                            value: "{margin}",
-                            oninput: move |event| {
-                                if let Ok(value) = event.value().parse::<u32>() {
-                                    margin.set(value.clamp(5, 40));
-                                }
-                            },
-                        }
-                    }
-                    label {
-                        class: "field wide",
-                        span { "Datos del médico" }
-                        textarea {
-                            value: "{document().letterhead.doctor_details}",
-                            oninput: move |event| {
-                                document.write().letterhead.doctor_details = event.value();
-                            },
-                        }
-                    }
-                    label {
-                        class: "field wide",
-                        span { "Datos de la clínica" }
-                        textarea {
-                            value: "{document().letterhead.clinic_details}",
-                            oninput: move |event| {
-                                document.write().letterhead.clinic_details = event.value();
-                            },
-                        }
-                    }
-                }
-            }
-            section {
-                class: "editor-section",
-                h4 { "Cuerpo" }
-                div {
-                    class: "variable-row",
-                    select {
-                        value: "{picker}",
-                        onchange: move |event| picker.set(event.value()),
-                        for key in TEMPLATE_VARIABLES {
-                            option { value: "{key}", "{variable_label(key)} — {key}" }
-                        }
-                    }
-                    button {
-                        class: "secondary",
-                        onclick: insert_variable,
-                        "Insertar variable"
-                    }
-                }
-                textarea {
-                    value: "{document().body}",
-                    oninput: move |event| document.write().body = event.value(),
-                }
-                label {
-                    class: "field",
-                    span { "Pie de página" }
-                    textarea {
-                        value: "{document().footer}",
-                        oninput: move |event| document.write().footer = event.value(),
-                    }
-                }
-            }
-            section {
-                class: "editor-section",
-                h4 { "Imágenes" }
-                p {
-                    class: "hint",
-                    "Elige imágenes de la biblioteca de la clínica. La biblioteca admite una imagen en esta versión."
-                }
-                for index in 0..document().images.len() {
-                    div {
-                        key: "image-{index}",
-                        class: "form-grid inline-block",
-                        label {
-                            class: "field",
-                            span { "Imagen" }
-                            select {
-                                value: "{document().images[index].asset_id.clone().unwrap_or_default()}",
-                                onchange: move |event| {
-                                    let value = event.value();
-                                    document.write().images[index].asset_id =
-                                        if value.is_empty() { None } else { Some(value) };
-                                },
-                                option { value: "", "Sin imagen" }
-                                for asset in library_rows.iter().filter(|asset| asset.kind == "image") {
-                                    option { value: "{asset.id}", "{asset_label(asset)}" }
-                                }
-                            }
-                        }
-                        label {
-                            class: "field",
-                            span { "Leyenda" }
-                            input {
-                                value: "{document().images[index].caption}",
-                                oninput: move |event| {
-                                    document.write().images[index].caption = event.value();
-                                },
-                            }
-                        }
-                        button {
-                            class: "danger",
+                    ActionRow {
+                        Button {
+                            variant: ButtonVariant::Danger,
                             onclick: move |_| {
                                 document.write().images.remove(index);
                             },
@@ -819,107 +888,161 @@ pub fn TemplateDocumentForm(
                         }
                     }
                 }
-                button {
-                    class: "secondary",
-                    onclick: move |_| {
-                        let first_image = match library() {
-                            Some(Ok(library)) => library
-                                .assets
-                                .iter()
-                                .find(|asset| asset.kind == "image")
-                                .map(|asset| asset.id.clone()),
-                            _ => None,
-                        };
-                        document.write().images.push(ImageSlot {
-                            asset_id: first_image,
-                            caption: String::new(),
-                        });
-                    },
-                    "Agregar imagen"
-                }
             }
-            section {
-                class: "editor-section",
-                h4 { "Medicamentos" }
-                for index in 0..document().medications.len() {
-                    div {
-                        key: "medication-{index}",
-                        class: "medication-block",
-                        div {
-                            class: "form-grid",
-                            label {
-                                class: "field",
-                                span { "Medicamento" }
-                                input {
-                                    value: "{document().medications[index].name}",
-                                    oninput: move |event| {
-                                        document.write().medications[index].name = event.value();
-                                    },
-                                }
-                            }
-                            label {
-                                class: "field",
-                                span { "Dosis" }
-                                input {
-                                    value: "{document().medications[index].dose}",
-                                    oninput: move |event| {
-                                        document.write().medications[index].dose = event.value();
-                                    },
-                                }
-                            }
-                            label {
-                                class: "field",
-                                span { "Vía" }
-                                input {
-                                    value: "{document().medications[index].route}",
-                                    oninput: move |event| {
-                                        document.write().medications[index].route = event.value();
-                                    },
-                                }
-                            }
-                            label {
-                                class: "field",
-                                span { "Frecuencia" }
-                                input {
-                                    value: "{document().medications[index].frequency}",
-                                    oninput: move |event| {
-                                        document.write().medications[index].frequency = event.value();
-                                    },
-                                }
-                            }
-                            label {
-                                class: "field",
-                                span { "Duración" }
-                                input {
-                                    value: "{document().medications[index].duration}",
-                                    oninput: move |event| {
-                                        document.write().medications[index].duration = event.value();
-                                    },
-                                }
-                            }
-                            label {
-                                class: "field",
-                                span { "Cantidad" }
-                                input {
-                                    value: "{document().medications[index].quantity}",
-                                    oninput: move |event| {
-                                        document.write().medications[index].quantity = event.value();
-                                    },
-                                }
-                            }
-                            label {
-                                class: "field wide",
-                                span { "Notas" }
-                                input {
-                                    value: "{document().medications[index].notes}",
-                                    oninput: move |event| {
-                                        document.write().medications[index].notes = event.value();
-                                    },
-                                }
-                            }
+            Button {
+                variant: ButtonVariant::Secondary,
+                onclick: move |_| {
+                    let first_image = match library() {
+                        Some(Ok(library)) => library
+                            .assets
+                            .iter()
+                            .find(|asset| asset.kind == "image")
+                            .map(|asset| asset.id.clone()),
+                        _ => None,
+                    };
+                    document.write().images.push(ImageSlot {
+                        asset_id: first_image,
+                        caption: String::new(),
+                    });
+                },
+                "Agregar imagen"
+            }
+        }
+        SectionCard { title: "Medicamentos".to_owned(), description: None,
+            for index in 0..document().medications.len() {
+                Card {
+                    key: "medication-{index}",
+                    FormGrid { columns: FormColumns::Two,
+                        TextField {
+                            label: "Medicamento".to_owned(),
+                            value: document().medications[index].name.clone(),
+                            oninput: move |value| document.write().medications[index].name = value,
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: true,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: false,
+                            hide_label: false,
                         }
-                        button {
-                            class: "danger",
+                        TextField {
+                            label: "Dosis".to_owned(),
+                            value: document().medications[index].dose.clone(),
+                            oninput: move |value| document.write().medications[index].dose = value,
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: true,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: false,
+                            hide_label: false,
+                        }
+                        TextField {
+                            label: "Vía".to_owned(),
+                            value: document().medications[index].route.clone(),
+                            oninput: move |value| document.write().medications[index].route = value,
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: true,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: false,
+                            hide_label: false,
+                        }
+                        TextField {
+                            label: "Frecuencia".to_owned(),
+                            value: document().medications[index].frequency.clone(),
+                            oninput: move |value| document.write().medications[index].frequency = value,
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: true,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: false,
+                            hide_label: false,
+                        }
+                        TextField {
+                            label: "Duración".to_owned(),
+                            value: document().medications[index].duration.clone(),
+                            oninput: move |value| document.write().medications[index].duration = value,
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: true,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: false,
+                            hide_label: false,
+                        }
+                        TextField {
+                            label: "Cantidad".to_owned(),
+                            value: document().medications[index].quantity.clone(),
+                            oninput: move |value| document.write().medications[index].quantity = value,
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: false,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: false,
+                            hide_label: false,
+                        }
+                        TextField {
+                            label: "Notas".to_owned(),
+                            value: document().medications[index].notes.clone(),
+                            oninput: move |value| document.write().medications[index].notes = value,
+                            placeholder: String::new(),
+                            hint: None,
+                            error: None,
+                            autocomplete: "off".to_owned(),
+                            spellcheck: true,
+                            required: false,
+                            disabled: false,
+                            readonly: false,
+                            min: None,
+                            max: None,
+                            step: None,
+                            wide: true,
+                            hide_label: false,
+                        }
+                    }
+                    ActionRow {
+                        Button {
+                            variant: ButtonVariant::Danger,
                             onclick: move |_| {
                                 document.write().medications.remove(index);
                             },
@@ -927,37 +1050,38 @@ pub fn TemplateDocumentForm(
                         }
                     }
                 }
-                button {
-                    class: "secondary",
-                    onclick: move |_| {
-                        document.write().medications.push(MedicationBlock::default());
-                    },
-                    "Agregar medicamento"
-                }
             }
-            if !message().is_empty() {
-                p { class: "error", "{message}" }
+            Button {
+                variant: ButtonVariant::Secondary,
+                onclick: move |_| {
+                    document.write().medications.push(MedicationBlock::default());
+                },
+                "Agregar medicamento"
             }
-            div {
-                class: "actions",
-                button {
-                    disabled: saving(),
-                    onclick: {
-                        let template_id = template_id.clone();
-                        move |_| {
-                            save_document(
-                                saving,
-                                message,
-                                saved_version,
-                                template_id.clone(),
-                                margin(),
-                                document(),
-                                on_saved,
-                            );
-                        }
-                    },
-                    if saving() { "Guardando..." } else { "Guardar borrador" }
-                }
+        }
+        if !message().is_empty() {
+            ErrorText { text: message() }
+        }
+        ActionRow {
+            Button {
+                variant: ButtonVariant::Secondary,
+                disabled: saving(),
+                loading: saving(),
+                onclick: {
+                    let template_id = template_id.clone();
+                    move |_| {
+                        save_document(
+                            saving,
+                            message,
+                            saved_version,
+                            template_id.clone(),
+                            margin(),
+                            document(),
+                            on_saved,
+                        );
+                    }
+                },
+                if saving() { "Guardando..." } else { "Guardar borrador" }
             }
         }
     }

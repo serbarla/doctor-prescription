@@ -21,12 +21,12 @@ This spec is markup adoption. Do not change authorization, session, API argument
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Adopt Dashboard — requirements: use `PageShell id="dashboard-page"` and `PageHeader title="Panel"` with the session subtitle `{name} · {email}`. Render `LoadingState` while `checked` is false. Keep the signed-out `navigator.replace(Route::AuthPage {})` guard. In the signed-in branch render `SectionCard title="Sesión"` with `DetailGrid` items `Nombre` (session.name), `Correo` (session.email), `Rol` (Badge with `role_label(profile.role)` when a profile exists, else Neutral `Sin rol`), and `Clínica` (`profile.clinic.name` when present, else exact `Sin clínica asignada.`). Remove the duplicate page-level `Cerrar sesión` control; the navbar owns sign-out. No Primary action; commands: `cd persona-sanus && cargo check`.
-- [ ] Adopt Settings — requirements: use `PageShell id="settings-page"` and `PageHeader title="Configuración" subtitle="Administra el acceso del personal y tu perfil."`. Render `div.ui-link-grid` with Secondary `ButtonLink` `ui-link-card`s `Usuarios y roles` -> `Route::SettingsUsers {}`, `Clínica y biblioteca` -> `Route::SettingsClinic {}`, `Mi perfil` -> `Route::SettingsProfile {}`, admin-only `Auditoría` -> `Route::Audit {}`, and a debug-only `Sistema de diseño` -> `Route::DevUi {}`. Keep the existing redirects and the compile-time gate on the debug link. No Primary action; commands: `cd persona-sanus && cargo check`.
-- [ ] Adopt Patients — requirements: use `PageShell id="patients-page"` and `PageHeader title="Pacientes" subtitle="Busca por nombre o cédula dentro de tu clínica."`; render the Primary `ButtonLink` `Nuevo paciente` to `Route::PatientNew {}` only when `profile.can_write_patients()`. Add `let mut loaded = use_signal(|| false);`, set it true once after every fetch branch resolves (including the desktop fallback), and render `LoadingState` while `!loaded()`. Replace the search input with `SearchField label="Buscar paciente"` bound to `query`; keep the existing search effect and arguments. Render `EmptyState title="Sin pacientes" description="No hay pacientes para esta búsqueda."` when the list is empty. Render each result as `ListRow` with title `full_name`, meta `["Cédula {national_id or —}", "Nacimiento {format_date(birth_date) or —}"]`, and a Secondary `Ver ficha` child to `Route::PatientDetail { id }`. Keep the desktop local fallback. The only Primary is `Nuevo paciente`; commands: `cd persona-sanus && cargo check`.
-- [ ] Adopt PatientNew — requirements: use `PageShell id="patients-page"`, `PageHeader title="Nuevo paciente"` with a Secondary `Cancelar` header action to the existing target route. Put the fields in `Card` > `FormGrid columns: Two`: `TextField` for names, cédula, birth date (`input_type="date"`, `step="1"`), and tel; `SelectField` for sex; `TextAreaField wide` for notes. Keep every signal, initial value, validation, dedup check, and `submit_new_patient` call. When `warning_ids` is non-empty, render a Warning `Notice` with the existing warning message and a Danger `Button` `Crear de todas formas` that calls the existing confirmed submit. Render `ErrorText` only for a non-warning error. `ActionRow` has the only Primary, `Guardar paciente`; commands: `cd persona-sanus && cargo check`.
-- [ ] Adopt PatientDetail — requirements: use `PageShell id="patients-page"` and `PageHeader title={full_name} subtitle="Ficha del paciente"`. Header actions, in order: Secondary `Editar` when `can_write_patients`, else Neutral `Badge` `Solo lectura`; Primary `Nueva receta` when `can_create_prescriptions()`; Secondary `Historial de recetas` using the existing target. Keep every guard and navigation target. Render demographics in `Card` > `DetailGrid`/`DetailItem`. Delete is a Danger `Eliminar paciente` inside a `ConfirmPanel` with confirm `Confirmar eliminación`; keep the delete API and navigation. Use `ErrorText` for errors. The only Primary is `Nueva receta` and only when allowed; commands: `cd persona-sanus && cargo check`.
-- [ ] Adopt PatientEdit — requirements: use `PageShell id="patients-page"`, `PageHeader title="Editar paciente"` with a Secondary `Cancelar` header action. Put the same fields in `Card` > `FormGrid`; keep every signal, initial value, and validation. Use `ErrorText` for errors and `ActionRow` with the only Primary `Guardar cambios`; keep the existing update dispatch and navigation; commands: `cd persona-sanus && cargo check`.
+- [x] Adopt Dashboard — requirements: use `PageShell id="dashboard-page"` and `PageHeader title="Panel"` with the session subtitle `{name} · {email}`. Render `LoadingState` while `checked` is false. Keep the signed-out `navigator.replace(Route::AuthPage {})` guard. In the signed-in branch render `SectionCard title="Sesión"` with `DetailGrid` items `Nombre` (session.name), `Correo` (session.email), `Rol` (Badge with `role_label(profile.role)` when a profile exists, else Neutral `Sin rol`), and `Clínica` (`profile.clinic.name` when present, else exact `Sin clínica asignada.`). Remove the duplicate page-level `Cerrar sesión` control; the navbar owns sign-out. No Primary action; commands: `cd persona-sanus && cargo check`.
+- [x] Adopt Settings — requirements: use `PageShell id="settings-page"` and `PageHeader title="Configuración" subtitle="Administra el acceso del personal y tu perfil."`. Render `div.ui-link-grid` with Secondary `ButtonLink` `ui-link-card`s `Usuarios y roles` -> `Route::SettingsUsers {}`, `Clínica y biblioteca` -> `Route::SettingsClinic {}`, `Mi perfil` -> `Route::SettingsProfile {}`, admin-only `Auditoría` -> `Route::Audit {}`, and a debug-only `Sistema de diseño` -> `Route::DevUi {}`. Keep the existing redirects and the compile-time gate on the debug link. No Primary action; commands: `cd persona-sanus && cargo check`.
+- [x] Adopt Patients — requirements: use `PageShell id="patients-page"` and `PageHeader title="Pacientes" subtitle="Busca por nombre o cédula dentro de tu clínica."`; render the Primary `ButtonLink` `Nuevo paciente` to `Route::PatientNew {}` only when `profile.can_write_patients()`. Add `let mut loaded = use_signal(|| false);`, set it true once after every fetch branch resolves (including the desktop fallback), and render `LoadingState` while `!loaded()`. Replace the search input with `SearchField label="Buscar paciente"` bound to `query`; keep the existing search effect and arguments. Render `EmptyState title="Sin pacientes" description="No hay pacientes para esta búsqueda."` when the list is empty. Render each result as `ListRow` with title `full_name`, meta `["Cédula {national_id or —}", "Nacimiento {format_date(birth_date) or —}"]`, and a Secondary `Ver ficha` child to `Route::PatientDetail { id }`. Keep the desktop local fallback. The only Primary is `Nuevo paciente`; commands: `cd persona-sanus && cargo check`.
+- [x] Adopt PatientNew — requirements: use `PageShell id="patients-page"`, `PageHeader title="Nuevo paciente"` with a Secondary `Cancelar` header action to the existing target route. Put the fields in `Card` > `FormGrid columns: Two`: `TextField` for names, cédula, birth date (`input_type="date"`, `step="1"`), and tel; `SelectField` for sex; `TextAreaField wide` for notes. Keep every signal, initial value, validation, dedup check, and `submit_new_patient` call. When `warning_ids` is non-empty, render a Warning `Notice` with the existing warning message and a Danger `Button` `Crear de todas formas` that calls the existing confirmed submit. Render `ErrorText` only for a non-warning error. `ActionRow` has the only Primary, `Guardar paciente`; commands: `cd persona-sanus && cargo check`.
+- [x] Adopt PatientDetail — requirements: use `PageShell id="patients-page"` and `PageHeader title={full_name} subtitle="Ficha del paciente"`. Header actions, in order: Secondary `Editar` when `can_write_patients`, else Neutral `Badge` `Solo lectura`; Primary `Nueva receta` when `can_create_prescriptions()`; Secondary `Historial de recetas` using the existing target. Keep every guard and navigation target. Render demographics in `Card` > `DetailGrid`/`DetailItem`. Delete is a Danger `Eliminar paciente` inside a `ConfirmPanel` with confirm `Confirmar eliminación`; keep the delete API and navigation. Use `ErrorText` for errors. The only Primary is `Nueva receta` and only when allowed; commands: `cd persona-sanus && cargo check`.
+- [x] Adopt PatientEdit — requirements: use `PageShell id="patients-page"`, `PageHeader title="Editar paciente"` with a Secondary `Cancelar` header action. Put the same fields in `Card` > `FormGrid`; keep every signal, initial value, and validation. Use `ErrorText` for errors and `ActionRow` with the only Primary `Guardar cambios`; keep the existing update dispatch and navigation; commands: `cd persona-sanus && cargo check`.
 
 ## 2. No-go
 
@@ -49,20 +49,20 @@ This spec is markup adoption. Do not change authorization, session, API argument
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] `cd persona-sanus && cargo check` exits 0.
-- [ ] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
-- [ ] objective 1: `Dashboard` source has `PageShell id="dashboard-page"`, `PageHeader`, `SectionCard`, `DetailGrid`, and no page-level sign-out dispatch.
-- [ ] objective 2: `Settings` source has `PageShell id="settings-page"`, `div.ui-link-grid`, four normal links plus the gated `Sistema de diseño` link, and no Primary button.
-- [ ] objective 3: `Patients` source has `PageShell id="patients-page"`, `SearchField`, `LoadingState`, `EmptyState`, `ListRow`; `rg -n 'loaded\\.set\\(true\\)' persona-sanus/src/main.rs` shows the Patients fetch assignment.
-- [ ] objective 3: browser `/patients` shows a loading state on first load, the empty copy for a no-match query, Cédula/Nacimiento meta, and one `Ver ficha` action per row.
-- [ ] objective 4: browser `/patients/new` shows labelled fields, a Card + two-column grid, the duplicate Warning + Danger `Crear de todas formas` only after the dedup branch, and one Primary `Guardar paciente`; creating navigates to the detail.
-- [ ] objective 5: browser `/patients/:id` shows Secondary `Editar` or Neutral `Solo lectura` per role, Primary `Nueva receta` only with create permission, Secondary `Historial de recetas`, a details Card, an inline delete `ConfirmPanel`, and no modal focus trap.
-- [ ] objective 6: browser `/patients/:id/edit` shows the same fields, Secondary `Cancelar`, Primary `Guardar cambios`, and a successful save updates the detail.
-- [ ] Primary count: Dashboard 0, Settings 0, Patients 1 when `can_write_patients` else 0, PatientNew 1, PatientDetail 1 when `can_create_prescriptions` else 0, PatientEdit 1.
-- [ ] Focus pass: Tab through `/patients`, `/patients/new`, `/patients/:id`, and `/patients/:id/edit`; every control shows the visible focus ring.
-- [ ] Responsive pass: form and detail grids are one column below 760; page head stacks below 640; only tables or the A4 preview scroll horizontally, never the page.
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] `cd persona-sanus && cargo check` exits 0.
+- [x] `cd persona-sanus && cargo check --no-default-features --features desktop` exits 0.
+- [x] objective 1: `Dashboard` source has `PageShell id="dashboard-page"`, `PageHeader`, `SectionCard`, `DetailGrid`, and no page-level sign-out dispatch.
+- [x] objective 2: `Settings` source has `PageShell id="settings-page"`, `div.ui-link-grid`, four normal links plus the gated `Sistema de diseño` link, and no Primary button.
+- [x] objective 3: `Patients` source has `PageShell id="patients-page"`, `SearchField`, `LoadingState`, `EmptyState`, `ListRow`; `rg -n 'loaded\.set\(true\)' persona-sanus/src/main.rs` shows the Patients fetch assignment.
+- [x] objective 3: browser `/patients` shows a loading state on first load, the empty copy for a no-match query, Cédula/Nacimiento meta, and one `Ver ficha` action per row.
+- [x] objective 4: browser `/patients/new` shows labelled fields, a Card + two-column grid, the duplicate Warning + Danger `Crear de todas formas` only after the dedup branch, and one Primary `Guardar paciente`; creating navigates to the detail.
+- [x] objective 5: browser `/patients/:id` shows Secondary `Editar` or Neutral `Solo lectura` per role, Primary `Nueva receta` only with create permission, Secondary `Historial de recetas`, a details Card, an inline delete `ConfirmPanel`, and no modal focus trap.
+- [x] objective 6: browser `/patients/:id/edit` shows the same fields, Secondary `Cancelar`, Primary `Guardar cambios`, and a successful save updates the detail.
+- [x] Primary count: Dashboard 0, Settings 0, Patients 1 when `can_write_patients` else 0, PatientNew 1, PatientDetail 1 when `can_create_prescriptions` else 0, PatientEdit 1.
+- [x] Focus pass: Tab through `/patients`, `/patients/new`, `/patients/:id`, and `/patients/:id/edit`; every control shows the visible focus ring.
+- [x] Responsive pass: form and detail grids are one column below 760; page head stacks below 640; only tables or the A4 preview scroll horizontally, never the page.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -72,7 +72,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -83,7 +83,7 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
 
 ## 5. Context
 

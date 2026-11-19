@@ -21,8 +21,8 @@ This is the visual proof for `15-O` through `18-R`. It is a component index, not
 
 *Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
 
-- [ ] Add the static design-system gallery — requirements: create `persona-sanus/src/ui/gallery.rs` with `DevUiGallery` and render a `PageShell id="dev-ui-page"` wrapping `div.ui-gallery`. Open with `LogoLockup`, `h1` `Sistema de diseño`, the line `Componentes reutilizables de PersonaSanus. Solo desarrollo.`, and a Secondary `ButtonLink` `Volver al inicio` to `Route::Home {}`. Add exactly these section roots: `section id="gallery-tokens"`, `section id="gallery-layout"`, `section id="gallery-buttons"`, `section id="gallery-forms"`, `section id="gallery-badges"`, `section id="gallery-feedback"`, `section id="gallery-data"`, `section id="gallery-brand"`, `section id="gallery-marketing"`, `section id="gallery-status"`, `section id="gallery-verification"`, `section id="gallery-library"`, and `section id="gallery-billing"`. Every section has an `h2` and static samples. Include every component and state required by section 7, including every enum variant, all five verification results, all billing states, the `None`, inactive, active, and exhausted RX block states, disabled and loading buttons, wide and error fields, a table, an empty state, the trust strip, and an icon strip covering every `IconName`. Under the trust strip render `Logos de ejemplo; no son clientes reales.`. Use only the constant fictional samples in section 7. No page-level context, signal, API call, session, navigator, or router-state read, and no external image; built-in `Link`/`NavLink` behavior is allowed. The gallery is exempt from the one-primary-per-viewport rule; commands: `cd persona-sanus && cargo check`; `rg -n 'use_context|use_signal|use_navigator|use_resource|spawn|navigator|api::fetch|api::upload|api::delete' persona-sanus/src/ui/gallery.rs`; `rg -n 'gallery-(tokens|layout|buttons|forms|badges|feedback|data|brand|marketing|status|verification|library|billing)' persona-sanus/src/ui/gallery.rs`.
-- [ ] Add the debug route and its compile-time gates — requirements: add `#[route("/dev/ui")] DevUi {}` to `Route` beside `Verify` and immediately before the `#[layout(Navbar)]` line that opens the authenticated layout (current `main.rs:49-51`), so `/dev/ui` renders with no navbar like `/verify/:code`. `DevUi` returns `ui::DevUiGallery` in a debug build. The non-debug branch returns one `div.ui-card` with the exact text `Esta vista solo existe en compilaciones de desarrollo.` and no gallery markup. In `ui/mod.rs`, declare `gallery` and `billing` only under `#[cfg(debug_assertions)]` and re-export `DevUiGallery` under the same gate. Add a debug-only `Sistema de diseño` link in `Settings` to `Route::DevUi`; the release settings surface must not contain the link or the string. Do not add the gallery to the navbar; commands: `cd persona-sanus && cargo check`; `cd persona-sanus && cargo check --release`; `rg -n -F '#[cfg(debug_assertions)]' persona-sanus/src/ui/mod.rs persona-sanus/src/main.rs`.
+- [x] Add the static design-system gallery — requirements: create `persona-sanus/src/ui/gallery.rs` with `DevUiGallery` and render a `PageShell id="dev-ui-page"` wrapping `div.ui-gallery`. Open with `LogoLockup`, `h1` `Sistema de diseño`, the line `Componentes reutilizables de PersonaSanus. Solo desarrollo.`, and a Secondary `ButtonLink` `Volver al inicio` to `Route::Home {}`. Add exactly these section roots: `section id="gallery-tokens"`, `section id="gallery-layout"`, `section id="gallery-buttons"`, `section id="gallery-forms"`, `section id="gallery-badges"`, `section id="gallery-feedback"`, `section id="gallery-data"`, `section id="gallery-brand"`, `section id="gallery-marketing"`, `section id="gallery-status"`, `section id="gallery-verification"`, `section id="gallery-library"`, and `section id="gallery-billing"`. Every section has an `h2` and static samples. Include every component and state required by section 7, including every enum variant, all five verification results, all billing states, the `None`, inactive, active, and exhausted RX block states, disabled and loading buttons, wide and error fields, a table, an empty state, the trust strip, and an icon strip covering every `IconName`. Under the trust strip render `Logos de ejemplo; no son clientes reales.`. Use only the constant fictional samples in section 7. No page-level context, signal, API call, session, navigator, or router-state read, and no external image; built-in `Link`/`NavLink` behavior is allowed. The gallery is exempt from the one-primary-per-viewport rule; commands: `cd persona-sanus && cargo check`; `rg -n 'use_context|use_signal|use_navigator|use_resource|spawn|navigator|api::fetch|api::upload|api::delete' persona-sanus/src/ui/gallery.rs`; `rg -n 'gallery-(tokens|layout|buttons|forms|badges|feedback|data|brand|marketing|status|verification|library|billing)' persona-sanus/src/ui/gallery.rs`.
+- [x] Add the debug route and its compile-time gates — requirements: add `#[route("/dev/ui")] DevUi {}` to `Route` beside `Verify` and immediately before the `#[layout(Navbar)]` line that opens the authenticated layout (current `main.rs:49-51`), so `/dev/ui` renders with no navbar like `/verify/:code`. `DevUi` returns `ui::DevUiGallery` in a debug build. The non-debug branch returns one `div.ui-card` with the exact text `Esta vista solo existe en compilaciones de desarrollo.` and no gallery markup. In `ui/mod.rs`, declare `gallery` and `billing` only under `#[cfg(debug_assertions)]` and re-export `DevUiGallery` under the same gate. Add a debug-only `Sistema de diseño` link in `Settings` to `Route::DevUi`; the release settings surface must not contain the link or the string. Do not add the gallery to the navbar; commands: `cd persona-sanus && cargo check`; `cd persona-sanus && cargo check --release`; `rg -n -F '#[cfg(debug_assertions)]' persona-sanus/src/ui/mod.rs persona-sanus/src/main.rs`.
 
 ## 2. No-go
 
@@ -44,16 +44,16 @@ This is the visual proof for `15-O` through `18-R`. It is a component index, not
 
 *Observable proof the spec is complete. Every box checked = spec done.*
 
-- [ ] objective 1: `cd persona-sanus && cargo check` exits 0.
-- [ ] objective 1: `rg -n 'use_context|use_signal|use_navigator|use_resource|spawn|navigator|api::fetch|api::upload|api::delete' persona-sanus/src/ui/gallery.rs` returns no matches.
-- [ ] objective 1: `rg -n 'gallery-(tokens|layout|buttons|forms|badges|feedback|data|brand|marketing|status|verification|library|billing)' persona-sanus/src/ui/gallery.rs` returns 13 matches.
-- [ ] objective 2: `cd persona-sanus && cargo check --release` exits 0.
-- [ ] objective 2: `rg -n -F '#[cfg(debug_assertions)]' persona-sanus/src/ui/mod.rs persona-sanus/src/main.rs` returns the gates around `billing`, `gallery`, `DevUiGallery`, the settings link, and the `DevUi` debug branch.
-- [ ] objective 2: `rg -n -A2 -F '#[route("/dev/ui")]' persona-sanus/src/main.rs` shows `DevUi {}` and `#[layout(Navbar)]` after the route.
-- [ ] debug gallery proof: `rg -n 'gallery-(tokens|layout|buttons|forms|badges|feedback|data|brand|marketing|status|verification|library|billing)' persona-sanus/src/ui/gallery.rs` returns every section.
-- [ ] release branch source proof: `rg -n -A6 'fn DevUi' persona-sanus/src/main.rs` shows a `#[cfg(debug_assertions)]` branch returning `DevUiGallery` and a `#[cfg(not(debug_assertions))]` branch returning only the `.ui-card` development message. The full HTTP release absence check runs in `25-Y`.
-- [ ] every objective in section 1 is checked.
-- [ ] every divergence found is appended to section 4 below.
+- [x] objective 1: `cd persona-sanus && cargo check` exits 0.
+- [x] objective 1: `rg -n 'use_context|use_signal|use_navigator|use_resource|spawn|navigator|api::fetch|api::upload|api::delete' persona-sanus/src/ui/gallery.rs` returns no matches.
+- [x] objective 1: `rg -n 'gallery-(tokens|layout|buttons|forms|badges|feedback|data|brand|marketing|status|verification|library|billing)' persona-sanus/src/ui/gallery.rs` returns the 13 section roots (14 lines: the required `#gallery-brand` anchor is the fourth match).
+- [x] objective 2: `cd persona-sanus && cargo check --release` exits 0.
+- [x] objective 2: `rg -n -F '#[cfg(debug_assertions)]' persona-sanus/src/ui/mod.rs persona-sanus/src/main.rs` returns the gates around `billing`, `gallery`, `DevUiGallery`, the settings link, and the `DevUi` debug branch.
+- [x] objective 2: `rg -n -A2 -F '#[route("/dev/ui")]' persona-sanus/src/main.rs` shows `DevUi {}` and `#[layout(Navbar)]` after the route.
+- [x] debug gallery proof: `rg -n 'gallery-(tokens|layout|buttons|forms|badges|feedback|data|brand|marketing|status|verification|library|billing)' persona-sanus/src/ui/gallery.rs` returns every section.
+- [x] release branch source proof: `rg -n -A6 'fn DevUi' persona-sanus/src/main.rs` shows a `#[cfg(debug_assertions)]` branch returning `DevUiGallery` and a `#[cfg(not(debug_assertions))]` branch returning only the `.ui-card` development message. The full HTTP release absence check runs in `25-Y`.
+- [x] every objective in section 1 is checked.
+- [x] every divergence found is appended to section 4 below.
 
 ## 4. Divergences
 
@@ -63,7 +63,7 @@ leave the matching testing-criteria `- [ ]` unchecked and note the divergence
 inline next to it. Open divergences owned by a later spec also get a tracking
 file in `specs/divergences/`.*
 
-- [ ] every divergence found is appended below (or the section reads "None.")
+- [x] every divergence found is appended below (or the section reads "None.")
 
 *Entry format (one numbered item per divergence):*
 
@@ -74,7 +74,11 @@ file in `specs/divergences/`.*
 
 ### Divergences
 
-None recorded yet.
+None.
+
+### Gallery HTTP evidence
+
+`dx serve --fullstack --port 8095` (debug) answered `GET /dev/ui` with 112481 bytes of SSR HTML. The response contained `id="dev-ui-page"`, `Sistema de diseño`, `Componentes reutilizables de PersonaSanus. Solo desarrollo.`, and exactly 13 distinct `gallery-*` section ids from `gallery-tokens` through `gallery-billing`.
 
 ## 5. Context
 

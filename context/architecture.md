@@ -104,6 +104,7 @@ Rules:
 | `src/main.rs` | shared | `Route` enum, `App`, `Navbar`, `AuthPage`, `Dashboard`, server entry point | contain SQL, crypto, or HTTP handlers |
 | `src/auth.rs` | client | auth HTTP calls, `SessionUser`, response parsing | import server modules |
 | `src/forms.rs` | client (shared) | template form component, A4 preview projection reused by prescriptions, `doc_json` (de)serialization and validation, variable/medication/image fields | contain server code; persist or emit raw HTML |
+| `src/ui/` | client (shared) | shared client module that owns the design-token contract and reusable UI primitives (`.ui-*` component and utility layer, `format_*` helpers) | no SQL, HTTP handlers, storage, or business rules |
 | `src/auth_server.rs` | server | handlers, validation, Argon2, tokens, cookies, `with_conn` | build UI or HTML |
 | `src/db.rs` | server | pool, embedded migrations, SQL, models | emit HTTP responses |
 | `src/assets.rs` | server | S3/SigV4 client, private-bucket readiness, image decode/EXIF strip, presigned GET URLs | build UI; hold a database transaction across network I/O |

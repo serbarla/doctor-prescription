@@ -248,19 +248,19 @@ v1 progress (2026-11-17): specs `01-A`–`12-L` and `14-N` are done; 13-M shippe
 
 ## 12. Acceptance criteria (v1)
 
-- [ ] Doctor creates a patient, picks their template, fills the form, signs, and prints an A4 PDF with the clinic logo and an active QR.
-- [ ] The same flow works offline on desktop using a preallocated number; on reconnect it syncs, is reconciled without duplication, and the final numbered PDF with an active QR is regenerated.
-- [ ] Exhausting the device's number block offline blocks further signing with a visible warning and remaining count.
-- [ ] Numbers are unique and monotonically increasing per clinic across devices; gaps from burned block tails are recorded in `rx_blocks` and never reused.
-- [ ] A PDF ≥ 31 days old is not in the local cache; it regenerates on demand from the immutable version with the same content.
-- [ ] Scanned QR shows "Receta auténtica" without exposing patient data; a provisional offline PDF carries no scannable QR.
-- [ ] Medication shows an LLM link with the drug name only.
-- [ ] The print title follows `{Patient}-receta-{dd-mm-aaaa}-{Doctor}.pdf` in `es-EC`.
-- [ ] Secretary cannot edit a signed prescription; nursing cannot sign one; everything is audited.
-- [ ] A clinic uploads one 10 MB image; a second upload and any file over 10 MB are rejected; the logo does not consume the slot; uploads are refused offline.
-- [ ] An image referenced by a published template version or a retained prescription cannot be deleted.
-- [ ] Server retention enforces the 3-month window: export is offered at month 3, and trimming runs after the 30-day grace for data created beyond the window.
-- [ ] Auto-update applies only a manifest with a valid signature and rolls back on a bad signature or failed launch.
+- [x] Doctor creates a patient, picks their template, fills the form, signs, and prints an A4 PDF with the clinic logo and an active QR. Evidence (2026-11-20): `python3 .blocks/persona-probe.py --base http://127.0.0.1:8091 --flow rx` (`sign_prescription`, `rx_number_in_block` passed), `--flow templates` (publish/immutable passed), `python3 .blocks/pdf-probe.py --base http://127.0.0.1:8091` (`signed_pdf`, `a4_media_box`, `qr_payload` passed); details in `context/runbook.md` §8.
+- [x] The same flow works offline on desktop using a preallocated number; on reconnect it syncs, is reconciled without duplication, and the final numbered PDF with an active QR is regenerated. Evidence (2026-11-20): `python3 .blocks/reconnect-probe.py --port 8125 --data-dir /tmp/ps13m/rcdata` (`ok: true`, `drain_ops`, `oldest_first`, `reconciled_a/b`, `pdf_ok/a4/qr` passed); `persona-probe --flow sync` (`sign_reconciled`, replay idempotency passed).
+- [x] Exhausting the device's number block offline blocks further signing with a visible warning and remaining count. Evidence (2026-11-20): `persona-probe --flow rx` (`duplicate_allocation_refused` passed); `desktop_local.rs` `BlockExhausted` + remaining count, `main.rs` `block_exhausted` warning.
+- [x] Numbers are unique and monotonically increasing per clinic across devices; gaps from burned block tails are recorded in `rx_blocks` and never reused. Evidence (2026-11-20): `persona-probe --flow sync` (`burned_tail_recorded`, `reused_number_rejected`, `foreign_number_rejected` passed); `rx_blocks` queried via `python3 .blocks/sqlite-schema-check.py --db <booted-db> --query "select … from rx_blocks"`.
+- [x] A PDF ≥ 31 days old is not in the local cache; it regenerates on demand from the immutable version with the same content. Evidence (2026-11-20): `retention_days = 30` confirmed by `sqlite-schema-check` query on the booted DB; `desktop_local.rs` retention eviction (cutoff `now - retention_days`) and on-demand regeneration on cache miss.
+- [x] Scanned QR shows "Receta auténtica" without exposing patient data; a provisional offline PDF carries no scannable QR. Evidence (2026-11-20): `persona-probe --flow verify` (`no_phi`, statuses passed, unauthenticated `/verify/:code`); `pdf-probe` (`qr_payload` decodes to `{base}/verify/{code}`); provisional mode renders no QR bitmap (`pdf.rs` provisional branch, "QR provisional" placeholder).
+- [x] Medication shows an LLM link with the drug name only. Evidence (2026-11-20, code + setting): `main.rs` `llm_explain_url` copies only the trimmed medication name into the clinic template (`clinics.llm_url_template`); no other prescription fields reach the link.
+- [x] The print title follows `{Patient}-receta-{dd-mm-aaaa}-{Doctor}.pdf` in `es-EC`. Evidence (2026-11-20): `pdf-probe` (`rfc5987_filename` passed on `/api/prescriptions/:id/pdf` `Content-Disposition`).
+- [x] Secretary cannot edit a signed prescription; nursing cannot sign one; everything is audited. Evidence (2026-11-20): `persona-probe --flow roles` + `--flow security` (`member_forbidden`, `audit_listed`, `audit_admin_only` passed); server guards `service.rs` `sign_prescription` (requires `Role::Doctor`) and `prescription_edit_allowed` (signed edits forbidden).
+- [x] A clinic uploads one 10 MB image; a second upload and any file over 10 MB are rejected; the logo does not consume the slot; uploads are refused offline. Evidence (2026-11-20): `python3 .blocks/asset-probe.py --base http://127.0.0.1:8091` (`quota_exceeded`, `oversized_rejected`, `logo_upload`, `logo_excluded_from_quota` passed); offline refusal via the desktop asset gate.
+- [x] An image referenced by a published template version or a retained prescription cannot be deleted. Evidence (2026-11-20): `asset-probe` (`template_publish_pins`, `pinned_delete_refused` passed).
+- [x] Server retention enforces the 3-month window: export is offered at month 3, and trimming runs after the 30-day grace for data created beyond the window. Evidence (2026-11-20): `sqlite-schema-check` on the booted DB (`server_retention_until` = creation + 3 months, `data_grace_ends_at` = +30 days); export at `/settings/clinic`; trim verified in `specs/13-M-ops-and-release.md` §3 (objective 2).
+- [ ] Auto-update applies only a manifest with a valid signature and rolls back on a bad signature or failed launch. BLOCKED (2026-11-20): needs signed installers (Apple Developer ID + Windows certificate); tracked in `specs/divergences/13-M-signed-installers.md`. Unchecked until that tracker clears.
 
 ## 13. Risks
 

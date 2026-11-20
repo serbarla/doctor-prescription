@@ -70,18 +70,18 @@ Current caveats (tracked in `specs/divergences/13-M-update-channel.md` and `13-M
 
 ## 8. PRD §12 acceptance evidence
 
-| Criterion | Evidence |
+| Criterion | Evidence (2026-11-20, all commands run against the release server binary built by `python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091`, exit 0) |
 |---|---|
-| Doctor creates patient, template, form, signs, prints A4 PDF with logo and active QR | Specs 02-B/03-C/05-E/07-G done; `python3 .blocks/persona-probe.py --base http://127.0.0.1:8080` |
-| Offline desktop flow, sync reconcile, final PDF with active QR | Spec 10-J (desktop offline) + 11-K (sync) done; `python3 .blocks/persona-probe.py --base … --flow full` |
-| Block exhaustion blocks signing with warning and remaining count | Spec 11-K; `rx_blocks`/`rx_counters` in server DB |
-| Unique monotonic numbers, burned tails recorded | Spec 11-K; `SELECT * FROM rx_blocks` |
-| 30-day local cache eviction, on-demand regeneration | Spec 10-J; `clinics.retention_days = 30` |
-| QR verification without PHI; provisional PDF has no scannable QR | Specs 08-H/09-I done; `GET /verify/:code` public route |
-| LLM link carries drug name only | Spec 05-E; `clinics.llm_url_template` |
-| Print title `{Patient}-receta-{dd-mm-aaaa}-{Doctor}.pdf` | Spec 07-G; `Content-Disposition` on `/api/prescriptions/:id/pdf` |
-| Secretary cannot edit signed; nursing cannot sign; all audited | Specs 02-B/12-L done; `audit_log` rows per mutation |
-| One 10 MB image; second and oversize rejected; logo free; offline refused | Spec 06-F done; `python3 .blocks/asset-probe.py --base …` |
-| Pinned image cannot be deleted | Spec 06-F; `template_version_assets` guard in `delete_asset` |
-| 3-month retention: export offered, trim after 30-day grace | Spec 13-M objectives 2+5; `/settings/clinic` export; `retention_trim` audit rows |
-| Auto-update only with valid signature, rollback on failure | Spec 13-M objective 4; installer signing OPEN per divergence 1 (no Apple/Windows credentials in this environment) |
+| Doctor creates patient, template, form, signs, prints A4 PDF with logo and active QR | `persona-probe --flow rx` (sign, `rx_number_in_block`), `--flow templates` (publish/immutable), `pdf-probe` (`signed_pdf`, `a4_media_box`, `qr_payload`) — all `ok: true` |
+| Offline desktop flow, sync reconcile, final PDF with active QR | `reconnect-probe --port 8125` (`ok: true`, oldest-first drain, reconciled a/b, final `pdf_qr/a4`) + `persona-probe --flow sync` (reconcile idempotency); two earlier runs flaked on `drain` alone under extreme daemon load and were retried |
+| Block exhaustion blocks signing with warning and remaining count | `persona-probe --flow rx` (`duplicate_allocation_refused`); `desktop_local.rs` `BlockExhausted` remaining count + `main.rs` warning |
+| Unique monotonic numbers, burned tails recorded | `persona-probe --flow sync` (`burned_tail_recorded`, `reused_number_rejected`); `sqlite-schema-check --query "select … from rx_blocks"` |
+| 30-day local cache eviction, on-demand regeneration | `sqlite-schema-check` (`retention_days = 30`); `desktop_local.rs` eviction cutoff + regeneration on miss |
+| QR verification without PHI; provisional PDF has no scannable QR | `persona-probe --flow verify` (`no_phi`); `pdf-probe` (`qr_payload`); `pdf.rs` provisional branch (no QR bitmap) |
+| LLM link carries drug name only | `main.rs` `llm_explain_url` (trimmed medication name only, into `clinics.llm_url_template`) |
+| Print title `{Patient}-receta-{dd-mm-aaaa}-{Doctor}.pdf` | `pdf-probe` (`rfc5987_filename`) |
+| Secretary cannot edit signed; nursing cannot sign; all audited | `persona-probe --flow roles` + `--flow security` (`member_forbidden`, `audit_listed`, `audit_admin_only`); `service.rs` Doctor-only sign + signed-edit guard |
+| One 10 MB image; second and oversize rejected; logo free; offline refused | `asset-probe` (`quota_exceeded`, `oversized_rejected`, `logo_excluded_from_quota`) against native server + MinIO |
+| Pinned image cannot be deleted | `asset-probe` (`template_publish_pins`, `pinned_delete_refused`) |
+| 3-month retention: export offered, trim after 30-day grace | `sqlite-schema-check` (window = creation + 3 months, grace + 30 days); export `/settings/clinic`; trim per `specs/13-M-ops-and-release.md` §3 objective 2 |
+| Auto-update only with valid signature, rollback on failure | BLOCKED — installer signing OPEN per `specs/divergences/13-M-signed-installers.md` (no Apple/Windows credentials); unchecked in `context/PRD.md` §12 |

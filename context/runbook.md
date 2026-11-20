@@ -56,9 +56,15 @@ Production prerequisite: counsel sign-off on prescription retention under MSP/AC
 
 ## 6. Updates
 
-Desktop installs check `UPDATE_MANIFEST_URL` at launch. The manifest (`version`, `rolloutPercent`, `url`, `signature`) is served by `GET /api/updates/manifest` and signed with the server-side ed25519 key over `version|rolloutPercent|url`. The client verifies signature and version before staging, honors the staged rollout bucket, and keeps the previous binary (`.prev`) for rollback. A bad signature is refused and the running version is untouched. Updates never carry clinical data.
+Desktop installs check `UPDATE_MANIFEST_URL` at launch. The manifest (`version`, `rolloutPercent`, `url`, `sha256`, `signature`) is served by `GET /api/updates/manifest` and signed with the server-side ed25519 key over `version|rolloutPercent|url|sha256`. The client verifies signature and version before staging, honors the staged rollout bucket, and keeps the previous binary (`.prev`) for rollback. A bad signature is refused and the running version is untouched. Updates never carry clinical data.
 
-Current caveats (tracked in `specs/divergences/13-M-update-channel.md` and `13-M-signed-installers.md`): rollout evaluation hashes an empty device id when `PERSONA_DEVICE_ID` is unset, so intermediate percentages act as 0% or 100%; the artifact download enforces no HTTPS and the manifest carries no artifact digest; installers are not yet signed/notarized. Until those close, publish only at `UPDATE_MANIFEST_ROLLOUT=0` (kill switch) or 100 to a controlled host over HTTPS.
+Rollout identity resolves in this order: `PERSONA_DEVICE_ID` when set and non-empty (test override only), otherwise the persisted `device::device_id()`. The client never evaluates a rollout with an empty device id.
+
+Transport is HTTPS-only in release builds: both `UPDATE_MANIFEST_URL` and the manifest `url` must be `https`. The only exception is a debug build with `PERSONA_UPDATE_ALLOW_INSECURE_HTTP=1` and a loopback host (`127.0.0.1`, `::1`, `localhost`); anything else is refused before any network call or filesystem write.
+
+The server serves the installer digest from `UPDATE_MANIFEST_SHA256` (hex SHA-256 of the installer bytes). The client checks the downloaded bytes against the signed digest after download and before any `.new`/`.prev` staging write. Changing the installer always requires updating `UPDATE_MANIFEST_VERSION`, `UPDATE_MANIFEST_DOWNLOAD_URL`, and `UPDATE_MANIFEST_SHA256` together, then restarting the app container.
+
+Current caveat (tracked in `specs/divergences/13-M-signed-installers.md`): installers are not yet signed/notarized, so the staged-apply/rollback proof against a real installer is still open. Until that closes, publish only at `UPDATE_MANIFEST_ROLLOUT=0` (kill switch) or 100 to a controlled host over HTTPS.
 
 ## 7. Incidents
 

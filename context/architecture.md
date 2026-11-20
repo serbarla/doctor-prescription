@@ -137,7 +137,7 @@ Server components shipped with the same split rather than new top-level patterns
 | Assets | `src/assets.rs`, `src/api_server.rs` | image library 1 per clinic in v1 (5/1/0 in v1.1), logo excluded, validation, quota, 15-min signed URLs | role + quota (v1); clinic state (v1.1) | ✅ |
 | PDF renderer | `src/pdf.rs`, `src/pdf_server.rs` | `printpdf` A4 rendering from the pinned `doc_json` + variables, shared by server and desktop | server + desktop | ✅ |
 | Public verification | `src/verify_server.rs` | opaque code → minimal public record, per-IP limit | public | ✅ |
-| Update channel | `src/update.rs`, `src/jobs.rs` | signed manifest issuance and client verification/staging | desktop | ✅ (gaps in `13-M-update-channel.md`) |
+| Update channel | `src/update.rs`, `src/jobs.rs` | signed manifest issuance (`version|rolloutPercent|url|sha256`) and client verification/staging with installer digest check and HTTPS-only transport | desktop | ✅ (installer signing in `13-M-signed-installers.md`) |
 
 ## 4. Startup and request lifecycle
 
@@ -438,15 +438,16 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `PAYPHONE_STORE_ID` | — | server | ⬜ v1.1 |
 | `PAYPHONE_CODING_PASSWORD` | — | server | ⬜ v1.1 AES-256-CBC key for `cardHolder` |
 | `RETENTION_TRIM_ENABLED` | `true` | server | ✅ enforced in v1 (D-12); counsel sign-off before production |
-| `UPDATE_MANIFEST_URL` | — | desktop | ✅ signed auto-update manifest (D-08); staging/HTTPS gaps in `specs/divergences/13-M-update-channel.md` |
+| `UPDATE_MANIFEST_URL` | — | desktop | ✅ signed auto-update manifest (D-08); HTTPS-only in release builds, loopback-HTTP dev exception behind `PERSONA_UPDATE_ALLOW_INSECURE_HTTP` — see runbook §6 |
 | `UPDATE_PUBLIC_KEY` | — | desktop | ✅ base64 ed25519 public key that verifies the manifest |
 | `UPDATE_SIGNING_KEY` | — | server | ✅ base64 ed25519 seed that signs the served manifest (`GET /api/updates/manifest`) |
-| `UPDATE_MANIFEST_VERSION` · `UPDATE_MANIFEST_DOWNLOAD_URL` · `UPDATE_MANIFEST_ROLLOUT` | — / — / `0` | server | ✅ the manifest the server serves |
+| `UPDATE_MANIFEST_VERSION` · `UPDATE_MANIFEST_DOWNLOAD_URL` · `UPDATE_MANIFEST_ROLLOUT` · `UPDATE_MANIFEST_SHA256` | — / — / `0` / — | server | ✅ the manifest the server serves; `UPDATE_MANIFEST_SHA256` is the hex SHA-256 of the installer bytes, signed into the manifest and checked by the client after download |
+| `PERSONA_UPDATE_ALLOW_INSECURE_HTTP` | unset | desktop | debug builds only: `1` or `true` allows `http` manifest/artifact URLs on loopback hosts; release builds always require HTTPS |
 | `JOBS_INTERVAL_SECONDS` | `3600` | server | ✅ session purge, stale asset cleanup, retention trim cadence |
 | `BACKUP_INTERVAL_SECONDS` | `86400` | server | ✅ daily backup cadence |
 | `BACKUP_DIR` | — | server | Compose mounts `./backups:/backups`; `VACUUM INTO` + `mc mirror` targets |
 | `BACKUP_AGE_RECIPIENT` | — | server | `age1…` recipient that encrypts each snapshot; unset skips the backup |
-| `PERSONA_DEVICE_ID` | — | desktop | override for the rollout-bucket identity read by `update.rs`; nothing sets it today — empty-input gap tracked in `specs/divergences/13-M-update-channel.md` |
+| `PERSONA_DEVICE_ID` | — | desktop | test override for the rollout-bucket identity; when unset or empty the client uses the persisted `device::device_id()` and never passes an empty string into rollout evaluation |
 | `PERSONA_LOCAL_DATA_DIR` | app-data dir | desktop | local cache SQLite + asset cache location |
 | `ASSETS_BUCKET` | — | server | ✅ private bucket name |
 | `ASSETS_ENDPOINT` | — | server | ✅ S3-compatible endpoint |
@@ -524,7 +525,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | 18 | ~~Device revocation not enforceable until `sessions.device_id` lands~~ resolved | `20261112000001_add_session_device`, `src/device.rs` (spec 04-D) | — | revocation rejects the session's device on load |
 | 19 | ~~Preallocated numbering gaps or block exhaustion~~ resolved | `rx_counters`/`rx_blocks`, `allocate_rx_block`, block-status UI (spec 07-G/11-K) | — | gaps stay by design (D-02); exhaustion blocks signing with a visible count |
 | 20 | `printpdf` layout fidelity with manual page ops (no CSS engine), and an upstream crate whose HTML layout is experimental | `src/pdf.rs` shipped; no golden A4 fixture in the repo yet | P1 | golden A4 fixture diffed per PR; explicit ops only, never `from_html`; pin `printpdf` `=0.12.9` and re-run the fixture on upgrade |
-| 21 | Auto-update key compromise or bad release | channel ships (`src/update.rs`, signed manifest), but rollout identity is empty, artifact transport lacks HTTPS/digest, and installers are unsigned | P1 | fix per `specs/divergences/13-M-update-channel.md`; signing credentials per `13-M-signed-installers.md` (key custody in runbook §3) |
+| 21 | Auto-update key compromise or bad release | channel ships (`src/update.rs`, signed manifest with rollout identity, HTTPS transport, and installer digest); installers remain unsigned | P1 | signing credentials per `13-M-signed-installers.md` (key custody in runbook §3) |
 | 22 | PayPhone tokenization gated on merchant authorization; 10% of tokenized balances held 6 months; Visa/Mastercard only; `ctoken` is a bearer secret | `docs.payphone.app/tokenizacion` | P1 | apply before M4; consent + encrypted `cardHolder`; revoke on cancel; dunning on declines |
 
 ## 18. Verification

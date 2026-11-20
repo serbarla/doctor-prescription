@@ -9,6 +9,8 @@ pub struct Manifest {
     pub version: String,
     pub rollout_percent: u8,
     pub url: String,
+    #[serde(default)]
+    pub sha256: String,
     pub signature: String,
 }
 
@@ -17,15 +19,22 @@ pub enum UpdateError {
     BadSignature,
     NotNewer,
     NotInRollout,
+    EmptyDeviceId,
+    InsecureTransport,
+    DigestMismatch,
     Fetch(String),
     Io(String),
 }
 
-pub fn canonical_manifest(version: &str, rollout: u8, url: &str) -> String {
-    format!("{version}|{rollout}|{url}")
+pub fn canonical_manifest(version: &str, rollout: u8, url: &str, sha256: &str) -> String {
+    format!("{version}|{rollout}|{url}|{}", sha256.trim().to_lowercase())
 }
 
 pub fn verify(manifest: &Manifest, public_key_b64: &str) -> bool {
+    let digest = manifest.sha256.trim().to_lowercase();
+    if digest.len() != 64 || !digest.chars().all(|c| c.is_ascii_hexdigit()) {
+        return false;
+    }
     let Ok(key_bytes) = base64::engine::general_purpose::STANDARD.decode(public_key_b64.trim())
     else {
         return false;
@@ -43,7 +52,12 @@ pub fn verify(manifest: &Manifest, public_key_b64: &str) -> bool {
     let Ok(verifying) = VerifyingKey::from_bytes(&public_key) else {
         return false;
     };
-    let payload = canonical_manifest(&manifest.version, manifest.rollout_percent, &manifest.url);
+    let payload = canonical_manifest(
+        &manifest.version,
+        manifest.rollout_percent,
+        &manifest.url,
+        &manifest.sha256,
+    );
     verifying
         .verify(payload.as_bytes(), &Signature::from_bytes(&sig))
         .is_ok()
@@ -70,14 +84,57 @@ pub fn in_rollout(device_id: &str, rollout_percent: u8) -> bool {
     (hash[0] as u16 % 100) < rollout_percent as u16
 }
 
+fn insecure_http_allowed() -> bool {
+    matches!(
+        std::env::var("PERSONA_UPDATE_ALLOW_INSECURE_HTTP")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            .as_str(),
+        "1" | "true"
+    )
+}
+
+fn url_scheme_host(url: &str) -> Option<(String, String)> {
+    let (scheme, rest) = url.trim().split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let hostport = authority.rsplit('@').next().unwrap_or("");
+    let host = if let Some(stripped) = hostport.strip_prefix('[') {
+        stripped.split(']').next()?
+    } else {
+        hostport.split(':').next()?
+    };
+    Some((scheme.to_lowercase(), host.to_lowercase()))
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
+}
+
+pub fn transport_allowed(url: &str) -> bool {
+    let Some((scheme, host)) = url_scheme_host(url) else {
+        return false;
+    };
+    if scheme == "https" {
+        return true;
+    }
+    scheme == "http" && cfg!(debug_assertions) && is_loopback_host(&host) && insecure_http_allowed()
+}
+
 pub fn evaluate(
     manifest: &Manifest,
     public_key_b64: &str,
     current_version: &str,
     device_id: &str,
 ) -> Result<(), UpdateError> {
+    if device_id.trim().is_empty() {
+        return Err(UpdateError::EmptyDeviceId);
+    }
     if !verify(manifest, public_key_b64) {
         return Err(UpdateError::BadSignature);
+    }
+    if !transport_allowed(&manifest.url) {
+        return Err(UpdateError::InsecureTransport);
     }
     if !version_is_newer(&manifest.version, current_version) {
         return Err(UpdateError::NotNewer);
@@ -89,11 +146,18 @@ pub fn evaluate(
 }
 
 pub fn stage(manifest: &Manifest) -> Result<std::path::PathBuf, UpdateError> {
+    if !transport_allowed(&manifest.url) {
+        return Err(UpdateError::InsecureTransport);
+    }
     let bytes = reqwest::blocking::get(&manifest.url)
         .map_err(|error| UpdateError::Fetch(error.to_string()))?;
     let bytes = bytes
         .bytes()
         .map_err(|error| UpdateError::Fetch(error.to_string()))?;
+    let actual = hex::encode(Sha256::digest(bytes.as_ref()));
+    if actual != manifest.sha256.trim().to_lowercase() {
+        return Err(UpdateError::DigestMismatch);
+    }
     let exe = std::env::current_exe().map_err(|error| UpdateError::Io(error.to_string()))?;
     let previous = exe.with_extension("prev");
     let staged = exe.with_extension("new");
@@ -112,6 +176,13 @@ pub fn rollback() -> Result<(), UpdateError> {
     Ok(())
 }
 
+pub fn resolve_device_id() -> String {
+    match std::env::var("PERSONA_DEVICE_ID") {
+        Ok(value) if !value.trim().is_empty() => value.trim().to_owned(),
+        _ => crate::device::device_id(),
+    }
+}
+
 pub fn run_check() {
     let Ok(url) = std::env::var("UPDATE_MANIFEST_URL") else {
         return;
@@ -119,9 +190,14 @@ pub fn run_check() {
     let Ok(public_key) = std::env::var("UPDATE_PUBLIC_KEY") else {
         return;
     };
-    let device_id = std::env::var("PERSONA_DEVICE_ID").unwrap_or_default();
+    let url = url.trim().to_owned();
+    if !transport_allowed(&url) {
+        eprintln!("update: manifest URL refused (not HTTPS)");
+        return;
+    }
+    let device_id = resolve_device_id();
     let manifest =
-        match reqwest::blocking::get(url.trim()).and_then(|response| response.json::<Manifest>()) {
+        match reqwest::blocking::get(&url).and_then(|response| response.json::<Manifest>()) {
             Ok(manifest) => manifest,
             Err(error) => {
                 eprintln!("update: manifest fetch failed: {error}");

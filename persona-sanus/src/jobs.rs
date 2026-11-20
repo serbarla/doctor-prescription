@@ -345,16 +345,21 @@ pub async fn update_manifest(
     };
     let version = std::env::var("UPDATE_MANIFEST_VERSION").unwrap_or_default();
     let url = std::env::var("UPDATE_MANIFEST_DOWNLOAD_URL").unwrap_or_default();
+    let sha256 = std::env::var("UPDATE_MANIFEST_SHA256")
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
     let rollout = std::env::var("UPDATE_MANIFEST_ROLLOUT")
         .ok()
         .and_then(|value| value.parse::<u8>().ok())
         .unwrap_or(100);
-    let payload = canonical_manifest(&version, rollout, &url);
+    let payload = canonical_manifest(&version, rollout, &url, &sha256);
     let signature = key.sign(payload.as_bytes());
     axum::response::IntoResponse::into_response(axum::Json(json!({
         "version": version,
         "rolloutPercent": rollout,
         "url": url,
+        "sha256": sha256,
         "signature": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, signature.to_bytes()),
     })))
 }

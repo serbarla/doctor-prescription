@@ -98,7 +98,6 @@ erDiagram
     clinics ||--o{ assets : "image library"
     clinics ||--o{ rx_blocks : "allocates numbers"
     rx_blocks ||--o{ prescriptions : "numbers"
-    clinics ||--o{ assets : "image library"
     clinics ||--o{ payment_methods : "stores card token"
     payment_methods ||--o{ payment_transactions : "charges"
     clinics ||--o| billing_accounts : "pays via"

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Source | `context/sitemap.md` §1.1–§1.3 (routes, non-routes), §2 (navigation by role), §3 (flows), §4 (current vs. target), §5 (conventions); `context/Design.md`; `context/PRD.md`; `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` (Page adoption table); the `Route` enum at `persona-sanus/src/main.rs:47-95` |
+| Source | `context/sitemap.md` §1.1–§1.3 (routes, non-routes), §2 (navigation by role), §3 (flows), §4 (current vs. target), §5 (conventions); `context/Design.md`; `context/PRD.md`; `context/done-plans/UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` (Page adoption table); the `Route` enum at `persona-sanus/src/main.rs:61-110` |
 | Purpose | Track which `context/screens/done/<Name>.md` specs exist and which are missing, and fix naming, shape, and write order for the ones not written yet. This file defines no screen: every screen's structure, copy, style, and states live in its own file |
 | Doc status key | ✅ spec complete (sections 1–7 written) · 🟡 partial (file exists, sections incomplete) · ⬜ missing (no file) |
 | Route status key | Copied verbatim from `context/sitemap.md` §1.1/§1.2 — ✅ implemented · 🟡 partial · ⬜ planned. It tracks **code**, not this doc set; the two axes are independent |
@@ -16,7 +16,7 @@
 ### 1.1 Naming
 
 - File name = the Dioxus component of the `Route` enum, PascalCase: `/prescriptions/:id/preview` → `PrescriptionPreview.md`. Route params never appear in a file name.
-- Frozen exceptions: `Header.md` is the `Navbar` component (`main.rs:1377`); `Footer.md` is the planned public `Footer` band, which has no component yet. Do not rename either.
+- Frozen exceptions: `Header.md` is the `Navbar` component (`main.rs:1483`); `Footer.md` is the shipped `Footer` component at `main.rs:1287`. Do not rename either.
 - One file per screen. No `Patients-list.md` / `Patients-detail.md` splits, no per-role files, no `.md` for a component or a CSS class — components are specified inside the screen file that uses them.
 
 ### 1.2 Shape (identical for every file)
@@ -38,7 +38,7 @@
 | Route, roles, guard, status | `context/sitemap.md` |
 | Feature scope, v1 vs. v1.1, FR ids | `context/PRD.md` |
 | Tokens, palette, type, elevation, do/don't | `context/Design.md` |
-| Component names, `PageShell` ids, the one primary action per page | `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` |
+| Component names, `PageShell` ids, the one primary action per page | `context/done-plans/UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` |
 | Region order, copy strings, geometry, states | the screen file itself |
 
 A screen file never introduces a route, an endpoint, a table, a column, or a role. Chrome strings belong to `Header.md` / `Footer.md`; a page file points at them (`Home.md` §3.1) instead of repeating them. Shared primitives are defined once in the UI plan and only *used* by screen files.
@@ -65,24 +65,24 @@ A screen file never introduces a route, an endpoint, a table, a column, or a rol
 | Screen doc | Route | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|:---:|:---:|
 | `done/Dashboard.md` | `/dashboard` | `Dashboard` · `:1938` | ✅ | ✅ |
-| `done/Patients.md` | `/patients` | `Patients` · `:3408` | ✅ | ✅ |
-| `done/PatientNew.md` | `/patients/new` | `PatientNew` · `:3621` | ✅ | ✅ |
-| `done/PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3905` | 🟡 | ✅ |
-| `done/PatientEdit.md` | `/patients/:id/edit` | `PatientEdit` · `:4144` | ✅ | ✅ |
-| `done/Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:5349` | 🟡 | ✅ |
-| `done/PrescriptionNew.md` | `/prescriptions/new` | `PrescriptionNew` · `:5697` | ✅ | ✅ |
-| `done/PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:6627` | 🟡 | ✅ |
-| `done/PrescriptionPreview.md` | `/prescriptions/:id/preview` | `PrescriptionPreview` · `:6155` | ✅ | ✅ |
-| `done/Templates.md` | `/templates` | `Templates` · `:4462` | ✅ | ✅ |
-| `done/TemplateNew.md` | `/templates/new` | `TemplateNew` · `:4606` | ✅ | ✅ |
-| `done/TemplateEdit.md` | `/templates/:id/edit` | `TemplateEdit` · `:4743` | ✅ | ✅ |
-| `done/TemplatePreview.md` | `/templates/:id/preview` | `TemplatePreview` · `:5057` | ✅ | ✅ |
+| `done/Patients.md` | `/patients` | `Patients` · `:3422` | ✅ | ✅ |
+| `done/PatientNew.md` | `/patients/new` | `PatientNew` · `:3635` | ✅ | ✅ |
+| `done/PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3897` | 🟡 | ✅ |
+| `done/PatientEdit.md` | `/patients/:id/edit` | `PatientEdit` · `:4136` | ✅ | ✅ |
+| `done/Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:5344` | 🟡 | ✅ |
+| `done/PrescriptionNew.md` | `/prescriptions/new` | `PrescriptionNew` · `:5692` | ✅ | ✅ |
+| `done/PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:6629` | 🟡 | ✅ |
+| `done/PrescriptionPreview.md` | `/prescriptions/:id/preview` | `PrescriptionPreview` · `:6157` | ✅ | ✅ |
+| `done/Templates.md` | `/templates` | `Templates` · `:4432` | ✅ | ✅ |
+| `done/TemplateNew.md` | `/templates/new` | `TemplateNew` · `:4583` | ✅ | ✅ |
+| `done/TemplateEdit.md` | `/templates/:id/edit` | `TemplateEdit` · `:4720` | ✅ | ✅ |
+| `done/TemplatePreview.md` | `/templates/:id/preview` | `TemplatePreview` · `:5037` | ✅ | ✅ |
 | `done/Settings.md` | `/settings` | `Settings` · `:2271` | ✅ | ✅ |
 | `done/SettingsClinic.md` | `/settings/clinic` | `SettingsClinic` · `:2351` | ✅ | ✅ |
-| `done/SettingsUsers.md` | `/settings/users` | `SettingsUsers` · `:2636` | ✅ | ✅ |
-| `done/SettingsProfile.md` | `/settings/profile` | `SettingsProfile` · `:2926` | ✅ | ✅ |
+| `done/SettingsUsers.md` | `/settings/users` | `SettingsUsers` · `:2638` | ✅ | ✅ |
+| `done/SettingsProfile.md` | `/settings/profile` | `SettingsProfile` · `:2932` | ✅ | ✅ |
 | `SettingsBilling.md` | `/settings/billing` (v1.1) | not routed | ⬜ v1.1 | ⬜ |
-| `done/Audit.md` | `/audit` | `Audit` · `:3273` | ✅ | ✅ |
+| `done/Audit.md` | `/audit` | `Audit` · `:3283` | ✅ | ✅ |
 
 ## 3. Where `context/sitemap.md` lags the code
 
@@ -144,7 +144,7 @@ Sitemap §1.3 non-routes fold into the screen that hosts them; no separate file,
 | PayPhone checkout + confirmation | `SettingsBilling.md` (v1.1) | External payment button; no card form in PersonaSanus |
 | Renewal / retention / purge jobs | `context/runbook.md`, `context/architecture.md` | In-process scheduler, no surface |
 | Auth API (`/api/auth/*`) | `context/architecture.md` | Endpoints, not Dioxus routes |
-| `/dev/ui` design-system gallery | `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` step 9/18 | Debug-only, no role, not a product route; sitemap §1.3 gets the row, not a screen file |
+| `/dev/ui` design-system gallery | `context/done-plans/UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` step 9/18 | Debug-only, no role, not a product route; sitemap §1.3 gets the row, not a screen file |
 | `/dev/db` SQLite browser | `persona-sanus/src/dev_db.rs` | Loopback-only axum tool in debug builds; never a Dioxus screen |
 
 ## 6. Maintenance

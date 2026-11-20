@@ -82,6 +82,39 @@ async fn purge_expired_sessions(pool: &DbPool) {
     .await;
 }
 
+async fn write_cleanup_audit(
+    pool: &DbPool,
+    action: &str,
+    entity: &str,
+    entity_id: &str,
+    metadata: Value,
+) {
+    let pool = pool.clone();
+    let action = action.to_owned();
+    let entity = entity.to_owned();
+    let entity_id = entity_id.to_owned();
+    let _ = tokio::task::spawn_blocking(move || {
+        let mut connection = match pool.get() {
+            Ok(connection) => connection,
+            Err(_) => return,
+        };
+        let now = auth_server::now();
+        let _ = audit(
+            &mut connection,
+            &action,
+            &entity,
+            &entity_id,
+            metadata,
+            &now,
+        );
+    })
+    .await;
+}
+
+fn bounded_error(error: &impl std::fmt::Debug) -> String {
+    format!("{error:?}").chars().take(200).collect()
+}
+
 async fn cleanup_stale_assets(pool: &DbPool, storage: Option<Arc<AssetStorage>>) {
     let lookup_pool = pool.clone();
     let stale: Vec<(String, String)> = tokio::task::spawn_blocking(move || {
@@ -99,56 +132,83 @@ async fn cleanup_stale_assets(pool: &DbPool, storage: Option<Arc<AssetStorage>>)
     })
     .await
     .unwrap_or_default();
-    let mut removed = 0_usize;
-    for (id, object_key) in &stale {
-        if let Some(storage) = storage.as_ref() {
-            let _ = storage.delete_object(object_key).await;
-        }
-        let delete_pool = pool.clone();
-        let id = id.clone();
-        let object_key = object_key.clone();
-        let at = auth_server::now();
-        let outcome = tokio::task::spawn_blocking(move || {
-            let mut connection = match delete_pool.get() {
-                Ok(connection) => connection,
-                Err(_) => return false,
-            };
-            db::hard_delete_asset(&mut connection, &id).is_ok()
-                && audit(
-                    &mut connection,
-                    "asset_cleanup",
-                    "asset",
-                    &id,
-                    json!({ "objectKey": object_key }),
-                    &at,
-                )
-                .is_ok()
-        })
-        .await
-        .unwrap_or(false);
-        if outcome {
-            removed += 1;
-        }
-    }
-    if removed == 0 {
-        let audit_pool = pool.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            let mut connection = match audit_pool.get() {
-                Ok(connection) => connection,
-                Err(_) => return,
-            };
-            let now = auth_server::now();
-            let _ = audit(
-                &mut connection,
-                "asset_cleanup",
+    let mut deleted = 0_usize;
+    let mut failed = 0_usize;
+    let mut skipped = 0_usize;
+    if storage.is_none() {
+        for (id, object_key) in &stale {
+            skipped += 1;
+            write_cleanup_audit(
+                pool,
+                "asset_cleanup_skipped",
                 "asset",
-                "stale_pending",
-                json!({ "deleted": 0 }),
-                &now,
-            );
-        })
-        .await;
+                id,
+                json!({ "objectKey": object_key, "reason": "storage_not_configured" }),
+            )
+            .await;
+        }
+    } else if let Some(storage) = storage.as_ref() {
+        for (id, object_key) in &stale {
+            if let Err(error) = storage.delete_object(object_key).await {
+                failed += 1;
+                write_cleanup_audit(
+                    pool,
+                    "asset_cleanup_failed",
+                    "asset",
+                    id,
+                    json!({ "objectKey": object_key, "error": bounded_error(&error) }),
+                )
+                .await;
+                continue;
+            }
+            let delete_pool = pool.clone();
+            let delete_id = id.clone();
+            let delete_key = object_key.clone();
+            let at = auth_server::now();
+            let outcome = tokio::task::spawn_blocking(move || {
+                let mut connection = match delete_pool.get() {
+                    Ok(connection) => connection,
+                    Err(_) => return Err("pool unavailable".to_owned()),
+                };
+                db::immediate_transaction(&mut connection, |connection| {
+                    db::hard_delete_asset(connection, &delete_id)?;
+                    audit(
+                        connection,
+                        "asset_cleanup",
+                        "asset",
+                        &delete_id,
+                        json!({ "objectKey": delete_key }),
+                        &at,
+                    )
+                })
+                .map_err(|error| bounded_error(&error))
+            })
+            .await
+            .unwrap_or_else(|error| Err(bounded_error(&error)));
+            match outcome {
+                Ok(()) => deleted += 1,
+                Err(error) => {
+                    failed += 1;
+                    write_cleanup_audit(
+                        pool,
+                        "asset_cleanup_failed",
+                        "asset",
+                        id,
+                        json!({ "objectKey": object_key, "error": error }),
+                    )
+                    .await;
+                }
+            }
+        }
     }
+    write_cleanup_audit(
+        pool,
+        "asset_cleanup",
+        "asset",
+        "stale_pending",
+        json!({ "deleted": deleted, "failed": failed, "skipped": skipped }),
+    )
+    .await;
 }
 
 async fn retention_trim(pool: &DbPool) {

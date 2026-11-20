@@ -45,7 +45,7 @@ One scheduler runs in the server process. Jobs are idempotent and restart-safe; 
 | Job | Cadence | What it does |
 |---|---|---|
 | Session purge | `JOBS_INTERVAL_SECONDS` (default 3600) | Deletes `sessions` rows with `expires_at < now`. `get_session` still rejects expired sessions on every read. |
-| Stale asset cleanup | same | Deletes `assets` rows with `status='pending'` created more than one hour ago, plus their objects. Object-delete failures are currently swallowed (tracked in `specs/divergences/13-M-stale-asset-cleanup.md`): if MinIO was down, verify the object is gone after the run. |
+| Stale asset cleanup | same | Deletes `assets` rows with `status='pending'` created more than one hour ago, plus their objects. Fail-closed: if the object cannot be deleted, the row stays `pending` and an `asset_cleanup_failed` audit row is written for retry on the next run; if storage is not configured, rows are left untouched with an `asset_cleanup_skipped` audit row per asset (`reason: storage_not_configured`). Every run writes one summary `asset_cleanup` audit row with `deleted`/`failed`/`skipped` counts. |
 | Retention trim | same | Trims clinics past `data_grace_ends_at` (enabled by default, `RETENTION_TRIM_ENABLED=true`). Deletes only rows created after `server_retention_until`, children before parents, never a row referenced by a retained record. See spec 13-M objective 2 for the table list. |
 | Daily backup | `BACKUP_INTERVAL_SECONDS` (default 86400) | Section 2 above. |
 

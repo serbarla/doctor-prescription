@@ -48,7 +48,7 @@ step is implemented and verified.*
 - [x] objective 2: with fixture rows past `data_grace_ends_at`, running the trim deletes only rows created after `server_retention_until` (`python3 .blocks/sqlite-schema-check.py --db <booted-db> --query "select min(created_at) from prescriptions"` → ≥ `server_retention_until`) and writes an audit row; the export action produces the clinic's data before deletion
 - [x] objective 1: jobs are idempotent — running each twice changes nothing beyond one audit row per run; stale `pending` assets are removed after one hour
 - [ ] objective 4: an update manifest with a bad signature is refused and the previous version still runs; a valid staged manifest applies and can roll back
-- [x] objective 5: every `context/PRD.md` §12 acceptance criterion has recorded evidence (checked box + where it was proven)
+- [ ] objective 5: every `context/PRD.md` §12 acceptance criterion has recorded evidence (checked box + where it was proven). Evidence walk recorded 2026-11-20 in `context/PRD.md` §12 + `context/runbook.md` §8 (12 of 13 checked with passing probes; the auto-update criterion is blocked and unchecked per `specs/divergences/13-M-signed-installers.md`), so this criterion stays unchecked until that tracker clears.
 - [ ] every objective in section 1 is checked
 
 ## 4. Divergences

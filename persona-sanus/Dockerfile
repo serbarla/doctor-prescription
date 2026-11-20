@@ -11,4 +11,6 @@ RUN mkdir -p /data /app
 WORKDIR /app
 COPY --from=builder /build/target/dx/persona-sanus/release/web/server /app/persona-sanus
 COPY --from=builder /build/target/dx/persona-sanus/release/web/public /app/public
+ENV IP=0.0.0.0
+EXPOSE 8080
 CMD ["/app/persona-sanus"]

@@ -1819,7 +1819,7 @@ def probe(base, email, password, name, flow, db_path=""):
         ordered = SIGNIN
     else:
         status, body = http_get(base, "/", jar)
-        checks["home"] = status == 200 and b"<title>persona-sanus</title>" in body
+        checks["home"] = status == 200 and b"<title>Persona Sanus</title>" in body
         status, _ = http_get(base, "/login", jar)
         checks["login"] = status == 200
         status, _ = http_get(base, "/dashboard", jar)

@@ -66,6 +66,6 @@ From the repository root:
 docker compose up --build
 ```
 
-Starts the fullstack app on port 8080 with SQLite persisted in the `persona-data` volume (`/data/app.db`).
+Starts the fullstack app on port 8080 with SQLite persisted in the `persona-data` volume (`/data/app.db`). MinIO ports bind to `127.0.0.1` only.
 
-> Warning: set `PERSONA_COOKIE_SECURE=true` and terminate TLS in front of the container outside local development.
+Production: copy the root `.env.example` to `.env`, set `PERSONA_ENV=production` with an HTTPS `PUBLIC_BASE_URL`, `PERSONA_COOKIE_SECURE=true`, and a browser-reachable `ASSETS_PUBLIC_ENDPOINT`, then terminate TLS in front of the app and route the public host through the proxy. The release server refuses to start when those values are missing, loopback, or insecure under `PERSONA_ENV=production`; the localhost defaults only apply to local development.

@@ -197,7 +197,105 @@ fn security_headers(router: Router, cookie_secure: bool) -> Router {
     }
 }
 
+fn url_host(value: &str) -> Option<String> {
+    value
+        .parse::<Uri>()
+        .ok()
+        .and_then(|uri| uri.host().map(|host| host.trim_matches(['[', ']']).to_owned()))
+}
+
+fn url_scheme(value: &str) -> Option<String> {
+    value
+        .parse::<Uri>()
+        .ok()
+        .and_then(|uri| uri.scheme_str().map(str::to_owned))
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host.ends_with(".localhost")
+        || matches!(host, "127.0.0.1" | "::1" | "0.0.0.0")
+}
+
+fn env_non_empty(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn production_config_error() -> Option<String> {
+    if cfg!(debug_assertions) {
+        return None;
+    }
+    let production = std::env::var("PERSONA_ENV")
+        .map(|value| value.eq_ignore_ascii_case("production"))
+        .unwrap_or(false);
+    let cookie_secure = std::env::var("PERSONA_COOKIE_SECURE")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let public_base = env_non_empty("PUBLIC_BASE_URL");
+    let assets_public = env_non_empty("ASSETS_PUBLIC_ENDPOINT");
+    if production {
+        let Some(base) = public_base.as_deref() else {
+            return Some("PERSONA_ENV=production requires PUBLIC_BASE_URL to be set".to_owned());
+        };
+        let Some(host) = url_host(base) else {
+            return Some(format!("PUBLIC_BASE_URL {base} is not a valid URL"));
+        };
+        if is_loopback_host(&host) {
+            return Some(format!(
+                "PERSONA_ENV=production requires PUBLIC_BASE_URL to be a public host, got {base}"
+            ));
+        }
+        if url_scheme(base).as_deref() != Some("https") {
+            return Some(format!(
+                "PERSONA_ENV=production requires PUBLIC_BASE_URL to use https, got {base}"
+            ));
+        }
+        if !cookie_secure {
+            return Some(
+                "PERSONA_ENV=production requires PERSONA_COOKIE_SECURE=true".to_owned(),
+            );
+        }
+        if let Some(assets) = assets_public.as_deref() {
+            if let Some(assets_host) = url_host(assets) {
+                if is_loopback_host(&assets_host) {
+                    return Some(format!(
+                        "ASSETS_PUBLIC_ENDPOINT {assets} is loopback while the app is public"
+                    ));
+                }
+            }
+        }
+        return None;
+    }
+    if let Some(base) = public_base.as_deref() {
+        if let Some(host) = url_host(base) {
+            if !is_loopback_host(&host) {
+                if !cookie_secure {
+                    return Some(
+                        "PUBLIC_BASE_URL is public but PERSONA_COOKIE_SECURE is not true".to_owned(),
+                    );
+                }
+                if let Some(assets) = assets_public.as_deref() {
+                    if let Some(assets_host) = url_host(assets) {
+                        if is_loopback_host(&assets_host) {
+                            return Some(format!(
+                                "ASSETS_PUBLIC_ENDPOINT {assets} is loopback while PUBLIC_BASE_URL {base} is public"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub async fn router() -> Result<Router> {
+    if let Some(error) = production_config_error() {
+        return Err(anyhow::anyhow!(error));
+    }
     let cookie_secure = std::env::var("PERSONA_COOKIE_SECURE")
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
         .unwrap_or(false);

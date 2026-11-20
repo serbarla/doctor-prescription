@@ -14,7 +14,7 @@ curl -sf http://127.0.0.1:8080/health
 
 Expected health body: `{"ok":true,"foreign_keys":true,"journal_mode":"wal"}`. The `persona-sanus` service has `restart: unless-stopped` and a 5 s healthcheck; `minio` gates startup on its own healthcheck. Embedded Diesel migrations run at boot before any request is served; a migration failure aborts startup. No manual migration step.
 
-External prerequisites (not provided by this repo): TLS termination in front of the app (Caddy/Nginx) with `PERSONA_COOKIE_SECURE=1` once HTTPS is live, and host-level disk encryption for the Docker volumes.
+Copy `.env.example` to `.env` and set the production values (`PERSONA_ENV=production`, an HTTPS `PUBLIC_BASE_URL`, `PERSONA_COOKIE_SECURE=true`, the browser-reachable `ASSETS_PUBLIC_ENDPOINT`, MinIO credentials, and `BACKUP_AGE_RECIPIENT`); `docker compose` substitutes them into the stack. The release server fails closed at startup when `PERSONA_ENV=production` and `PUBLIC_BASE_URL` is unset or loopback, the cookie is not secure, or the public asset endpoint is loopback; the localhost fallbacks only apply to `dx serve`/debug and the default local `docker compose up` profile. MinIO ports stay on `127.0.0.1` in the default compose file: do not publish them on a public interface. In production, terminate TLS in front of the app (Caddy/Nginx) and route `PUBLIC_BASE_URL` plus the asset endpoint through that proxy to `:8080` and `127.0.0.1:9000` respectively, so image URLs and QR payloads carry the public host while the MinIO console on `127.0.0.1:9001` remains admin-only. Host-level disk encryption for the Docker volumes is still an external prerequisite.
 
 ## 2. Backups
 

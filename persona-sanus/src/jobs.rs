@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -205,44 +206,140 @@ async fn retention_trim(pool: &DbPool) {
     .await;
 }
 
-fn backup_paths() -> (PathBuf, PathBuf, String) {
+fn set_private(path: &std::path::Path, mode: u32) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+            .map_err(|error| error.to_string())?;
+    }
+    #[cfg(not(unix))]
+    let _ = (path, mode);
+    Ok(())
+}
+
+fn wipe_and_remove(path: &std::path::Path) -> Result<(), String> {
+    if let Ok(mut file) = std::fs::OpenOptions::new().write(true).open(path) {
+        let mut remaining = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let chunk = [0u8; 65536];
+        while remaining > 0 {
+            let n = remaining.min(chunk.len() as u64) as usize;
+            let _ = file.write_all(&chunk[..n]);
+            remaining -= n as u64;
+        }
+        let _ = file.sync_all();
+    }
+    std::fs::remove_file(path).map_err(|error| error.to_string())
+}
+
+struct TempGuard(Option<PathBuf>);
+
+impl Drop for TempGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = wipe_and_remove(&path);
+        }
+    }
+}
+
+fn backup_paths() -> (PathBuf, PathBuf, PathBuf, String) {
     let dir = std::env::var("BACKUP_DIR").unwrap_or_else(|_| "./backups".to_owned());
     let date = Utc::now().format("%Y%m%d").to_string();
-    let plain = PathBuf::from(&dir).join(format!("app-{date}.db"));
-    let encrypted = plain.with_extension("db.age");
+    let stamp = Utc::now().format("%Y%m%d-%H%M%S").to_string();
+    let unique = format!("{stamp}-{}-{}", std::process::id(), Uuid::new_v4().simple());
+    let plain_tmp = PathBuf::from(&dir).join(format!(".app-{unique}.db.tmp"));
+    let encrypted_tmp = PathBuf::from(&dir).join(format!(".app-{unique}.db.age.tmp"));
+    let encrypted_final = PathBuf::from(&dir).join(format!("app-{date}.db.age"));
+
     (
         PathBuf::from(dir),
-        plain,
-        encrypted.to_string_lossy().into_owned(),
+        plain_tmp,
+        encrypted_tmp,
+        encrypted_final.to_string_lossy().into_owned(),
     )
+}
+
+fn sweep_stale_plain(dir: &std::path::Path) -> Result<(), String> {
+    let mut stale = Vec::new();
+    let entries = std::fs::read_dir(dir).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if name.ends_with(".db") || name.ends_with(".db.tmp") || name.ends_with(".age.tmp") {
+            stale.push(path);
+        }
+    }
+    if !stale.is_empty() {
+        let mut names = Vec::new();
+        for path in &stale {
+            let _ = wipe_and_remove(path);
+            names.push(
+                path.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            );
+        }
+        return Err(format!(
+            "stale plaintext backup file(s) {} found and removed; rerun the backup",
+            names.join(", ")
+        ));
+    }
+    Ok(())
 }
 
 async fn daily_backup(pool: &DbPool, state: AppState) {
     let backup_pool = pool.clone();
     let outcome = tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let (dir, plain, encrypted) = backup_paths();
+        let (dir, plain, encrypted_tmp, encrypted) = backup_paths();
         let recipient = std::env::var("BACKUP_AGE_RECIPIENT").unwrap_or_default();
         if recipient.trim().is_empty() {
             return Err("BACKUP_AGE_RECIPIENT is not set".to_owned());
         }
         std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+        set_private(&dir, 0o700)?;
+        sweep_stale_plain(&dir)?;
+        let plain_guard = TempGuard(Some(plain.clone()));
+        let encrypted_guard = TempGuard(Some(encrypted_tmp.clone()));
         let mut connection = backup_pool.get().map_err(|error| error.to_string())?;
         let literal = plain.to_string_lossy().replace('\'', "''");
         diesel::sql_query(format!("VACUUM INTO '{literal}'"))
             .execute(&mut connection)
             .map_err(|error| error.to_string())?;
+        set_private(&plain, 0o600)?;
+        if let Ok(file) = std::fs::OpenOptions::new().read(true).open(&plain) {
+            let _ = file.sync_all();
+        }
         let status = std::process::Command::new("age")
-            .args(["-r", recipient.trim(), "-o", &encrypted])
+            .args(["-r", recipient.trim(), "-o"])
+            .arg(&encrypted_tmp)
             .arg(&plain)
             .status()
             .map_err(|error| error.to_string())?;
-        let _ = std::fs::remove_file(&plain);
         if !status.success() {
             return Err("age encryption failed".to_owned());
+        }
+        set_private(&encrypted_tmp, 0o600)?;
+        if let Ok(file) = std::fs::OpenOptions::new().read(true).open(&encrypted_tmp) {
+            let _ = file.sync_all();
+        }
+        drop(plain_guard);
+        std::fs::rename(&encrypted_tmp, &encrypted).map_err(|error| error.to_string())?;
+        let mut encrypted_guard = encrypted_guard;
+        encrypted_guard.0 = None;
+        if let Ok(dir_file) = std::fs::OpenOptions::new().read(true).open(&dir) {
+            let _ = dir_file.sync_all();
         }
         if state.assets.is_some() {
             let mirror_dir = dir.join(format!("minio-{}", Utc::now().format("%Y%m%d")));
             let _ = std::fs::create_dir_all(&mirror_dir);
+            set_private(&mirror_dir, 0o700).ok();
             let endpoint = std::env::var("ASSETS_ENDPOINT").unwrap_or_default();
             let bucket = std::env::var("ASSETS_BUCKET").unwrap_or_default();
             let access = std::env::var("ASSETS_ACCESS_KEY_ID").unwrap_or_default();

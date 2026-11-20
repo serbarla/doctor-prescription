@@ -421,7 +421,7 @@ sequenceDiagram
 | Dunning (v1.1) | days 0/+2/+4, then lock | `past_due` → `locked` | status transitions | ⬜ v1.1 |
 | Retention trim | after `data_grace_ends_at` | delete beyond the 3-month window; `clinics` export offered first at `/settings/clinic` | recompute deadline | ✅ (on in v1, D-12; `RETENTION_TRIM_ENABLED`) |
 | Session purge | `JOBS_INTERVAL_SECONDS` | delete expired sessions | by `expires_at` | ✅ (plus lazy reject on get-session) |
-| Backup | `BACKUP_INTERVAL_SECONDS` (default 86400) | `VACUUM INTO` snapshot encrypted with `age`, plus MinIO `mc` mirror | date-stamped | ✅ (file-safety and mirror-check gaps: `13-M-backup-file-safety.md`, `13-M-backup-minio-mirror.md`) |
+| Backup | `BACKUP_INTERVAL_SECONDS` (default 86400) | `VACUUM INTO` snapshot encrypted with `age`, plus MinIO `mc` mirror | date-stamped | ✅ (mirror-check gap: `13-M-backup-minio-mirror.md`) |
 
 Single-node invariant: in-process scheduler + SQLite + a filesystem volume means exactly one writer replica. Two replicas would split the database and could double-charge a clinic. Horizontal scaling requires an external database and job locking, which is out of v1 scope. Compose restarts the container (`unless-stopped`) and probes `/health` every 5 seconds; TLS must terminate outside the container and is not shipped in Compose.
 
@@ -514,7 +514,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | 7 | Scheduler and SQLite assume one replica | in-process jobs | P1 | keep one node; document the scale-out prerequisites |
 | 8 | Retention trim conflicts with health-record law | PRD §9 | P1 | enforced in v1 (D-12); export before trim; counsel sign-off before production |
 | 9 | ~~Account enumeration and no auth rate limiting~~ resolved | dummy Argon2 hash, uniform `401`, `AUTH_RATE_LIMIT_PER_MINUTE` (spec 12-L) | — | client-IP trust via `PERSONA_TRUSTED_PROXY_CIDRS` (§14) |
-| 10 | No observability layer; backup failure paths have tracked gaps | no tracing/metrics layer; `13-M-backup-file-safety.md`, `13-M-backup-minio-mirror.md` | P2 | structured logs, metrics; fix the backup divergences |
+| 10 | No observability layer; backup failure paths have tracked gaps | no tracing/metrics layer; `13-M-backup-minio-mirror.md` | P2 | structured logs, metrics; fix the backup divergences |
 | 11 | Destructive initial migration drops legacy auth tables | `20261111000000_create_auth/up.sql` | P2 | documented in DB §8: pre-existing accounts must sign up again |
 | 12 | ~~`users` name collision resolved as `profiles`~~ resolved | applied in `create_app_schema` | — | `profiles.auth_user_id` links the identity |
 | 13 | ~~Image quota race or orphaned objects~~ resolved | `BEGIN IMMEDIATE` reserve + pending row, hourly stale cleanup (`src/assets.rs`, `src/jobs.rs`, spec 06-F) | — | cleanup audit atomicity tracked in `13-M-stale-asset-cleanup.md` |

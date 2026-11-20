@@ -85,7 +85,7 @@ fn error_message(value: &Value, status: reqwest::StatusCode) -> String {
             return message;
         }
     }
-    format!("Request failed ({status})")
+    format!("La solicitud falló ({status})")
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -111,14 +111,14 @@ async fn send(builder: reqwest::RequestBuilder) -> Result<Value, String> {
     let response = builder
         .send()
         .await
-        .map_err(|error| format!("Could not reach the server: {error}"))?;
+        .map_err(|error| format!("No se pudo contactar con el servidor: {error}"))?;
     #[cfg(not(target_arch = "wasm32"))]
     capture_session_cookie(&response);
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|error| format!("Could not read the server response: {error}"))?;
+        .map_err(|error| format!("No se pudo leer la respuesta del servidor: {error}"))?;
     let value: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     if status.is_success() {
         Ok(value)
@@ -136,25 +136,25 @@ pub async fn get_bytes(url_str: &str) -> Result<Vec<u8>, String> {
         .get(url_str)
         .send()
         .await
-        .map_err(|error| format!("Could not reach the server: {error}"))?;
+        .map_err(|error| format!("No se pudo contactar con el servidor: {error}"))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("Request failed ({status})"));
+        return Err(format!("La solicitud falló ({status}"));
     }
     response
         .bytes()
         .await
         .map(|bytes| bytes.to_vec())
-        .map_err(|error| format!("Could not read the server response: {error}"))
+        .map_err(|error| format!("No se pudo leer la respuesta del servidor: {error}"))
 }
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub async fn sse_response(path: &str) -> Result<reqwest::Response, String> {
     let response = with_credentials(client().get(url(path)))
         .send()
         .await
-        .map_err(|error| format!("Could not reach the server: {error}"))?;
+        .map_err(|error| format!("No se pudo contactar con el servidor: {error}"))?;
     if !response.status().is_success() {
-        return Err(format!("Request failed ({})", response.status()));
+        return Err(format!("La solicitud falló ({})", response.status()));
     }
     Ok(response)
 }

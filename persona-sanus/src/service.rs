@@ -66,14 +66,14 @@ impl ActorContext {
         self.clinic
             .as_ref()
             .map(|clinic| clinic.id.as_str())
-            .ok_or_else(|| AuthError::Forbidden("No clinic membership.".to_owned()))
+            .ok_or_else(|| AuthError::Forbidden("Sin pertenencia a una clínica.".to_owned()))
     }
 
     pub fn require_administrator(&self) -> Result<(), AuthError> {
         match self.role() {
             Some(Role::Administrator) => Ok(()),
             _ => Err(AuthError::Forbidden(
-                "Administrator role required.".to_owned(),
+                "Se requiere el rol de administrador.".to_owned(),
             )),
         }
     }
@@ -82,7 +82,7 @@ impl ActorContext {
         match self.role() {
             Some(_) => Ok(()),
             None => Err(AuthError::Forbidden(
-                "A clinic role is required.".to_owned(),
+                "Se requiere un rol en la clínica.".to_owned(),
             )),
         }
     }
@@ -91,10 +91,10 @@ impl ActorContext {
         match self.role() {
             Some(Role::Doctor | Role::Nursing | Role::Secretary) => Ok(()),
             Some(Role::Administrator) => Err(AuthError::Forbidden(
-                "The administrator can only read patients.".to_owned(),
+                "El administrador solo puede leer pacientes.".to_owned(),
             )),
             None => Err(AuthError::Forbidden(
-                "A clinic role is required.".to_owned(),
+                "Se requiere un rol en la clínica.".to_owned(),
             )),
         }
     }
@@ -254,7 +254,7 @@ pub async fn register_user(pool: &DbPool, input: RegisterUser) -> Result<db::Use
         db::immediate_transaction(connection, |connection| {
             if db::find_user_by_email(connection, &input.email)?.is_some() {
                 return Err(AuthError::Conflict(
-                    "An account with this email already exists.".to_owned(),
+                    "Ya existe una cuenta con este correo.".to_owned(),
                 ));
             }
             db::insert_user(
@@ -399,7 +399,7 @@ pub async fn resolve_actor(
             }
         };
         if profile.status == "disabled" {
-            return Err(AuthError::Forbidden("Profile disabled.".to_owned()));
+            return Err(AuthError::Forbidden("Perfil deshabilitado.".to_owned()));
         }
         let member = db::find_membership_by_profile(connection, &profile.id)?;
         let clinic = match member.as_ref() {
@@ -427,22 +427,28 @@ pub async fn register_device(
 ) -> Result<db::Device, AuthError> {
     let device_id = input.device_id.trim().to_owned();
     if device_id.is_empty() || device_id.chars().count() > 200 {
-        return Err(AuthError::BadRequest("Invalid device id.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "Identificador de dispositivo no válido.".to_owned(),
+        ));
     }
     let platform = input.platform.trim().to_owned();
     if !matches!(platform.as_str(), "macos" | "windows" | "web") {
-        return Err(AuthError::BadRequest("Unknown platform.".to_owned()));
+        return Err(AuthError::BadRequest("Plataforma desconocida.".to_owned()));
     }
     let name = clean_optional(input.name);
     if name.as_ref().is_some_and(|name| name.chars().count() > 120) {
-        return Err(AuthError::BadRequest("Device name is too long.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "El nombre del dispositivo es demasiado largo.".to_owned(),
+        ));
     }
     let app_version = clean_optional(input.app_version);
     if app_version
         .as_ref()
         .is_some_and(|version| version.chars().count() > 64)
     {
-        return Err(AuthError::BadRequest("App version is too long.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "La versión de la app es demasiado larga.".to_owned(),
+        ));
     }
     let profile_id = actor.profile.id.clone();
     let session_id = actor.session_id.clone();
@@ -453,11 +459,13 @@ pub async fn register_device(
             let device = match existing {
                 Some(device) => {
                     if device.profile_id != profile_id {
-                        return Err(AuthError::Conflict("Device already registered.".to_owned()));
+                        return Err(AuthError::Conflict(
+                            "El dispositivo ya está registrado.".to_owned(),
+                        ));
                     }
                     if device.revoked_at.is_some() {
                         return Err(AuthError::Forbidden(
-                            "This device has been revoked.".to_owned(),
+                            "Este dispositivo ha sido revocado.".to_owned(),
                         ));
                     }
                     db::update_device_seen(
@@ -537,7 +545,9 @@ pub async fn revoke_device(
 ) -> Result<(), AuthError> {
     let device_id = device_id.trim().to_owned();
     if device_id.is_empty() {
-        return Err(AuthError::BadRequest("Invalid device id.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "Identificador de dispositivo no válido.".to_owned(),
+        ));
     }
     let actor_profile_id = actor.profile.id.clone();
     let is_administrator = actor.role() == Some(Role::Administrator);
@@ -546,7 +556,7 @@ pub async fn revoke_device(
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             let device = db::find_device_by_id(connection, &device_id)?
-                .ok_or_else(|| AuthError::NotFound("Device not found.".to_owned()))?;
+                .ok_or_else(|| AuthError::NotFound("Dispositivo no encontrado.".to_owned()))?;
             let is_owner = device.profile_id == actor_profile_id;
             let in_clinic = if is_administrator {
                 match clinic_id.as_deref() {
@@ -560,7 +570,7 @@ pub async fn revoke_device(
                 false
             };
             if !is_owner && !in_clinic {
-                return Err(AuthError::NotFound("Device not found.".to_owned()));
+                return Err(AuthError::NotFound("Dispositivo no encontrado.".to_owned()));
             }
             if device.revoked_at.is_none() {
                 db::revoke_device(connection, &device_id, &at)?;
@@ -608,25 +618,25 @@ pub async fn set_member_role(
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
     let Some(role) = Role::parse(&role) else {
-        return Err(AuthError::BadRequest("Unknown role.".to_owned()));
+        return Err(AuthError::BadRequest("Rol desconocido.".to_owned()));
     };
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             if db::find_profile_by_id(connection, &profile_id)?.is_none() {
-                return Err(AuthError::NotFound("Profile not found.".to_owned()));
+                return Err(AuthError::NotFound("Perfil no encontrado.".to_owned()));
             }
             let member = db::find_membership_by_profile(connection, &profile_id)?;
             if let Some(member) = member.as_ref() {
                 if member.clinic_id != clinic_id {
-                    return Err(AuthError::NotFound("Profile not found.".to_owned()));
+                    return Err(AuthError::NotFound("Perfil no encontrado.".to_owned()));
                 }
                 if member.role == Role::Administrator.as_str()
                     && role != Role::Administrator
                     && db::count_administrators(connection, &clinic_id)? <= 1
                 {
                     return Err(AuthError::BadRequest(
-                        "The clinic needs an administrator.".to_owned(),
+                        "La clínica necesita un administrador.".to_owned(),
                     ));
                 }
                 db::update_clinic_member_role(
@@ -695,15 +705,15 @@ pub async fn remove_member(
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             let member = db::find_membership_by_profile(connection, &profile_id)?
-                .ok_or_else(|| AuthError::NotFound("Member not found.".to_owned()))?;
+                .ok_or_else(|| AuthError::NotFound("Miembro no encontrado.".to_owned()))?;
             if member.clinic_id != clinic_id {
-                return Err(AuthError::NotFound("Member not found.".to_owned()));
+                return Err(AuthError::NotFound("Miembro no encontrado.".to_owned()));
             }
             if member.role == Role::Administrator.as_str()
                 && db::count_administrators(connection, &clinic_id)? <= 1
             {
                 return Err(AuthError::BadRequest(
-                    "The clinic needs an administrator.".to_owned(),
+                    "La clínica necesita un administrador.".to_owned(),
                 ));
             }
             db::delete_clinic_member(connection, &clinic_id, &profile_id)?;
@@ -734,7 +744,7 @@ pub async fn disable_profile(
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             if db::find_profile_by_id(connection, &profile_id)?.is_none() {
-                return Err(AuthError::NotFound("Profile not found.".to_owned()));
+                return Err(AuthError::NotFound("Perfil no encontrado.".to_owned()));
             }
             let member = db::find_membership_by_profile(connection, &profile_id)?;
             if disabled
@@ -747,7 +757,7 @@ pub async fn disable_profile(
                 && db::count_administrators(connection, &clinic_id)? <= 1
             {
                 return Err(AuthError::BadRequest(
-                    "The clinic needs an administrator.".to_owned(),
+                    "La clínica necesita un administrador.".to_owned(),
                 ));
             }
             let status = if disabled { "disabled" } else { "active" };
@@ -773,11 +783,13 @@ pub async fn update_profile(
 ) -> Result<db::Profile, AuthError> {
     let display_name = input.display_name.trim().to_owned();
     if display_name.is_empty() {
-        return Err(AuthError::BadRequest("Enter a display name.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "Ingresa un nombre visible.".to_owned(),
+        ));
     }
     if display_name.chars().count() > 120 {
         return Err(AuthError::BadRequest(
-            "Display name is too long.".to_owned(),
+            "El nombre visible es demasiado largo.".to_owned(),
         ));
     }
     let profile_id = actor.profile.id.clone();
@@ -797,7 +809,7 @@ pub async fn update_profile(
                 &at,
             )?;
             db::find_profile_by_id(connection, &profile_id)?
-                .ok_or_else(|| AuthError::NotFound("Profile not found.".to_owned()))
+                .ok_or_else(|| AuthError::NotFound("Perfil no encontrado.".to_owned()))
         })
     })
     .await
@@ -809,7 +821,9 @@ pub async fn update_doctor(
     input: DoctorUpdate,
 ) -> Result<db::Doctor, AuthError> {
     if actor.role() != Some(Role::Doctor) {
-        return Err(AuthError::Forbidden("Doctor role required.".to_owned()));
+        return Err(AuthError::Forbidden(
+            "Se requiere el rol de doctor.".to_owned(),
+        ));
     }
     let profile_id = actor.profile.id.clone();
     let actor_id = actor.profile.id.clone();
@@ -859,7 +873,7 @@ pub async fn update_doctor(
                 &at,
             )?;
             db::find_doctor_by_profile_id(connection, &profile_id)?
-                .ok_or_else(|| AuthError::NotFound("Doctor not found.".to_owned()))
+                .ok_or_else(|| AuthError::NotFound("Doctor no encontrado.".to_owned()))
         })
     })
     .await
@@ -868,11 +882,13 @@ pub async fn update_doctor(
 fn clean_name(value: &str) -> Result<String, AuthError> {
     let name = value.trim().to_owned();
     if name.is_empty() {
-        return Err(AuthError::BadRequest("Enter the patient name.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "Ingresa el nombre del paciente.".to_owned(),
+        ));
     }
     if name.chars().count() > 200 {
         return Err(AuthError::BadRequest(
-            "Patient name is too long.".to_owned(),
+            "El nombre del paciente es demasiado largo.".to_owned(),
         ));
     }
     Ok(name)
@@ -889,7 +905,7 @@ fn clean_birth_date(value: Option<String>) -> Result<Option<String>, AuthError> 
         return Ok(None);
     };
     NaiveDate::parse_from_str(&date, "%Y-%m-%d")
-        .map_err(|_| AuthError::BadRequest("Enter a valid birth date.".to_owned()))?;
+        .map_err(|_| AuthError::BadRequest("Ingresa una fecha de nacimiento válida.".to_owned()))?;
     Ok(Some(date))
 }
 
@@ -899,7 +915,9 @@ fn clean_sex(value: Option<String>) -> Result<Option<String>, AuthError> {
     };
     match sex.as_str() {
         "male" | "female" | "other" | "unspecified" => Ok(Some(sex)),
-        _ => Err(AuthError::BadRequest("Select a valid sex.".to_owned())),
+        _ => Err(AuthError::BadRequest(
+            "Selecciona un sexo válido.".to_owned(),
+        )),
     }
 }
 
@@ -1001,7 +1019,7 @@ pub async fn create_patient(
             )?;
             db::find_patient_by_id(connection, &clinic_id, &id)?
                 .map(PatientCreateOutcome::Created)
-                .ok_or_else(|| AuthError::NotFound("Patient not found.".to_owned()))
+                .ok_or_else(|| AuthError::NotFound("Paciente no encontrado.".to_owned()))
         })
     })
     .await
@@ -1020,7 +1038,7 @@ pub async fn update_patient(
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             let existing = db::find_patient_by_id(connection, &clinic_id, &patient_id)?
-                .ok_or_else(|| AuthError::NotFound("Patient not found.".to_owned()))?;
+                .ok_or_else(|| AuthError::NotFound("Paciente no encontrado.".to_owned()))?;
             let full_name = match input.full_name.as_deref() {
                 Some(value) => clean_name(value)?,
                 None => existing.full_name.clone(),
@@ -1086,7 +1104,7 @@ pub async fn update_patient(
                 &at,
             )?;
             db::find_patient_by_id(connection, &clinic_id, &patient_id)?
-                .ok_or_else(|| AuthError::NotFound("Patient not found.".to_owned()))
+                .ok_or_else(|| AuthError::NotFound("Paciente no encontrado.".to_owned()))
         })
     })
     .await
@@ -1157,7 +1175,7 @@ pub async fn get_patient(
                 Some(json!({ "via": "detail", "found": patient.is_some() })),
                 &at,
             )?;
-            patient.ok_or_else(|| AuthError::NotFound("Patient not found.".to_owned()))
+            patient.ok_or_else(|| AuthError::NotFound("Paciente no encontrado.".to_owned()))
         })
     })
     .await
@@ -1175,7 +1193,7 @@ pub async fn soft_delete_patient(
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             db::find_patient_by_id(connection, &clinic_id, &patient_id)?
-                .ok_or_else(|| AuthError::NotFound("Patient not found.".to_owned()))?;
+                .ok_or_else(|| AuthError::NotFound("Paciente no encontrado.".to_owned()))?;
             db::soft_delete_patient(connection, &clinic_id, &patient_id, &at)?;
             record_audit(
                 connection,

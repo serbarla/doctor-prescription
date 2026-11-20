@@ -632,7 +632,10 @@ fn save_document(
                 on_saved.call((version.id, doc_json, margin));
             }
             Err(error) => message.set(
-                if error.starts_with("Could not") || error.starts_with("Request failed") {
+                if error.starts_with("No se pudo contactar")
+                    || error.starts_with("No se pudo leer la respuesta")
+                    || error.starts_with("La solicitud falló")
+                {
                     "No se pudo guardar el borrador.".to_owned()
                 } else {
                     error

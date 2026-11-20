@@ -258,6 +258,28 @@ fn backup_paths() -> (PathBuf, PathBuf, PathBuf, String) {
         encrypted_final.to_string_lossy().into_owned(),
     )
 }
+fn run_checked(program: &str, args: &[&str], stage: &str) -> Result<(), String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|error| format!("{stage}: failed to run {program}: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail: String = stderr
+            .chars()
+            .rev()
+            .take(500)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        return Err(format!(
+            "{stage}: {program} exited {}: {tail}",
+            output.status
+        ));
+    }
+    Ok(())
+}
 
 fn sweep_stale_plain(dir: &std::path::Path) -> Result<(), String> {
     let mut stale = Vec::new();
@@ -296,7 +318,7 @@ fn sweep_stale_plain(dir: &std::path::Path) -> Result<(), String> {
 
 async fn daily_backup(pool: &DbPool, state: AppState) {
     let backup_pool = pool.clone();
-    let outcome = tokio::task::spawn_blocking(move || -> Result<String, String> {
+    let outcome = tokio::task::spawn_blocking(move || -> Result<(String, Option<String>), String> {
         let (dir, plain, encrypted_tmp, encrypted) = backup_paths();
         let recipient = std::env::var("BACKUP_AGE_RECIPIENT").unwrap_or_default();
         if recipient.trim().is_empty() {
@@ -336,38 +358,38 @@ async fn daily_backup(pool: &DbPool, state: AppState) {
         if let Ok(dir_file) = std::fs::OpenOptions::new().read(true).open(&dir) {
             let _ = dir_file.sync_all();
         }
+        let mut mirror_dir: Option<PathBuf> = None;
         if state.assets.is_some() {
-            let mirror_dir = dir.join(format!("minio-{}", Utc::now().format("%Y%m%d")));
-            let _ = std::fs::create_dir_all(&mirror_dir);
-            set_private(&mirror_dir, 0o700).ok();
             let endpoint = std::env::var("ASSETS_ENDPOINT").unwrap_or_default();
             let bucket = std::env::var("ASSETS_BUCKET").unwrap_or_default();
             let access = std::env::var("ASSETS_ACCESS_KEY_ID").unwrap_or_default();
             let secret = std::env::var("ASSETS_SECRET_ACCESS_KEY").unwrap_or_default();
-            if !endpoint.is_empty() && !bucket.is_empty() {
-                let _ = std::process::Command::new("mc")
-                    .args([
-                        "alias",
-                        "set",
-                        "persona-backup",
-                        &endpoint,
-                        &access,
-                        &secret,
-                    ])
-                    .status();
-                let _ = std::process::Command::new("mc")
-                    .args([
-                        "mirror",
-                        &format!("persona-backup/{bucket}"),
-                        mirror_dir.to_string_lossy().as_ref(),
-                    ])
-                    .status();
+            if endpoint.is_empty() || bucket.is_empty() || access.is_empty() || secret.is_empty() {
+                return Err(format!(
+                    "mirror: asset storage is enabled but ASSETS_ENDPOINT/ASSETS_BUCKET/ASSETS_ACCESS_KEY_ID/ASSETS_SECRET_ACCESS_KEY is incomplete (sqlite backup at {encrypted})"
+                ));
             }
+            let dir_path = dir.join(format!("minio-{}", Utc::now().format("%Y%m%d")));
+            std::fs::create_dir_all(&dir_path).map_err(|error| format!("mirror: {error}"))?;
+            run_checked(
+                "mc",
+                &["alias", "set", "persona-backup", &endpoint, &access, &secret],
+                "alias",
+            )
+            .map_err(|error| format!("{error} (sqlite backup at {encrypted})"))?;
+            run_checked(
+                "mc",
+                &["mirror", &format!("persona-backup/{bucket}"), dir_path.to_string_lossy().as_ref()],
+                "mirror",
+            )
+            .map_err(|error| format!("{error} (sqlite backup at {encrypted})"))?;
+            mirror_dir = Some(dir_path);
         }
-        Ok(encrypted)
+        Ok((encrypted, mirror_dir.map(|path| path.to_string_lossy().into_owned())))
     })
     .await;
-    let outcome: Result<String, String> = outcome.unwrap_or_else(|error| Err(error.to_string()));
+    let outcome: Result<(String, Option<String>), String> =
+        outcome.unwrap_or_else(|error| Err(error.to_string()));
     let pool = pool.clone();
     let _ = tokio::task::spawn_blocking(move || {
         let mut connection = match pool.get() {
@@ -376,13 +398,17 @@ async fn daily_backup(pool: &DbPool, state: AppState) {
         };
         let now = auth_server::now();
         match outcome {
-            Ok(path) => {
+            Ok((path, mirror)) => {
+                let mut metadata = json!({ "path": path, "encrypted": true });
+                if let Some(mirror) = mirror {
+                    metadata["mirror"] = json!(mirror);
+                }
                 let _ = audit(
                     &mut connection,
                     "backup_daily",
                     "backup",
                     "sqlite",
-                    json!({ "path": path, "encrypted": true }),
+                    metadata,
                     &now,
                 );
             }

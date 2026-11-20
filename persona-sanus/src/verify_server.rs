@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Path, State};
-use axum::http::{HeaderMap, HeaderName, Request, StatusCode};
+use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -40,15 +40,7 @@ impl VerifyRateLimiter {
             .windows
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let entry = windows.entry(ip).or_default();
-        while entry.front().is_some_and(|moment| *moment <= cutoff) {
-            entry.pop_front();
-        }
-        if entry.len() >= self.limit as usize {
-            return false;
-        }
-        entry.push_back(now);
-        true
+        crate::client_ip::admit(&mut windows, ip, now, cutoff, self.limit)
     }
 }
 
@@ -95,22 +87,12 @@ pub async fn rate_limit(
 }
 
 fn client_ip(request: &Request<Body>) -> IpAddr {
-    if let Some(connect) = request.extensions().get::<ConnectInfo<SocketAddr>>() {
-        return connect.0.ip();
-    }
-    forwarded_ip(request.headers()).unwrap_or(IpAddr::from([0, 0, 0, 0]))
-}
-
-fn forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
-    headers
-        .get(HeaderName::from_static("x-forwarded-for"))?
-        .to_str()
-        .ok()?
-        .split(',')
-        .next()?
-        .trim()
-        .parse()
-        .ok()
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|connect| connect.0.ip())
+        .unwrap_or(IpAddr::from([0, 0, 0, 0]));
+    crate::client_ip::client_ip(peer, request.headers())
 }
 
 pub fn layer(router: Router, limiter: Arc<VerifyRateLimiter>) -> Router {

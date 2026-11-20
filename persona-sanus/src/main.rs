@@ -12,6 +12,8 @@ mod assets;
 #[cfg(feature = "server")]
 mod auth_server;
 #[cfg(feature = "server")]
+mod client_ip;
+#[cfg(feature = "server")]
 mod db;
 #[cfg(all(feature = "server", not(target_arch = "wasm32"), debug_assertions))]
 mod dev_db;

@@ -7,7 +7,7 @@ use argon2::password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier}
 use argon2::Argon2;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
-use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -211,15 +211,7 @@ impl AuthRateLimiter {
             .windows
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let entry = windows.entry(ip).or_default();
-        while entry.front().is_some_and(|moment| *moment <= cutoff) {
-            entry.pop_front();
-        }
-        if entry.len() >= self.limit as usize {
-            return false;
-        }
-        entry.push_back(now);
-        true
+        crate::client_ip::admit(&mut windows, ip, now, cutoff, self.limit)
     }
 }
 
@@ -232,25 +224,11 @@ pub async fn auth_rate_limit(
     if !request.uri().path().starts_with("/api/auth/") || request.method() != Method::POST {
         return next.run(request).await;
     }
-    let ip = forwarded_ip(request.headers())
-        .filter(|_| connect.ip() == IpAddr::from([127, 0, 0, 1]) || connect.ip().is_loopback())
-        .unwrap_or(connect.ip());
+    let ip = crate::client_ip::client_ip(connect.ip(), request.headers());
     if limiter.allowed(ip) {
         return next.run(request).await;
     }
     AuthError::RateLimited.into_response()
-}
-
-fn forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
-    headers
-        .get(HeaderName::from_static("x-forwarded-for"))?
-        .to_str()
-        .ok()?
-        .split(',')
-        .next()?
-        .trim()
-        .parse()
-        .ok()
 }
 
 async fn audit_auth(

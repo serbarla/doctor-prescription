@@ -15,6 +15,7 @@ curl -sf http://127.0.0.1:8080/health
 Expected health body: `{"ok":true,"foreign_keys":true,"journal_mode":"wal"}`. The `persona-sanus` service has `restart: unless-stopped` and a 5 s healthcheck; `minio` gates startup on its own healthcheck. Embedded Diesel migrations run at boot before any request is served; a migration failure aborts startup. No manual migration step.
 
 External prerequisites (not provided by this repo): TLS termination in front of the app (Caddy/Nginx) with `PERSONA_COOKIE_SECURE=1` once HTTPS is live, and host-level disk encryption for the Docker volumes.
+Proxy topology: when the external TLS terminator forwards to the app, set `PERSONA_TRUSTED_PROXY_CIDRS` to its source CIDR (e.g. the compose network subnet covering the proxy container). Rate limits (`AUTH_RATE_LIMIT_PER_MINUTE`, `VERIFY_RATE_LIMIT_PER_MINUTE`) then key by the rightmost untrusted `X-Forwarded-For` value. Leave the variable empty for direct-to-app deployments so forwarded headers are ignored and the socket peer is the bucket key. Compose ships no proxy today, so the variable stays empty in Compose.
 
 ## 2. Backups
 

@@ -35,7 +35,7 @@ The server process is the unit of deployment. There is no separate API service, 
 | Billing + scheduler (v1.1) | ⬜ | PRD §5.7, D-04 |
 | Image library (1 image in v1; MinIO, 15-min signed URLs) | ✅ | `src/assets.rs`, `/api/assets*` |
 | Branding asset upload (logo only) | ✅ | `/api/clinic/logo`, `/settings/clinic` |
-| Audit, MFA, rate limiting, backups | ✅ | `src/jobs.rs`, `src/verify_server.rs`, `migrations/20261113000000_hardening_mfa_audit`, specs 12-L/13-M; proxy-trust gap in `specs/divergences/12-L-rate-limit-proxy.md` |
+| Audit, MFA, rate limiting, backups | ✅ | `src/jobs.rs`, `src/verify_server.rs`, `migrations/20261113000000_hardening_mfa_audit`, specs 12-L/13-M; client-IP trust via `PERSONA_TRUSTED_PROXY_CIDRS` (§14) |
 
 ```mermaid
 flowchart LR
@@ -195,14 +195,14 @@ Rules:
 - Passwords require at least 8 characters and are hashed with Argon2 defaults. `user_json` omits `password_hash`; the hash never leaves the server.
 - A session token is two concatenated UUID v4 values (64 hex characters). Only `SHA-256(token)` is stored, under a unique index, so a database leak yields no usable token.
 - Sessions expire after 30 days. The cookie is `persona_session; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`, plus `Secure` when `PERSONA_COOKIE_SECURE` is true.
-- Sign-out deletes only the presented session; revoking a device invalidates the sessions carrying its `sessions.device_id`. TOTP MFA (`user_mfa`, `sessions.mfa_pending`) gates doctor/administrator sign-in once enrolled; `/api/auth/change-password` rotates the session. Email verification, self-service password reset, and account lockout do not exist. Auth and verification traffic carry per-IP limits (`AUTH_RATE_LIMIT_PER_MINUTE`, `VERIFY_RATE_LIMIT_PER_MINUTE`); the proxy-trust gap is tracked in `specs/divergences/12-L-rate-limit-proxy.md`.
+- Sign-out deletes only the presented session; revoking a device invalidates the sessions carrying its `sessions.device_id`. TOTP MFA (`user_mfa`, `sessions.mfa_pending`) gates doctor/administrator sign-in once enrolled; `/api/auth/change-password` rotates the session. Email verification, self-service password reset, and account lockout do not exist. Auth and verification traffic carry per-IP limits (`AUTH_RATE_LIMIT_PER_MINUTE`, `VERIFY_RATE_LIMIT_PER_MINUTE`) keyed by the client IP from `PERSONA_TRUSTED_PROXY_CIDRS` (§14) — the socket peer unless the peer is a trusted proxy supplying `X-Forwarded-For`.
 
 Security findings in the current implementation:
 
 | Finding | Evidence | Impact | Action |
 |---|---|---|---|
 | Token returned in the JSON body as well as the cookie | `session_response` | an XSS can read a credential that `HttpOnly` otherwise protects | closed: `session_response` returns the user only and sets the `HttpOnly` cookie; the desktop client reads the token from `Set-Cookie` |
-| Account enumeration | sign-up returns `409`; sign-in skipped Argon2 for unknown emails | email discovery and timing signal | closed: sign-in burns a dummy Argon2 hash for unknown emails with a uniform `401`, and `AUTH_RATE_LIMIT_PER_MINUTE` limits the endpoints (spec 12-L); sign-up keeps `409` — enumeration is inherent to account creation (accepted residual); proxy-trust gap in `specs/divergences/12-L-rate-limit-proxy.md` |
+| Account enumeration | sign-up returns `409`; sign-in skipped Argon2 for unknown emails | email discovery and timing signal | closed: sign-in burns a dummy Argon2 hash for unknown emails with a uniform `401`, and `AUTH_RATE_LIMIT_PER_MINUTE` limits the endpoints (spec 12-L); sign-up keeps `409` — enumeration is inherent to account creation (accepted residual) |
 | No CSRF token or `Origin` check | cookie auth with JSON `POST` | `SameSite=Lax` mitigates, but lacks defense in depth | closed: `server::origin_guard` rejects state-changing `Origin` headers outside `PERSONA_WEB_ORIGINS`, `x-forwarded-host`/`Host`, or the `dx serve` proxy's loopback devserver origin (spec 12-L) |
 | No security headers or CORS layer | router composition | no CSP/HSTS surface; a browser-served second origin would fail without CORS | closed: CSP, `nosniff`, `Referrer-Policy`, `X-Frame-Options`, optional HSTS, and credentialed CORS (spec 12-L) |
 
@@ -457,8 +457,9 @@ Single-node invariant: in-process scheduler + SQLite + a filesystem volume means
 | `ASSETS_PUBLIC_ENDPOINT` | `ASSETS_ENDPOINT` | server | ✅ browser-reachable base for signed URLs (Compose: host-published MinIO port, not `http://minio:9000`) |
 | `PERSONA_WEB_ORIGINS` | `` (same-origin only) | server | ✅ comma-separated web origins allowed by credentialed CORS (spec 04-D); the same-origin fallback compares the request `Origin` against `x-forwarded-host`/`Host` (proxy-aware, so a TLS terminator that rewrites `Host` still passes), and a request proxied by `dx serve` may carry a loopback `Origin` on `DIOXUS_DEVSERVER_PORT` because the dev proxy rewrites `Host` to the backend's ephemeral port |
 | `PERSONA_SERVER_ORIGIN` | `http://127.0.0.1:8080` | client | native API origin; the wasm client always uses relative paths (spec 04-D) |
-| `VERIFY_RATE_LIMIT_PER_MINUTE` | `10` | server | ✅ public verification per-IP limit (spec 09-I); proxy trust tracked in `specs/divergences/12-L-rate-limit-proxy.md` |
-| `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ✅ auth-endpoint per-IP limit (spec 12-L); proxy trust tracked in the same divergence |
+| `VERIFY_RATE_LIMIT_PER_MINUTE` | `10` | server | ✅ public verification per-IP limit (spec 09-I) |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | `20` | server | ✅ auth-endpoint per-IP limit (spec 12-L) |
+| `PERSONA_TRUSTED_PROXY_CIDRS` | `` (trust none) | server | comma-separated CIDRs of the TLS terminator; only a peer inside a CIDR may supply `X-Forwarded-For`, parsed right-to-left skipping trusted hops; empty means the socket peer is always the client IP |
 
 
 MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket stays private. The LLM URL is per clinic in `clinics.llm_url_template` (DB §5), not a process environment variable. PRD FR-012 agrees (`clinics.llm_url_template`); seed it from configuration if an environment default is wanted.
@@ -477,7 +478,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | Secrets | `PAYPHONE_TOKEN`, `PAYPHONE_STORE_ID`, `PAYPHONE_CODING_PASSWORD` (v1.1) | ⬜ |
 | Card token | `ctoken` stored after consent; AES-256-CBC `cardHolder`; no PAN/CVV; revoked on cancel (v1.1) | ⬜ |
 | Audit | sensitive reads; append-only enforced by DB triggers; billing transitions are v1.1 | ✅ |
-| Abuse controls | rate limits on auth and `/verify/:code`; PayPhone polling is v1.1 | ✅ (proxy-trust gap: `specs/divergences/12-L-rate-limit-proxy.md`) |
+| Abuse controls | rate limits on auth and `/verify/:code`; PayPhone polling is v1.1 | ✅ |
 | Device control and MFA | `devices` registered and revocable through `sessions.device_id`; TOTP MFA for enrolled doctors/administrators | ✅ |
 
 ## 16. Invariants
@@ -512,7 +513,7 @@ MinIO runs as a Compose service; `ASSETS_ENDPOINT` points at it and the bucket s
 | 6 | PDF rendering location | ~~undecided~~ resolved | — | `printpdf` in the server and desktop binaries (PRD D-01); shared `src/pdf.rs`; no `from_html` |
 | 7 | Scheduler and SQLite assume one replica | in-process jobs | P1 | keep one node; document the scale-out prerequisites |
 | 8 | Retention trim conflicts with health-record law | PRD §9 | P1 | enforced in v1 (D-12); export before trim; counsel sign-off before production |
-| 9 | ~~Account enumeration and no auth rate limiting~~ resolved | dummy Argon2 hash, uniform `401`, `AUTH_RATE_LIMIT_PER_MINUTE` (spec 12-L) | — | proxy-trust remainder tracked in `specs/divergences/12-L-rate-limit-proxy.md` |
+| 9 | ~~Account enumeration and no auth rate limiting~~ resolved | dummy Argon2 hash, uniform `401`, `AUTH_RATE_LIMIT_PER_MINUTE` (spec 12-L) | — | client-IP trust via `PERSONA_TRUSTED_PROXY_CIDRS` (§14) |
 | 10 | No observability layer; backup failure paths have tracked gaps | no tracing/metrics layer; `13-M-backup-file-safety.md`, `13-M-backup-minio-mirror.md` | P2 | structured logs, metrics; fix the backup divergences |
 | 11 | Destructive initial migration drops legacy auth tables | `20261111000000_create_auth/up.sql` | P2 | documented in DB §8: pre-existing accounts must sign up again |
 | 12 | ~~`users` name collision resolved as `profiles`~~ resolved | applied in `create_app_schema` | — | `profiles.auth_user_id` links the identity |

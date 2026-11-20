@@ -10,7 +10,7 @@ by hand; humans resolve gates, split ownership conflicts, and set policy.
 
 | Artifact | Role |
 | --- | --- |
-| `AGENTS.md` § Subagent Delegation Fleet | Orca-worker row, per-day cost ceiling, DAG-width policy. |
+| `AGENTS.md` § Subagent Delegation Fleet | Orca-worker row, max 5 active agents, DAG-width policy. |
 | `.blocks/spec-queue.py` | Queue scanner; classifies every spec and divergence slice. |
 | `context/spec-automation.md` | This runbook plus the verbatim coordinator and worker prompts. |
 | `specs/<NN-X>.md` | A spec slice; §1 boxes are the completion contract. |
@@ -145,8 +145,8 @@ orca orchestration worker-start \
 All file-disjoint ready rows start in the same pass. A `conflict` or `blocked`
 row stays queued and gets no worktree or worker.
 
-Apply the cost ceiling in `AGENTS.md` § Subagent Delegation Fleet before each
-launch. If the projected spend for the day would exceed it, create a gate
+Apply the active-agent cap in `AGENTS.md` § Subagent Delegation Fleet before each
+launch. If launching would exceed 5 active agents, create a gate
 instead of a worker and continue with independent slices.
 
 ### 3. Collect settled workers
@@ -242,7 +242,7 @@ Gate when:
 - an external prerequisite is missing (signing certificates, counsel sign-off,
   credentials, store accounts);
 - two slices overlap on owned files (a human-authored split);
-- the daily cost ceiling would be exceeded.
+- the active-agent cap of 5 would be exceeded.
 
 A 15-attempt failure also files a Linear issue in Specs-Issue format. Faking
 signing, notarization, credentials, or a passing gate is forbidden; an OPEN
@@ -293,7 +293,7 @@ Create one orchestration Run, one task per ready row with its DAG deps, one work
 named spec-<id>-<slug> on branch spec/<id>-<slug>, and exactly one supervised worker per worktree.
 Resolve the worker agent id from the local Orca install at execution time; never invent one.
 Derive each worktree's port as 8091 + <sorted ready index> and give it a unique --db-path under that worktree.
-Respect the per-day cost ceiling in AGENTS.md: if the pass would exceed it, create a gate instead of a worker.
+Respect the max 5 active agents in AGENTS.md: if the pass would exceed it, create a gate instead of a worker.
 
 Each worker gets this prompt, with its own placeholders rendered:
 <worker prompt from context/spec-automation.md>
@@ -369,8 +369,8 @@ spec (section 4), check nothing, and report the divergence. If you cannot edit t
 spec because it is outside Owned files, report the divergence text instead of
 checking boxes.
 
-Cost rule:
-Respect the per-day cost ceiling in AGENTS.md. Do not start new work that would
+Concurrency rule:
+Respect the max 5 active agents in AGENTS.md. Do not start new work that would
 exceed it; report instead.
 
 Failure rule:
@@ -401,7 +401,7 @@ unchecked/checked box counts for this slice, any appended divergence, and any ga
 | Missing signature/notarization/counsel/credential | Gate as `OPEN`; no fake artifact. |
 | Two slices share a file | `conflict` for both; human splits ownership. |
 | Global gate red after merge | `git revert -m 1 HEAD`; reopen and gate the slice. |
-| Cost ceiling reached | Gate remaining slices; keep dispatched work. |
+| Active-agent cap reached | Gate remaining slices; keep dispatched work. |
 
 ## Verification
 

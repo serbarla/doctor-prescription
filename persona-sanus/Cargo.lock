@@ -1806,28 +1806,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-motion"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61ab23ee0b3e1753744c4b521350d59425e00e5ceae6f7e0277f52373cf72a6a"
-dependencies = [
- "dioxus",
- "dioxus-core",
- "dioxus-stores",
- "easer",
- "futures-channel",
- "futures-util",
- "instant",
- "smallvec",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "wasm-bindgen",
- "web-sys",
- "wide",
-]
-
-[[package]]
 name = "dioxus-router"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2142,15 +2120,6 @@ name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
-
-[[package]]
-name = "easer"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fba524f8b83c9c5bde02c2bb1627de9d1f81980489a6d54168cdfd08c258f917"
-dependencies = [
- "num-traits",
-]
 
 [[package]]
 name = "ecb"
@@ -3379,18 +3348,6 @@ checksum = "3a580c13f0ffc335ef42dd3f6b1a41b726051c5e1656d9a3aa6fddb3c5dfbbf9"
 dependencies = [
  "block-padding",
  "hybrid-array",
-]
-
-[[package]]
-name = "instant"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
-dependencies = [
- "cfg-if",
- "js-sys",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -4637,7 +4594,6 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "dioxus",
- "dioxus-motion",
  "ed25519-dalek",
  "hex",
  "image",
@@ -5624,15 +5580,6 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
-
-[[package]]
-name = "safe_arch"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42c6efa15875e6ecb39ca61fb0b0c1a40b84fac5a5ffe71eef7d1000c8eb3f5f"
-dependencies = [
- "bytemuck",
-]
 
 [[package]]
 name = "same-file"
@@ -7291,16 +7238,6 @@ name = "weezl"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4ca08e5ef825b65b056d9efbd95c8750683f0a6d0466d02e96dc2e4e360f3d2"
-
-[[package]]
-name = "wide"
-version = "1.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d920ac99c3c8edce110cb8d07dbb324d6d026011dce85b1e9355b70f0adacc4f"
-dependencies = [
- "bytemuck",
- "safe_arch",
-]
 
 [[package]]
 name = "winapi"

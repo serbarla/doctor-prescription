@@ -32,3 +32,31 @@ Verified 2026-11-19: 1 full pass — 8 dispatches, 8 settlements, per-slice box 
 - [ ] Re-run one coordinator pass; for each settled slice the coordinator re-runs its exact `Gate` in its worktree, confirms changed files are within `Owned files`, confirms no divergence was appended, and confirms every box is checked before merging with `git merge --no-ff spec/<id>-<slug>`.
 - [ ] After each merge run the global gates on the integrating checkout: `python3 .blocks/persona-smoke.py --dir persona-sanus --port <allocated>` and `python3 .blocks/persona-docker-verify.py --dir . --port <allocated>`; on any failure `git revert -m 1 HEAD` and gate the slice.
 - [ ] Record the pass outcome in 26-Z section 3, check objectives 4 and 9 only after their commands exit 0, and delete this file.
+
+## Re-verification 2026-11-19 (div-26-Z worker, tries 1-2 of 10)
+
+- Try 1 (inventory, exit 0): `orca orchestration gate-list --run run_f5fe21b8142c --json` shows all 8 gates still `pending`; all 8 slice trackers have 0 checked boxes in this checkout; `specs/27-AA*.md` does not exist (gate `gate_5d2534011e3e` premise unverified); only `spec/12-L-rate-limit-proxy` (`bee0741`) exists and `git merge-base --is-ancestor bee0741 master` fails (unmerged); 26-Z objectives 4, 9 and the testing criterion stay unchecked.
+- Try 2 (global gate probe, failed): `timeout 280 python3 .blocks/persona-smoke.py --dir persona-sanus --port 8091` exited 124 (no result within 280s). Not green; no merge was attempted, so the runbook's post-merge global gates remain unrunnable.
+- Gate answers are coordinator/user decisions (26-Z objective 6); this worker cannot resolve them unilaterally and cannot edit other trackers' boxes. Asked the coordinator (msg_604f715a2159) for the 8 gate resolutions, signing credentials or deferral for `gate_88f111732a81`, and the 27-AA spec or its withdrawal. Awaiting answer; all 5 checklist boxes stay unchecked.
+
+## Re-verification 2026-11-20 (div-26-Z worker, tries 1-4 of 10)
+
+- Try 1 (inventory, exit 0): `orca orchestration gate-list --run run_f5fe21b8142c --json` shows all 8 gates still `pending`; `specs/27-AA*.md` does not exist; only `spec/12-L-rate-limit-proxy` (`bee0741`) exists and is unmerged (`git merge-base --is-ancestor bee0741 master` fails); all slice trackers in this checkout have 0 checked boxes.
+- Try 2 (worktree inventory, exit 0): `orca worktree ps --json` plus `git branch` show sibling `div-12-L`/`div-13-M-*` workers still active in their own worktrees, so per-slice box completion is not finished by them yet.
+- Try 3 (coordinator ask): asked the coordinator (`msg_44dcaa9b6072`) for the 8 gate resolutions, signing credentials or explicit OPEN deferral for `gate_88f111732a81`, and confirmation of the 27-AA spec. Coordinator replied (`msg_e0262a86c599`): questions are with the user (form cancelled twice), keep tracker as-is, do not merge/revert anything, do not edit other trackers, and settle with `worker_done` documenting the 8 open gates.
+- Try 4 (re-check, exit 0): `python3 .blocks/spec-queue.py --specs-dir specs --ready-only --brief` exits 0 with the 8 third-pass slices still `ready` (not cleared); `gate-list` re-run confirms all 8 gates still `pending`; `ls specs/27*` still missing. No merge and no global-gate run was attempted per coordinator instruction (checklist boxes 3-4 require a merge first), and no box was checked on a claim. All 5 checklist boxes stay unchecked; tracker is not deleted.
+
+## OPEN deferrals 2026-11-20 (user answer-all-8 + defer-all-8 both checked, contradictory)
+
+User selection was contradictory (both answer and defer), so the default applies: all 8 gates stay gated, each recorded as an explicit OPEN deferral below. All checklist boxes stay unchecked, nothing is merged, the tracker is kept, and the 27-AA claim (`gate_5d2534011e3e` premise, `ls specs/27*` still missing) is left untouched per coordinator instruction.
+
+- `gate_6795fd03debd` (`12-L-rate-limit-proxy`): OPEN — TLS-proxy fixture / docker-verify verification deferred; no merge until a per-gate action is supplied.
+- `gate_5d2534011e3e` (`13-M-backup-file-safety`): OPEN — unchecked deletion boxes vs. unlocated 27-AA spec deferred; no merge until a per-gate action is supplied.
+- `gate_50185155cbe5` (`13-M-backup-minio-mirror`): OPEN — deleted tracker with all 8 boxes unchecked deferred; no merge until a per-gate action is supplied.
+- `gate_4a1f6c3328b8` (`13-M-compose-production-config`): OPEN — 0 checked boxes plus appended divergence deferred; no merge until a per-gate action is supplied.
+- `gate_49dca50d6e1a` (`13-M-es-ec-copy`): OPEN — manual browser E2E walk and objective-5 sign-off deferred; no merge until a per-gate action is supplied.
+- `gate_5b730dd6a6e0` (`13-M-release-hygiene`): OPEN — deleted tracker with all 9 boxes unchecked deferred; no merge until a per-gate action is supplied.
+- `gate_ff78a31d6d08` (`13-M-stale-asset-cleanup`): OPEN — bookkeeping box (mark 13-M objective 1, record evidence, delete file) deferred; no merge until a per-gate action is supplied.
+- `gate_88f111732a81` (`13-M-update-channel`): OPEN — signed-installer end-to-end (no signing credentials) deferred; no merge until a per-gate action is supplied.
+
+Verified 2026-11-20: `orca orchestration gate-list --run run_f5fe21b8142c --json` re-run exit 0, all 8 gates `pending`. If the user later supplies per-gate actions, a new dispatch will answer them and re-run the coordinator pass.

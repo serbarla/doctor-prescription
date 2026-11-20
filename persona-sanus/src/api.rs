@@ -558,8 +558,8 @@ pub async fn register_current_device() -> Result<(), String> {
 
 pub async fn fetch_devices() -> Result<Vec<DeviceRow>, String> {
     let value = get_json("/api/devices").await?;
-    let response: DevicesResponse =
-        serde_json::from_value(value).map_err(|_| "Could not read the device list.".to_owned())?;
+    let response: DevicesResponse = serde_json::from_value(value)
+        .map_err(|_| "No se pudo leer la lista de dispositivos.".to_owned())?;
     Ok(response.devices)
 }
 
@@ -571,7 +571,7 @@ pub async fn revoke_device(device_id: &str) -> Result<(), String> {
 
 pub async fn fetch_me() -> Result<Me, String> {
     let value = get_json("/api/me").await?;
-    serde_json::from_value(value).map_err(|_| "Could not read the profile.".to_owned())
+    serde_json::from_value(value).map_err(|_| "No se pudo leer el perfil.".to_owned())
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -616,8 +616,8 @@ pub async fn fetch_audit(action: &str, entity: &str, q: &str) -> Result<Vec<Audi
 
 pub async fn fetch_users() -> Result<Vec<UserRow>, String> {
     let value = get_json("/api/settings/users").await?;
-    let response: UsersResponse =
-        serde_json::from_value(value).map_err(|_| "Could not read the user list.".to_owned())?;
+    let response: UsersResponse = serde_json::from_value(value)
+        .map_err(|_| "No se pudo leer la lista de usuarios.".to_owned())?;
     Ok(response.users)
 }
 
@@ -668,7 +668,7 @@ pub async fn update_profile(
         }),
     )
     .await?;
-    serde_json::from_value(value).map_err(|_| "Could not read the profile.".to_owned())
+    serde_json::from_value(value).map_err(|_| "No se pudo leer el perfil.".to_owned())
 }
 
 fn patient_body(form: &PatientForm) -> Value {

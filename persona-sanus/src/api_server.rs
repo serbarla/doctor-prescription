@@ -514,7 +514,7 @@ pub(crate) async fn require_actor(
 ) -> Result<ActorContext, AuthError> {
     service::resolve_actor(&state.pool, headers)
         .await?
-        .ok_or_else(|| AuthError::Unauthorized("Sign in required.".to_owned()))
+        .ok_or_else(|| AuthError::Unauthorized("Se requiere iniciar sesión.".to_owned()))
 }
 
 pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, AuthError> {

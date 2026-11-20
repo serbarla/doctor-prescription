@@ -621,8 +621,8 @@ async fn drain_outbox() {
                 let _ = desktop_local::mark_outbox_synced(&mut conn, &id);
             }
             Err(error)
-                if error.starts_with("Could not reach")
-                    || error.starts_with("Could not read the server") =>
+                if error.starts_with("No se pudo contactar")
+                    || error.starts_with("No se pudo leer la respuesta") =>
             {
                 let _ = desktop_local::mark_outbox_retry(&mut conn, &id, attempts, &error);
                 return;
@@ -697,7 +697,7 @@ async fn run_sse_once() -> Result<(), String> {
         let chunk = response
             .chunk()
             .await
-            .map_err(|error| format!("Could not read the server response: {error}"))?;
+            .map_err(|error| format!("No se pudo leer la respuesta del servidor: {error}"))?;
         let Some(chunk) = chunk else {
             return Ok(());
         };
@@ -4811,7 +4811,9 @@ fn TemplateEdit(id: String) -> Element {
                     }
                     if template().is_none() {
                         message.set(
-                            if error.starts_with("Could not") || error.starts_with("Request failed")
+                            if error.starts_with("No se pudo contactar")
+                                || error.starts_with("No se pudo leer la respuesta")
+                                || error.starts_with("La solicitud falló")
                             {
                                 "No se pudo cargar la plantilla.".to_owned()
                             } else {
@@ -4957,7 +4959,7 @@ fn TemplateEdit(id: String) -> Element {
                                         }
                                         Err(error) => {
                                             publishing.set(false);
-                                            message.set(if error.starts_with("Could not") || error.starts_with("Request failed") {
+                                            message.set(if error.starts_with("No se pudo contactar") || error.starts_with("No se pudo leer la respuesta") || error.starts_with("La solicitud falló") {
                                                 "No se pudo publicar la versión.".to_owned()
                                             } else {
                                                 error
@@ -5009,7 +5011,7 @@ fn TemplateEdit(id: String) -> Element {
                                     }
                                     Err(error) => {
                                         archiving.set(false);
-                                        message.set(if error.starts_with("Could not") || error.starts_with("Request failed") {
+                                        message.set(if error.starts_with("No se pudo contactar") || error.starts_with("No se pudo leer la respuesta") || error.starts_with("La solicitud falló") {
                                             "No se pudo archivar la plantilla.".to_owned()
                                         } else {
                                             error
@@ -5071,7 +5073,10 @@ fn TemplatePreview(id: String) -> Element {
                     template.set(Some(found));
                 }
                 Err(error) => message.set(
-                    if error.starts_with("Could not") || error.starts_with("Request failed") {
+                    if error.starts_with("No se pudo contactar")
+                        || error.starts_with("No se pudo leer la respuesta")
+                        || error.starts_with("La solicitud falló")
+                    {
                         "No se pudo cargar la vista previa.".to_owned()
                     } else {
                         error

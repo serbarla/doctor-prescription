@@ -528,14 +528,14 @@ async fn require_mfa_actor(
 ) -> Result<service::ActorContext, AuthError> {
     service::resolve_actor(&state.pool, headers)
         .await?
-        .ok_or_else(|| AuthError::Unauthorized("Sign in required.".to_owned()))
+        .ok_or_else(|| AuthError::Unauthorized("Se requiere iniciar sesión.".to_owned()))
 }
 
 fn require_mfa_role(actor: &service::ActorContext) -> Result<(), AuthError> {
     match actor.role() {
         Some(Role::Administrator | Role::Doctor) => Ok(()),
         _ => Err(AuthError::Forbidden(
-            "MFA is available for Doctor and Administrator roles.".to_owned(),
+            "La verificación en dos pasos está disponible para los roles de doctor y administrador.".to_owned(),
         )),
     }
 }
@@ -586,10 +586,14 @@ pub async fn mfa_confirm(
     })
     .await?;
     let Some(secret) = secret else {
-        return Err(AuthError::BadRequest("Enroll MFA first.".to_owned()));
+        return Err(AuthError::BadRequest(
+            "Activa primero la verificación en dos pasos.".to_owned(),
+        ));
     };
     if !totp_verify(&secret, &code) {
-        return Err(AuthError::Unauthorized("Invalid MFA code.".to_owned()));
+        return Err(AuthError::Unauthorized(
+            "El código de verificación no es válido.".to_owned(),
+        ));
     }
     let at = now();
     with_conn(&state.pool, move |connection| {
@@ -635,7 +639,7 @@ pub async fn mfa_disable(
         .map_err(|_| AuthError::Internal)?;
     if !valid {
         return Err(AuthError::Unauthorized(
-            "Invalid email or password.".to_owned(),
+            "Correo o contraseña incorrectos.".to_owned(),
         ));
     }
     let user_id = actor.user.id.clone();
@@ -663,7 +667,7 @@ pub async fn change_password(
     let actor = require_mfa_actor(&state, &headers).await?;
     if request.new_password.chars().count() < 8 {
         return Err(AuthError::BadRequest(
-            "Password must be at least 8 characters.".to_owned(),
+            "La contraseña debe tener al menos 8 caracteres.".to_owned(),
         ));
     }
     let password_hash = actor.user.password_hash.clone();
@@ -673,7 +677,7 @@ pub async fn change_password(
         .map_err(|_| AuthError::Internal)?;
     if !valid {
         return Err(AuthError::Unauthorized(
-            "Invalid email or password.".to_owned(),
+            "Correo o contraseña incorrectos.".to_owned(),
         ));
     }
     let new_hash = hash_password_async(request.new_password).await?;

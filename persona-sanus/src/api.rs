@@ -92,6 +92,8 @@ pub struct Patient {
     pub sex: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    pub medical_record_no: Option<String>,
+    pub allergies: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -104,8 +106,11 @@ pub struct PatientForm {
     pub sex: String,
     pub phone: String,
     pub notes: String,
+    pub medical_record_no: String,
+    pub allergies: String,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatientCreateOutcome {
     Created(Patient),
@@ -129,6 +134,7 @@ pub struct PrescriptionItem {
     pub frequency: Option<String>,
     pub duration: Option<String>,
     pub quantity: Option<String>,
+    pub quantity_number: Option<i32>,
     pub notes: Option<String>,
 }
 
@@ -155,6 +161,9 @@ pub struct Prescription {
     pub rx_block_id: Option<String>,
     pub diagnosis: Option<String>,
     pub validity: Option<String>,
+    pub recetario_type: Option<String>,
+    pub validity_days: Option<i32>,
+    pub warning_signs: Option<String>,
     pub instructions: Option<String>,
     pub signed_at: Option<String>,
     pub voided_at: Option<String>,
@@ -198,6 +207,7 @@ pub struct PrescriptionItemForm {
     pub frequency: String,
     pub duration: String,
     pub quantity: String,
+    pub quantity_number: String,
     pub notes: String,
 }
 
@@ -267,12 +277,20 @@ pub async fn fetch_prescription_preview(id: &str) -> Result<PrescriptionPreview,
     serde_json::from_value(value).map_err(|_| "No se pudo leer la vista previa.".to_owned())
 }
 
+fn parse_optional_i32(value: &str) -> Option<i32> {
+    value.trim().parse::<i32>().ok()
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn create_prescription(
     patient_id: &str,
     template_version_id: &str,
     client_id: &str,
     diagnosis: &str,
     validity: &str,
+    recetario_type: &str,
+    validity_days: &str,
+    warning_signs: &str,
     instructions: &str,
 ) -> Result<Prescription, String> {
     let value = post_json(
@@ -283,6 +301,9 @@ pub async fn create_prescription(
             "clientId": client_id,
             "diagnosis": diagnosis,
             "validity": validity,
+            "recetarioType": recetario_type,
+            "validityDays": parse_optional_i32(validity_days),
+            "warningSigns": warning_signs,
             "instructions": instructions,
         }),
     )
@@ -294,6 +315,9 @@ pub async fn update_prescription(
     id: &str,
     diagnosis: &str,
     validity: &str,
+    recetario_type: &str,
+    validity_days: &str,
+    warning_signs: &str,
     instructions: &str,
 ) -> Result<Prescription, String> {
     let value = put_json(
@@ -301,6 +325,9 @@ pub async fn update_prescription(
         json!({
             "diagnosis": diagnosis,
             "validity": validity,
+            "recetarioType": recetario_type,
+            "validityDays": parse_optional_i32(validity_days),
+            "warningSigns": warning_signs,
             "instructions": instructions,
         }),
     )
@@ -317,6 +344,7 @@ fn item_body(form: &PrescriptionItemForm) -> Value {
         "frequency": form.frequency,
         "duration": form.duration,
         "quantity": form.quantity,
+        "quantityNumber": parse_optional_i32(&form.quantity_number),
         "notes": form.notes,
     })
 }
@@ -679,6 +707,8 @@ fn patient_body(form: &PatientForm) -> Value {
         "sex": form.sex,
         "phone": form.phone,
         "notes": form.notes,
+        "medicalRecordNo": form.medical_record_no,
+        "allergies": form.allergies,
     })
 }
 
@@ -809,13 +839,16 @@ pub async fn fetch_template(id: &str) -> Result<Template, String> {
     let value = get_json(&format!("/api/templates/{id}")).await?;
     serde_json::from_value(value).map_err(|_| "No se pudo leer la plantilla.".to_owned())
 }
-
-pub async fn create_template(name: &str, owner_type: &str) -> Result<Template, String> {
-    let value = post_json(
-        "/api/templates",
-        json!({ "name": name, "ownerType": owner_type }),
-    )
-    .await?;
+pub async fn create_template_with_preset(
+    name: &str,
+    owner_type: &str,
+    preset: Option<&str>,
+) -> Result<Template, String> {
+    let mut body = json!({ "name": name, "ownerType": owner_type });
+    if let Some(preset) = preset {
+        body["preset"] = json!(preset);
+    }
+    let value = post_json("/api/templates", body).await?;
     serde_json::from_value(value).map_err(|_| "No se pudo leer la plantilla.".to_owned())
 }
 #[cfg(feature = "desktop")]

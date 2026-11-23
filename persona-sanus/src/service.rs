@@ -154,6 +154,8 @@ pub struct PatientInput {
     pub sex: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    pub medical_record_no: Option<String>,
+    pub allergies: Option<String>,
     pub client_id: Option<String>,
 }
 
@@ -164,6 +166,8 @@ pub struct PatientUpdate {
     pub sex: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    pub medical_record_no: Option<String>,
+    pub allergies: Option<String>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -948,6 +952,8 @@ pub async fn create_patient(
     let sex = clean_sex(input.sex)?;
     let phone = clean_optional(input.phone);
     let notes = clean_optional(input.notes);
+    let medical_record_no = clean_optional(input.medical_record_no);
+    let allergies = clean_optional(input.allergies);
     let normalized_name = normalize_name(&full_name);
     let client_id = input
         .client_id
@@ -993,6 +999,8 @@ pub async fn create_patient(
                     sex: sex.as_deref(),
                     phone: phone.as_deref(),
                     notes: notes.as_deref(),
+                    medical_record_no: medical_record_no.as_deref(),
+                    allergies: allergies.as_deref(),
                     client_id: client_id.as_deref(),
                     deleted_at: None,
                     created_at: &at,
@@ -1063,6 +1071,14 @@ pub async fn update_patient(
                 Some(value) => clean_optional(Some(value.to_owned())),
                 None => existing.notes.clone(),
             };
+            let medical_record_no = match input.medical_record_no.as_deref() {
+                Some(value) => clean_optional(Some(value.to_owned())),
+                None => existing.medical_record_no.clone(),
+            };
+            let allergies = match input.allergies.as_deref() {
+                Some(value) => clean_optional(Some(value.to_owned())),
+                None => existing.allergies.clone(),
+            };
             if let Some(national_id) = national_id.as_deref() {
                 if let Some(other_id) =
                     db::find_patient_id_by_national_id(connection, &clinic_id, national_id)?
@@ -1083,6 +1099,8 @@ pub async fn update_patient(
                     sex: sex.as_deref(),
                     phone: phone.as_deref(),
                     notes: notes.as_deref(),
+                    medical_record_no: medical_record_no.as_deref(),
+                    allergies: allergies.as_deref(),
                 },
                 &at,
             );
@@ -1366,11 +1384,34 @@ pub async fn create_template(
     name: String,
     owner_type: Option<String>,
     client_id: Option<String>,
+    preset: Option<String>,
 ) -> Result<db::Template, AuthError> {
     let name = template_name(&name)?;
     let is_administrator = actor.role() == Some(Role::Administrator);
     let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     let clinic_id = actor.clinic.as_ref().map(|clinic| clinic.id.clone());
+    let preset = preset.unwrap_or_else(|| "blank".to_owned());
+    if preset != "blank" && preset != "hvq" {
+        return Err(AuthError::BadRequest(
+            "El tipo de plantilla no es válido.".to_owned(),
+        ));
+    }
+    let seed = if preset == "hvq" {
+        let doc = crate::forms::hvq_preset_document();
+        let doc_json = serde_json::to_string(&doc).map_err(|_| AuthError::Internal)?;
+        Some((doc_json, "{\"margin_mm\":8}".to_owned()))
+    } else {
+        None
+    };
+    let (seed_doc, seed_theme, seed_variables): (Option<String>, Option<String>, Option<String>) =
+        match seed.as_ref() {
+            Some((raw_doc, raw_theme)) => (
+                Some(template_document(raw_doc)?),
+                Some(template_theme(Some(raw_theme.clone()))?),
+                Some(canonical_variables()?),
+            ),
+            None => (None, None, None),
+        };
     let requested = owner_type.unwrap_or_else(|| {
         if is_administrator {
             "clinic".to_owned()
@@ -1440,6 +1481,28 @@ pub async fn create_template(
                 Some(json!({ "owner_type": owner_type, "name": name })),
                 &at,
             )?;
+            if let Some(((seed_doc, seed_theme), seed_variables)) = seed_doc
+                .as_ref()
+                .zip(seed_theme.as_ref())
+                .zip(seed_variables.as_ref())
+            {
+                let seeded_version_id = Uuid::now_v7().to_string();
+                db::insert_template_version(
+                    connection,
+                    &db::NewTemplateVersion {
+                        id: &seeded_version_id,
+                        template_id: &id,
+                        version_no: 1,
+                        doc_json: seed_doc,
+                        variables_spec: seed_variables,
+                        theme: Some(seed_theme),
+                        status: "draft",
+                        created_at: &at,
+                        updated_at: &at,
+                        created_by: Some(&actor_id),
+                    },
+                )?;
+            }
             db::find_template_by_id(connection, &id)?
                 .ok_or_else(|| AuthError::NotFound("Plantilla no encontrada.".to_owned()))
         })
@@ -2198,12 +2261,18 @@ pub struct PrescriptionInput {
     pub client_id: Option<String>,
     pub diagnosis: Option<String>,
     pub validity: Option<String>,
+    pub recetario_type: Option<String>,
+    pub validity_days: Option<i32>,
+    pub warning_signs: Option<String>,
     pub instructions: Option<String>,
 }
 
 pub struct PrescriptionUpdate {
     pub diagnosis: Option<String>,
     pub validity: Option<String>,
+    pub recetario_type: Option<String>,
+    pub validity_days: Option<i32>,
+    pub warning_signs: Option<String>,
     pub instructions: Option<String>,
 }
 
@@ -2215,6 +2284,7 @@ pub struct PrescriptionItemInput {
     pub frequency: Option<String>,
     pub duration: Option<String>,
     pub quantity: Option<String>,
+    pub quantity_number: Option<i32>,
     pub notes: Option<String>,
 }
 
@@ -2264,6 +2334,38 @@ fn clean_rx_text(value: Option<String>, limit: usize) -> Option<String> {
         .map(|text| text.trim().to_owned())
         .filter(|text| !text.is_empty())
         .map(|text| text.chars().take(limit).collect())
+}
+
+fn validate_recetario_type(value: Option<String>) -> Result<String, AuthError> {
+    let value = value
+        .map(|text| text.trim().to_owned())
+        .filter(|text| !text.is_empty());
+    match value.as_deref() {
+        None | Some("ambulatorio") => Ok("ambulatorio".to_owned()),
+        _ => Err(AuthError::Unprocessable(
+            "Tipo de recetario no válido.".to_owned(),
+        )),
+    }
+}
+
+fn validate_validity_days(value: Option<i32>) -> Result<Option<i32>, AuthError> {
+    match value {
+        None => Ok(None),
+        Some(1) | Some(3) => Ok(value),
+        _ => Err(AuthError::Unprocessable(
+            "La vigencia debe ser de 1 o 3 días.".to_owned(),
+        )),
+    }
+}
+
+fn validate_quantity_number(value: Option<i32>) -> Result<Option<i32>, AuthError> {
+    match value {
+        None => Ok(None),
+        Some(number) if (0..=100_000).contains(&number) => Ok(value),
+        _ => Err(AuthError::Unprocessable(
+            "La cantidad no es válida.".to_owned(),
+        )),
+    }
 }
 
 fn prescription_edit_allowed(role: Option<Role>, prescription: &db::Prescription) -> bool {
@@ -2625,6 +2727,9 @@ pub async fn create_prescription(
         .unwrap_or_else(|| Uuid::now_v7().to_string());
     let diagnosis = clean_rx_text(input.diagnosis, 2000);
     let validity = clean_rx_text(input.validity, 200);
+    let recetario_type = validate_recetario_type(input.recetario_type)?;
+    let validity_days = validate_validity_days(input.validity_days)?;
+    let warning_signs = clean_rx_text(input.warning_signs, 2000);
     let instructions = clean_rx_text(input.instructions, 8000);
     let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     let actor_id = actor.profile.id.clone();
@@ -2660,6 +2765,9 @@ pub async fn create_prescription(
                     rx_block_id: None,
                     diagnosis: diagnosis.as_deref(),
                     validity: validity.as_deref(),
+                    recetario_type: recetario_type.as_str(),
+                    validity_days,
+                    warning_signs: warning_signs.as_deref(),
                     instructions: instructions.as_deref(),
                     signed_at: None,
                     synced_at: None,
@@ -2683,6 +2791,7 @@ pub async fn create_prescription(
                 let frequency = clean_rx_text(Some(medication.frequency.clone()), 500);
                 let duration = clean_rx_text(Some(medication.duration.clone()), 500);
                 let quantity = clean_rx_text(Some(medication.quantity.clone()), 500);
+                let quantity_number = None;
                 let notes = clean_rx_text(Some(medication.notes.clone()), 1000);
                 let item_id = Uuid::now_v7().to_string();
                 db::insert_prescription_item(
@@ -2697,6 +2806,7 @@ pub async fn create_prescription(
                         frequency: frequency.as_deref(),
                         duration: duration.as_deref(),
                         quantity: quantity.as_deref(),
+                        quantity_number,
                         notes: notes.as_deref(),
                         created_at: &at,
                         updated_at: &at,
@@ -2731,6 +2841,9 @@ pub async fn update_prescription(
     let role = actor.role();
     let diagnosis = clean_rx_text(input.diagnosis, 2000);
     let validity = clean_rx_text(input.validity, 200);
+    let recetario_type = validate_recetario_type(input.recetario_type)?;
+    let validity_days = validate_validity_days(input.validity_days)?;
+    let warning_signs = clean_rx_text(input.warning_signs, 2000);
     let instructions = clean_rx_text(input.instructions, 8000);
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
@@ -2749,6 +2862,9 @@ pub async fn update_prescription(
                 &prescription.id,
                 diagnosis.as_deref(),
                 validity.as_deref(),
+                recetario_type.as_str(),
+                validity_days,
+                warning_signs.as_deref(),
                 instructions.as_deref(),
                 &at,
             )?;
@@ -2793,6 +2909,7 @@ pub async fn upsert_prescription_item(
     let frequency = clean_rx_text(input.frequency, 500);
     let duration = clean_rx_text(input.duration, 500);
     let quantity = clean_rx_text(input.quantity, 500);
+    let quantity_number = validate_quantity_number(input.quantity_number)?;
     let notes = clean_rx_text(input.notes, 1000);
     let item_id = input
         .item_id
@@ -2826,6 +2943,7 @@ pub async fn upsert_prescription_item(
                                 frequency: frequency.as_deref(),
                                 duration: duration.as_deref(),
                                 quantity: quantity.as_deref(),
+                                quantity_number,
                                 notes: notes.as_deref(),
                             },
                             &at,
@@ -2847,6 +2965,7 @@ pub async fn upsert_prescription_item(
                                 frequency: frequency.as_deref(),
                                 duration: duration.as_deref(),
                                 quantity: quantity.as_deref(),
+                                quantity_number,
                                 notes: notes.as_deref(),
                                 created_at: &at,
                                 updated_at: &at,
@@ -2872,6 +2991,7 @@ pub async fn upsert_prescription_item(
                             frequency: frequency.as_deref(),
                             duration: duration.as_deref(),
                             quantity: quantity.as_deref(),
+                            quantity_number,
                             notes: notes.as_deref(),
                             created_at: &at,
                             updated_at: &at,
@@ -3049,15 +3169,23 @@ pub struct PrescriptionDocument {
     pub patient_name: String,
     pub patient_national_id: Option<String>,
     pub patient_birth_date: Option<String>,
+    pub patient_hcl: Option<String>,
+    pub patient_allergies: Option<String>,
+    pub patient_sex: Option<String>,
     pub doctor_name: String,
     pub doctor_specialty: Option<String>,
     pub doctor_national_id: Option<String>,
+    pub doctor_license_no: Option<String>,
     pub doctor_phone: Option<String>,
     pub doctor_email: Option<String>,
     pub clinic_name: String,
     pub clinic_address: Option<String>,
     pub clinic_phone: Option<String>,
     pub diagnosis: Option<String>,
+    pub recetario_type: String,
+    pub validity_days: Option<i32>,
+    pub warning_signs: Option<String>,
+    pub instructions: Option<String>,
     pub issued_at: String,
 }
 
@@ -3083,6 +3211,15 @@ impl PrescriptionDocument {
         (age >= 0).then_some(age)
     }
 
+    pub fn patient_age_detail(&self) -> Option<String> {
+        let birth = self
+            .patient_birth_date
+            .as_deref()
+            .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())?;
+        let issued = NaiveDate::parse_from_str(&self.file_date(), "%d-%m-%Y").ok()?;
+        Some(age_detail(&birth, &issued))
+    }
+
     pub fn variables(&self) -> Vec<(String, String)> {
         let mut values = vec![
             ("patient.name".to_owned(), self.patient_name.clone()),
@@ -3098,6 +3235,24 @@ impl PrescriptionDocument {
                     .map(|age| format!("{age} años"))
                     .unwrap_or_else(|| "—".to_owned()),
             ),
+            (
+                "patient.age_detail".to_owned(),
+                self.patient_age_detail().unwrap_or_else(|| "—".to_owned()),
+            ),
+            (
+                "patient.sex".to_owned(),
+                self.patient_sex.clone().unwrap_or_else(|| "—".to_owned()),
+            ),
+            (
+                "patient.hcl".to_owned(),
+                self.patient_hcl.clone().unwrap_or_else(|| "—".to_owned()),
+            ),
+            (
+                "patient.allergies".to_owned(),
+                self.patient_allergies
+                    .clone()
+                    .unwrap_or_else(|| "—".to_owned()),
+            ),
             ("doctor.name".to_owned(), self.doctor_name.clone()),
             (
                 "doctor.specialty".to_owned(),
@@ -3108,6 +3263,12 @@ impl PrescriptionDocument {
             (
                 "doctor.national_id".to_owned(),
                 self.doctor_national_id
+                    .clone()
+                    .unwrap_or_else(|| "—".to_owned()),
+            ),
+            (
+                "doctor.license_no".to_owned(),
+                self.doctor_license_no
                     .clone()
                     .unwrap_or_else(|| "—".to_owned()),
             ),
@@ -3141,8 +3302,34 @@ impl PrescriptionDocument {
                 display_date(&self.issued_at),
             ),
             (
+                "prescription.time".to_owned(),
+                display_time(&self.issued_at),
+            ),
+            (
+                "prescription.recetario_type".to_owned(),
+                if self.recetario_type.trim().is_empty() {
+                    "—".to_owned()
+                } else {
+                    self.recetario_type.to_uppercase()
+                },
+            ),
+            (
+                "prescription.validity".to_owned(),
+                self.validity_days
+                    .map(|days| format!("{days} DIA{}", if days == 1 { "" } else { "S" }))
+                    .unwrap_or_else(|| "—".to_owned()),
+            ),
+            (
                 "prescription.diagnosis".to_owned(),
                 self.diagnosis.clone().unwrap_or_else(|| "—".to_owned()),
+            ),
+            (
+                "prescription.warning_signs".to_owned(),
+                self.warning_signs.clone().unwrap_or_else(|| "—".to_owned()),
+            ),
+            (
+                "prescription.instructions".to_owned(),
+                self.instructions.clone().unwrap_or_else(|| "—".to_owned()),
             ),
             (
                 "medications[]".to_owned(),
@@ -3171,6 +3358,7 @@ impl PrescriptionDocument {
                 frequency: item.frequency.clone().unwrap_or_default(),
                 duration: item.duration.clone().unwrap_or_default(),
                 quantity: item.quantity.clone().unwrap_or_default(),
+                quantity_number: item.quantity_number,
                 notes: item.notes.clone().unwrap_or_default(),
             })
             .collect()
@@ -3202,6 +3390,50 @@ fn display_datetime(value: &str) -> String {
                 .to_string()
         })
         .unwrap_or_else(|_| value.to_owned())
+}
+
+fn display_time(value: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|moment| {
+            moment
+                .with_timezone(&ecuador_offset())
+                .format("%H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|_| value.to_owned())
+}
+
+fn age_detail(birth: &NaiveDate, on: &NaiveDate) -> String {
+    if birth > on {
+        return "—".to_owned();
+    }
+    let mut years = on.year() - birth.year();
+    if (on.month(), on.day()) < (birth.month(), birth.day()) {
+        years -= 1;
+    }
+    let anniversary = birth
+        .with_year(
+            on.year()
+                - if (on.month(), on.day()) < (birth.month(), birth.day()) {
+                    1
+                } else {
+                    0
+                },
+        )
+        .unwrap_or(*birth);
+    let mut cursor = anniversary;
+    let mut months = 0i32;
+    while {
+        let next = cursor.checked_add_months(chrono::Months::new(1));
+        next.map(|d| d <= *on).unwrap_or(false)
+    } {
+        cursor = cursor
+            .checked_add_months(chrono::Months::new(1))
+            .unwrap_or(cursor);
+        months += 1;
+    }
+    let days = (*on - cursor).num_days() as i32;
+    format!("{years}a {months}m {days}d")
 }
 
 pub struct VerificationResult {
@@ -3383,17 +3615,25 @@ pub async fn prescription_document(
             patient_name: patient.full_name,
             patient_national_id: patient.national_id,
             patient_birth_date: patient.birth_date,
+            patient_hcl: patient.medical_record_no,
+            patient_allergies: patient.allergies,
+            patient_sex: patient.sex,
             doctor_name,
             doctor_specialty: doctor.as_ref().and_then(|doctor| doctor.specialty.clone()),
             doctor_national_id: doctor
                 .as_ref()
                 .and_then(|doctor| doctor.national_id.clone()),
+            doctor_license_no: doctor.as_ref().and_then(|doctor| doctor.license_no.clone()),
             doctor_phone: doctor.as_ref().and_then(|doctor| doctor.phone.clone()),
             doctor_email: doctor.as_ref().and_then(|doctor| doctor.email.clone()),
             clinic_name: clinic.name,
             clinic_address: clinic.address,
             clinic_phone: clinic.phone,
             diagnosis: prescription.diagnosis,
+            recetario_type: prescription.recetario_type,
+            validity_days: prescription.validity_days,
+            warning_signs: prescription.warning_signs,
+            instructions: prescription.instructions,
             issued_at,
         })
     })
@@ -3779,6 +4019,9 @@ pub async fn supersede_prescription(
                     validity: validity_override
                         .as_deref()
                         .or(original.validity.as_deref()),
+                    recetario_type: original.recetario_type.as_str(),
+                    validity_days: original.validity_days,
+                    warning_signs: original.warning_signs.as_deref(),
                     instructions: instructions_override
                         .as_deref()
                         .or(original.instructions.as_deref()),
@@ -3807,6 +4050,7 @@ pub async fn supersede_prescription(
                         frequency: item.frequency.as_deref(),
                         duration: item.duration.as_deref(),
                         quantity: item.quantity.as_deref(),
+                        quantity_number: item.quantity_number,
                         notes: item.notes.as_deref(),
                         created_at: &at,
                         updated_at: &at,

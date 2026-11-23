@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # /// block
 # name = "pdf-probe"
-# summary = "Probe GET /api/prescriptions/:id/pdf: PDF magic, A4 MediaBox, filename, QR payload, draft 422."
+# summary = "Probe GET /api/prescriptions/:id/pdf: PDF magic, A4 MediaBox, filename, QR payload, draft 422; --hvq uses persona-probe --flow hvq and checks landscape MediaBox plus HVQ text."
 # effects = "network"
 # example = ["--base", "http://127.0.0.1:8080"]
 # matches = ['/api/prescriptions', '/api/prescriptions/:id/pdf', '/api/prescriptions/:id/preview']
 #
 # [returns]
-# keys = ["ok", "checks", "base", "prescription_id", "code", "qr_payload"]
-# doc = "checks maps probe names to booleans; composes persona-probe --flow rx as a subprocess and reuses the doctor session. pdf checks: signed_pdf 200, application/pdf, %PDF- magic, A4 MediaBox floats within 1 pt of 595.28x841.89, RFC 5987 filename, and the embedded QR bitmap decodes to {base}/verify/{code}. draft_rejected expects 422 on the draft created for the probe."
+# keys = ["ok", "checks", "base", "prescription_id", "code", "qr_payload", "extracted_text"]
+# doc = "checks maps probe names to booleans; composes persona-probe --flow rx (or --flow hvq with --hvq) as a subprocess and reuses the doctor session. pdf checks: signed_pdf 200, application/pdf, %PDF- magic, A4 MediaBox floats within 1 pt of 595.28x841.89 (or landscape 841.89x595.28 with --hvq), RFC 5987 filename, and the embedded QR bitmap decodes to {base}/verify/{code}. draft_rejected expects 422 on the draft created for the probe. --hvq additionally checks hvq_landscape_media_box and hvq_text_* for MEDICACIÓN, INDICACIONES, CANTIDAD (EN, 40 (CUARENTA), Observación:, VIGENCIA, checkbox glyph, DATOS DEL PRESCRIPTOR, RECEPCIÓN via ToUnicode CMap text extraction."
 #
 # [params]
 # base = { type = "str", required = true, help = "server origin, e.g. http://127.0.0.1:8080" }
 # email = { type = "str", default = "probe-rx-doctor@example.com", help = "doctor account created by persona-probe --flow rx" }
 # password = { type = "str", default = "ProbePass123!", help = "password shared by the probe accounts" }
-# qr-attempts = { type = "int", default = 10, min = 1, max = 20, help = "QR versions tried while decoding the embedded bitmap" }
+# hvq = { type = "bool", default = false, help = "HVQ mode: compose persona-probe --flow hvq and assert landscape MediaBox plus HVQ text" }
 #
 # [provenance]
 # created = "2026-11-12"
@@ -50,12 +50,23 @@ M_BLOCKS = {
 }
 
 
-def run_probe(base, password):
-    """Run persona-probe --flow rx and return its verdict dict."""
+def _persona_probe_cmd(base, password, flow):
+    import shutil
+
     cmd = [
         "caveman-blocks", "run", "persona-probe",
-        "--base", base, "--password", password, "--flow", "rx",
+        "--base", base, "--password", password, "--flow", flow,
     ]
+    if shutil.which("caveman-blocks") is None:
+        cmd = [
+            "python3", ".blocks/persona-probe.py",
+            "--base", base, "--password", password, "--flow", flow,
+        ]
+    return cmd
+
+def run_probe(base, password):
+    """Run persona-probe --flow rx and return its verdict dict."""
+    cmd = _persona_probe_cmd(base, password, "rx")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     except (OSError, subprocess.TimeoutExpired):
@@ -165,6 +176,162 @@ def media_box(pdf):
         return None
     values = [float(value) for value in match.groups()]
     return values[2] - values[0], values[3] - values[1]
+
+def pdf_stream_objects(pdf):
+    """Yield (dict_bytes, decoded_stream_bytes) for every stream object."""
+    for match in re.finditer(rb"(\d+)\s+(\d+)\s+obj\b(.*?)endobj", pdf, re.S):
+        body = match.group(3)
+        stream_at = body.find(b"stream")
+        if stream_at < 0:
+            continue
+        header = body[:stream_at]
+        start = stream_at + len(b"stream")
+        if body[start:start + 2] == b"\r\n":
+            start += 2
+        elif body[start:start + 1] in (b"\n", b"\r"):
+            start += 1
+        end = body.find(b"endstream", start)
+        if end < 0:
+            continue
+        stream = body[start:end]
+        if stream.endswith(b"\r\n"):
+            stream = stream[:-2]
+        elif stream.endswith(b"\n") or stream.endswith(b"\r"):
+            stream = stream[:-1]
+        if b"/FlateDecode" in header:
+            try:
+                stream = zlib.decompress(stream)
+            except zlib.error:
+                continue
+        yield header, stream
+
+
+def to_unicode_map(pdf):
+    """Build the CID -> unicode string map from the embedded ToUnicode CMaps."""
+    mapping = {}
+    for header, stream in pdf_stream_objects(pdf):
+        text = stream.decode("latin-1", errors="ignore")
+        if "beginbfchar" not in text and "beginbfrange" not in text:
+            continue
+        for section in re.findall(r"beginbfchar(.*?)endbfchar", text, re.S):
+            for source, target in re.findall(
+                r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>", section
+            ):
+                try:
+                    cid = int(source, 16)
+                    decoded = bytes.fromhex(target).decode(
+                        "utf-16-be", errors="ignore"
+                    )
+                except ValueError:
+                    continue
+                if decoded:
+                    mapping[cid] = decoded
+        for section in re.findall(r"beginbfrange(.*?)endbfrange", text, re.S):
+            for low, high, target in re.findall(
+                r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>", section
+            ):
+                try:
+                    low_v, high_v, base_v = int(low, 16), int(high, 16), int(target, 16)
+                except ValueError:
+                    continue
+                for offset, cid in enumerate(range(low_v, high_v + 1)):
+                    try:
+                        mapping[cid] = chr(base_v + offset)
+                    except ValueError:
+                        pass
+    return mapping
+
+
+def _cmap_for_stream(text):
+    mapping = {}
+    for section in re.findall(r"beginbfchar(.*?)endbfchar", text, re.S):
+        for source, target in re.findall(
+            r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>", section
+        ):
+            try:
+                cid = int(source, 16)
+                decoded = bytes.fromhex(target).decode(
+                    "utf-16-be", errors="ignore"
+                )
+            except ValueError:
+                continue
+            if decoded:
+                mapping[cid] = decoded
+    for section in re.findall(r"beginbfrange(.*?)endbfrange", text, re.S):
+        for low, high, target in re.findall(
+            r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>", section
+        ):
+            try:
+                low_v = int(low, 16)
+                high_v = int(high, 16)
+                base_v = int(target, 16)
+            except ValueError:
+                continue
+            for offset, cid in enumerate(range(low_v, high_v + 1)):
+                try:
+                    mapping[cid] = chr(base_v + offset)
+                except ValueError:
+                    pass
+    return mapping
+
+
+def font_cmaps(pdf):
+    """Map resource name -> CID map from each font's ToUnicode stream."""
+    raw = pdf.decode("latin-1", errors="ignore")
+    cmaps = {}
+    for match in re.finditer(r"(?m)^(\d+) 0 obj\n?(.*?)endobj", raw, re.S):
+        num = int(match.group(1))
+        body = match.group(2)
+        if "/ToUnicode" not in body:
+            continue
+        tu = int(re.search(r"/ToUnicode (\d+) 0 R", body).group(1))
+        cmap_match = re.search(
+            rf"(?m)^{tu} 0 obj\n?(.*?)endobj", raw, re.S
+        )
+        text = ""
+        if cmap_match:
+            stream_match = re.search(r"stream(.*?)endstream", cmap_match.group(1), re.S)
+            if stream_match:
+                data = stream_match.group(1).strip()
+                try:
+                    text = zlib.decompress(data.encode("latin-1")).decode(
+                        "latin-1", errors="ignore"
+                    )
+                except Exception:
+                    text = data
+        mapping = _cmap_for_stream(text)
+        if mapping:
+            for name, res in re.findall(r"/(\w+)\s+(\d+)\s+0\s+R", raw):
+                if int(res) == num:
+                    cmaps[name] = mapping
+    return cmaps
+
+
+def extract_pdf_text(pdf):
+    """Return PDF text, decoding each Tj with its active font's CMap."""
+    cmaps = font_cmaps(pdf)
+    pieces = []
+    for header, stream in pdf_stream_objects(pdf):
+        if b"Tj" not in stream and b"TJ" not in stream:
+            continue
+        text = stream.decode("latin-1", errors="ignore")
+        current = None
+        for token in re.finditer(r"/(\w+)\s+[\d.]+\s+Tf|<([0-9A-Fa-f]+)>\s*Tj", text):
+            if token.group(1):
+                current = token.group(1)
+                continue
+            mapping = cmaps.get(current or "", {})
+            raw = bytes.fromhex(token.group(2)) if len(token.group(2)) % 2 == 0 else b""
+            if mapping:
+                decoded = "".join(
+                    mapping.get(int.from_bytes(raw[i:i + 2], "big"), "")
+                    for i in range(0, len(raw) - 1, 2)
+                )
+            else:
+                decoded = raw.decode("latin-1", errors="ignore")
+            if decoded:
+                pieces.append(decoded)
+    return " ".join(pieces) if pieces else ""
 
 
 def disposition_filename(headers):
@@ -516,19 +683,35 @@ def open_json(base, path, jar):
         return status, {}
 
 
-def probe(base, email, password, attempts):
+def run_probe_hvq(base, password):
+    """Run persona-probe --flow hvq and return its verdict dict."""
+    cmd = _persona_probe_cmd(base, password, "hvq")
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    try:
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {}
+
+
+def probe(base, email, password, attempts, hvq=False):
     """Run the PDF probe; return the verdict dict."""
     checks = {}
-    verdict = run_probe(base, password)
+    run = run_probe_hvq if hvq else run_probe
+    verdict = run(base, password)
     checks["fixture"] = bool(verdict.get("ok"))
     prescription_id = verdict.get("prescription_id")
     code = verdict.get("code")
+    flow = "hvq" if hvq else "rx"
     if not checks["fixture"] or not prescription_id or not code:
         return {
             "ok": False,
             "checks": checks,
             "base": base,
-            "error": "persona-probe --flow rx failed: " + str(verdict.get("error", "unknown")),
+            "error": f"persona-probe --flow {flow} failed: "
+            + str(verdict.get("error", "unknown")),
         }
     jar = sign_in(base, email, password)
     checks["doctor_session"] = jar is not None
@@ -542,11 +725,18 @@ def probe(base, email, password, attempts):
         and pdf.startswith(b"%PDF-")
     )
     box = media_box(pdf)
-    checks["a4_media_box"] = bool(
-        box
-        and abs(box[0] - A4_WIDTH) <= 1
-        and abs(box[1] - A4_HEIGHT) <= 1
-    )
+    if hvq:
+        checks["a4_media_box"] = bool(
+            box
+            and abs(box[0] - A4_HEIGHT) <= 1
+            and abs(box[1] - A4_WIDTH) <= 1
+        )
+    else:
+        checks["a4_media_box"] = bool(
+            box
+            and abs(box[0] - A4_WIDTH) <= 1
+            and abs(box[1] - A4_HEIGHT) <= 1
+        )
     disposition = disposition_filename(headers)
     checks["rfc5987_filename"] = bool(
         re.search(r"filename\*=UTF-8''", disposition)
@@ -568,6 +758,22 @@ def probe(base, email, password, attempts):
     )
     checks["draft_rejected"] = draft == 422
 
+    text = extract_pdf_text(pdf)
+    if hvq:
+        checks["hvq_landscape_media_box"] = checks["a4_media_box"]
+        for key, needle in (
+            ("medicacion", "MEDICACIÓN"),
+            ("indicaciones", "INDICACIONES"),
+            ("cantidad", "CANTIDAD (EN"),
+            ("cantidad_40", "40 (CUARENTA)"),
+            ("observacion", "Observación:"),
+            ("vigencia", "VIGENCIA"),
+            ("prescriptor", "DATOS DEL PRESCRIPTOR"),
+            ("recepcion", "RECEPCIÓN"),
+        ):
+            checks[f"hvq_text_{key}"] = needle in text
+        checks["hvq_text_checkbox"] = ("☒" in text) or ("[X]" in text)
+
     ok = all(checks.values())
     result = {
         "ok": ok,
@@ -576,6 +782,7 @@ def probe(base, email, password, attempts):
         "prescription_id": prescription_id,
         "code": code,
         "qr_payload": payload,
+        "extracted_text": text[:4000],
     }
     if not ok:
         result["error"] = "one or more PDF checks failed"
@@ -585,11 +792,17 @@ def probe(base, email, password, attempts):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", required=True)
-    parser.add_argument("--email", default="probe-rx-doctor@example.com")
+    parser.add_argument("--email", default="")
     parser.add_argument("--password", default="ProbePass123!")
     parser.add_argument("--qr-attempts", type=int, default=10)
+    parser.add_argument("--hvq", action="store_true", default=False)
     args = parser.parse_args()
-    return probe(args.base.rstrip("/"), args.email, args.password, args.qr_attempts)
+    email = args.email or (
+        "probe-hvq-doctor@example.com" if args.hvq else "probe-rx-doctor@example.com"
+    )
+    return probe(
+        args.base.rstrip("/"), email, args.password, args.qr_attempts, args.hvq
+    )
 
 
 if __name__ == "__main__":

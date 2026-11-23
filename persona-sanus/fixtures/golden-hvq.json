@@ -1,0 +1,201 @@
+{
+  "doc_json": {
+    "schema_version": 2,
+    "page": {
+      "orientation": "landscape",
+      "panel_count": 2
+    },
+    "letterhead": {
+      "logo_asset_id": null,
+      "doctor_details": "{{doctor.name}}\n{{doctor.specialty}}",
+      "clinic_details": "{{clinic.name}}\n{{clinic.address}}\nTelf.: {{clinic.phone}}",
+      "form_code": "5-189113",
+      "colors": {
+        "primary": "#111111",
+        "accent": "#111111"
+      }
+    },
+    "panels": [
+      {
+        "title": "MEDICACIÓN:",
+        "sections": [
+          {
+            "type": "letterhead"
+          },
+          {
+            "type": "patient_fields",
+            "fields": [
+              "recetario_type",
+              "issue_date",
+              "issue_time",
+              "patient_national_id",
+              "patient_hcl",
+              "patient_name",
+              "patient_age"
+            ]
+          },
+          {
+            "type": "validity",
+            "label_1_day": "1 DIA",
+            "label_3_days": "3 DIAS"
+          },
+          {
+            "type": "diagnosis",
+            "show_allergies": true
+          },
+          {
+            "type": "medication_table",
+            "style": "full",
+            "header_captions": [
+              "DATOS DEL MEDICAMENTO (DENOMINACIÓN COMÚN INTERNACIONAL (DCI), FORMA FARMACÉUTICA Y CONCENTRACIÓN/DISPOSITIVO MÉDICO (TAMAÑO, CALIBRE, VOLUMEN...))",
+              "CANTIDAD (EN NÚMEROS Y LETRAS)",
+              "DOSIS / POSOLOGÍA",
+              "VÍA DE ADMINISTRACIÓN",
+              "FRECUENCIA DE LA ADMINISTRACIÓN",
+              "DURACIÓN DEL TRATAMIENTO"
+            ],
+            "show_observations": false
+          },
+          {
+            "type": "reception_block"
+          },
+          {
+            "type": "prescriber_block"
+          },
+          {
+            "type": "signature_qr"
+          }
+        ]
+      },
+      {
+        "title": "INDICACIONES:",
+        "sections": [
+          {
+            "type": "letterhead"
+          },
+          {
+            "type": "patient_fields",
+            "fields": [
+              "recetario_type",
+              "issue_date",
+              "issue_time",
+              "patient_national_id",
+              "patient_hcl",
+              "patient_name",
+              "patient_age"
+            ]
+          },
+          {
+            "type": "validity",
+            "label_1_day": "1 DIA",
+            "label_3_days": "3 DIAS"
+          },
+          {
+            "type": "warning_signs"
+          },
+          {
+            "type": "recommendations"
+          },
+          {
+            "type": "indication_list",
+            "show_observations": true
+          },
+          {
+            "type": "prescriber_block"
+          },
+          {
+            "type": "signature_qr"
+          }
+        ]
+      }
+    ],
+    "images": [],
+    "medications": []
+  },
+  "variables": {
+    "patient.name": "CASARES ROMERO GABRIELA ANDREA",
+    "patient.national_id": "1724122799",
+    "patient.age": "20 años",
+    "patient.age_detail": "20a 7m 11d",
+    "patient.sex": "F",
+    "patient.hcl": "722846-774928",
+    "patient.allergies": "Penicilina",
+    "doctor.name": "NATHALIE PAOLA LASCANO GALLEGOS",
+    "doctor.specialty": "Medicina General",
+    "doctor.national_id": "1803693264",
+    "doctor.license_no": "1803693264",
+    "doctor.contact": "",
+    "clinic.name": "HOSPITAL VOZANDES QUITO HVQ S.A.",
+    "clinic.address": "Villalengua Oe237 y Av. 10 de Agosto",
+    "clinic.phone": "(02) 4007 - 100",
+    "prescription.number": "000001",
+    "prescription.date": "26-10-2026",
+    "prescription.time": "13:19",
+    "prescription.recetario_type": "AMBULATORIO",
+    "prescription.validity": "3 DIAS",
+    "prescription.diagnosis": "ALOPECIA AREATA (CIE-10: L63)\nDERMATITIS NUMULAR (CIE-10: L30.0)",
+    "prescription.warning_signs": "Fiebre mayor a 38.5 °C",
+    "prescription.instructions": "Reposo e hidratación",
+    "medications[]": "Betametasona + Ácido Fusídico (Fusimed B), Glicolic H Loción, Prednisona 20mg / sólido oral / tabletas (Pharmab), Gluconato de Zinc 50mg"
+  },
+  "medications": [
+    {
+      "name": "Betametasona + Ácido Fusídico (Fusimed B)",
+      "dose": "1 aplicaciones",
+      "route": "vía tópica",
+      "frequency": "cada 12 horas",
+      "duration": "30 días",
+      "quantity": "1",
+      "quantity_number": 1,
+      "notes": "Aplicar poca cantidad en el area afectada 8am y 8pm"
+    },
+    {
+      "name": "Glicolic H Loción",
+      "dose": "1 aplicaciones",
+      "route": "vía tópica",
+      "frequency": "cada 24 horas",
+      "duration": "30 días",
+      "quantity": "1",
+      "quantity_number": 1,
+      "notes": "Aplicar en la mancha del rostro todas las noches"
+    },
+    {
+      "name": "Prednisona 20mg / sólido oral / tabletas (Pharmab)",
+      "dose": "20 miligramos",
+      "route": "vía oral",
+      "frequency": "cada 12 horas",
+      "duration": "30 días",
+      "quantity": "40",
+      "quantity_number": 40,
+      "notes": "2 TABLETAS JUNTAS 7AM DESPUES DEL DESAYUNO 5 DIAS, LUEGO 1 1/2 TABLETAS LUEGO SOLO 1 TABLETA POR 5 DIAS LUEGO MANTENER TRES VECES"
+    },
+    {
+      "name": "Gluconato de Zinc 50mg",
+      "dose": "1 tableta",
+      "route": "vía oral",
+      "frequency": "cada 24 horas",
+      "duration": "90 días",
+      "quantity": "90",
+      "quantity_number": 90,
+      "notes": "1 tableta despues de la merienda"
+    }
+  ],
+  "margin_mm": 8,
+  "meta": {
+    "provisional": true
+  },
+  "expected_pages": 1,
+  "expected_orientation": "landscape",
+  "expected_texts": [
+    "MEDICACIÓN:",
+    "INDICACIONES:",
+    "40 (CUARENTA)",
+    "90 (NOVENTA)",
+    "1 (UNO)",
+    "Observación: Aplicar poca cantidad",
+    "DATOS DEL PRESCRIPTOR",
+    "1803693264",
+    "722846-774928",
+    "20a 7m 11d"
+  ]
+}

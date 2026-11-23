@@ -8,12 +8,12 @@ use qrcode_generator::qr::{Encoder, ErrorCorrection};
 use qrcode_generator::Renderer;
 
 use crate::forms::{
-    paginate_document, parse_document, DocumentLayout, DocumentMeta, DocumentPage, MedicationBlock,
+    paginate_document, parse_document, DocumentLayout, DocumentMeta, LayoutBlock, LayoutPanel,
+    MedicationBlock, TableRow, TextColor,
 };
 
-const PAGE_WIDTH: f32 = 210.0;
-const PAGE_HEIGHT: f32 = 297.0;
-const FONT_BYTES: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
+const FONT_REGULAR_BYTES: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
+const FONT_BOLD_BYTES: &[u8] = include_bytes!("../assets/fonts/NotoSans-Bold.ttf");
 const PT_PER_MM: f32 = 2.834_646;
 
 #[derive(Debug, Clone)]
@@ -41,6 +41,7 @@ pub struct PdfInput {
 
 struct Fonts {
     regular: PdfFontHandle,
+    bold: PdfFontHandle,
 }
 
 struct PreparedImage {
@@ -76,12 +77,16 @@ pub fn render(input: &PdfInput) -> Result<Vec<u8>, String> {
     );
 
     let mut font_warnings = Vec::new();
-    let parsed = ParsedFont::from_bytes(FONT_BYTES, 0, &mut font_warnings)
+    let parsed_regular = ParsedFont::from_bytes(FONT_REGULAR_BYTES, 0, &mut font_warnings)
         .ok_or_else(|| "No se pudo cargar la tipografía del documento.".to_owned())?;
+    let parsed_bold = ParsedFont::from_bytes(FONT_BOLD_BYTES, 0, &mut font_warnings)
+        .ok_or_else(|| "No se pudo cargar la tipografía en negrita.".to_owned())?;
     let mut pdf = PdfDocument::new(&input.title);
-    let font_id = pdf.add_font(&parsed);
+    let regular_id = pdf.add_font(&parsed_regular);
+    let bold_id = pdf.add_font(&parsed_bold);
     let fonts = Fonts {
-        regular: PdfFontHandle::External(font_id),
+        regular: PdfFontHandle::External(regular_id),
+        bold: PdfFontHandle::External(bold_id),
     };
 
     let mut warnings = Vec::new();
@@ -118,13 +123,11 @@ pub fn render(input: &PdfInput) -> Result<Vec<u8>, String> {
     for (index, page) in layout.pages.iter().enumerate() {
         pages.push(render_page(
             page,
-            &PageContext {
-                layout: &layout,
-                fonts: &fonts,
-                images: &images,
-                qr: qr.as_ref(),
-                provisional,
-            },
+            &layout,
+            &fonts,
+            &images,
+            qr.as_ref(),
+            provisional,
             index + 1,
             total,
         ));
@@ -169,6 +172,14 @@ pub fn color(hex: &str) -> Color {
     })
 }
 
+fn font_for_block(fonts: &Fonts, bold: bool) -> PdfFontHandle {
+    if bold {
+        fonts.bold.clone()
+    } else {
+        fonts.regular.clone()
+    }
+}
+
 fn push_text(
     ops: &mut Vec<Op>,
     fonts: &Fonts,
@@ -193,6 +204,41 @@ fn push_text(
         items: vec![TextItem::Text(text.to_owned())],
     });
 }
+#[allow(clippy::too_many_arguments)]
+fn push_text_bold_prefix(
+    ops: &mut Vec<Op>,
+    fonts: &Fonts,
+    size: f32,
+    color: &Color,
+    x: f32,
+    y: f32,
+    prefix: &str,
+    rest: &str,
+) {
+    if prefix.is_empty() && rest.is_empty() {
+        return;
+    }
+    ops.push(Op::SetFillColor { col: color.clone() });
+    ops.push(Op::SetTextCursor {
+        pos: Point::new(Mm(x), Mm(y)),
+    });
+    ops.push(Op::SetFont {
+        font: fonts.bold.clone(),
+        size: Pt(size),
+    });
+    ops.push(Op::ShowText {
+        items: vec![TextItem::Text(prefix.to_owned())],
+    });
+    if !rest.is_empty() {
+        ops.push(Op::SetFont {
+            font: fonts.regular.clone(),
+            size: Pt(size),
+        });
+        ops.push(Op::ShowText {
+            items: vec![TextItem::Text(rest.to_owned())],
+        });
+    }
+}
 
 fn push_rule(ops: &mut Vec<Op>, x1: f32, y1: f32, x2: f32, y2: f32, color: &Color, width: f32) {
     ops.push(Op::SetOutlineColor { col: color.clone() });
@@ -212,6 +258,21 @@ fn push_rule(ops: &mut Vec<Op>, x1: f32, y1: f32, x2: f32, y2: f32, color: &Colo
             is_closed: false,
         },
     });
+}
+
+fn push_rect(
+    ops: &mut Vec<Op>,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    color: &Color,
+    width_pt: f32,
+) {
+    push_rule(ops, x, y, x + width, y, color, width_pt);
+    push_rule(ops, x + width, y, x + width, y + height, color, width_pt);
+    push_rule(ops, x + width, y + height, x, y + height, color, width_pt);
+    push_rule(ops, x, y + height, x, y, color, width_pt);
 }
 
 fn push_image(
@@ -243,136 +304,45 @@ fn push_image(
     });
 }
 
-struct PageContext<'a> {
-    layout: &'a DocumentLayout,
-    fonts: &'a Fonts,
-    images: &'a BTreeMap<String, PreparedImage>,
-    qr: Option<&'a (XObjectId, f32, f32)>,
-    provisional: bool,
+fn text_color(layout: &DocumentLayout, text_color: &TextColor) -> Color {
+    match text_color {
+        TextColor::Primary => color(&layout.primary),
+        TextColor::Accent => color(&layout.accent),
+        TextColor::Ink => color("#111111"),
+        TextColor::Muted => color("#555555"),
+    }
 }
-
+#[allow(clippy::too_many_arguments)]
 fn render_page(
-    page: &DocumentPage,
-    context: &PageContext<'_>,
+    page: &crate::forms::LayoutPage,
+    layout: &DocumentLayout,
+    fonts: &Fonts,
+    images: &BTreeMap<String, PreparedImage>,
+    qr: Option<&(XObjectId, f32, f32)>,
+    provisional: bool,
     page_number: usize,
     total: usize,
 ) -> PdfPage {
-    let layout = context.layout;
-    let fonts = context.fonts;
-    let images = context.images;
-    let qr = context.qr;
-    let provisional = context.provisional;
-    let margin = layout.margin_mm as f32;
-    let primary = color(&layout.primary);
-    let accent = color(&layout.accent);
-    let ink = color("#111111");
     let muted = color("#555555");
     let mut ops = vec![Op::StartTextSection];
-    let mut y = PAGE_HEIGHT - margin;
 
-    if let Some(logo) = layout.logo_asset_id.as_ref().and_then(|id| images.get(id)) {
-        push_image(
+    let page_width = layout.page_width_mm;
+    let page_height = layout.page_height_mm;
+    let margin = layout.margin_mm as f32;
+
+    for panel in &page.panels {
+        render_panel(
             &mut ops,
-            logo,
-            PAGE_WIDTH - margin - 20.0,
-            y - 20.0,
-            20.0,
-            20.0,
+            panel,
+            layout,
+            fonts,
+            images,
+            qr,
+            provisional,
+            page_width,
+            page_height,
+            margin,
         );
-    }
-    for line in &layout.header_doctor {
-        y -= 6.0;
-        push_text(&mut ops, fonts, 14.0, &primary, margin, y, line);
-    }
-    for line in &layout.header_clinic {
-        y -= 4.6;
-        push_text(&mut ops, fonts, 8.5, &muted, margin, y, line);
-    }
-    y -= 3.0;
-    push_rule(&mut ops, margin, y, PAGE_WIDTH - margin, y, &primary, 1.8);
-
-    for index in &page.images {
-        if let Some(image) = layout.images.get(*index) {
-            if let Some(prepared) = image.asset_id.as_ref().and_then(|id| images.get(id)) {
-                y -= 31.0;
-                push_image(
-                    &mut ops,
-                    prepared,
-                    margin,
-                    y,
-                    PAGE_WIDTH - 2.0 * margin,
-                    29.0,
-                );
-                if !image.caption.trim().is_empty() {
-                    push_text(
-                        &mut ops,
-                        fonts,
-                        8.0,
-                        &muted,
-                        margin,
-                        y - 2.0,
-                        &image.caption,
-                    );
-                }
-            }
-        }
-    }
-
-    y -= 6.0;
-    for line in &page.lines {
-        y -= 5.2;
-        push_text(&mut ops, fonts, 10.0, &ink, margin, y, line);
-    }
-
-    let footer_lines = layout.footer.len() as f32;
-    let footer_top = margin + footer_lines * 4.6 + 12.0;
-    push_rule(
-        &mut ops,
-        margin,
-        footer_top,
-        PAGE_WIDTH - margin,
-        footer_top,
-        &accent,
-        0.8,
-    );
-    let mut footer_y = footer_top - 5.0;
-    for line in &layout.footer {
-        push_text(&mut ops, fonts, 7.5, &muted, margin, footer_y, line);
-        footer_y -= 4.6;
-    }
-
-    let qr_size = 25.0;
-    let qr_x = PAGE_WIDTH - margin - qr_size;
-    let qr_y = margin + 2.0;
-    if provisional {
-        push_rule(&mut ops, qr_x, qr_y, qr_x + qr_size, qr_y, &muted, 0.8);
-        push_rule(
-            &mut ops,
-            qr_x + qr_size,
-            qr_y,
-            qr_x + qr_size,
-            qr_y + qr_size,
-            &muted,
-            0.8,
-        );
-        push_rule(
-            &mut ops,
-            qr_x + qr_size,
-            qr_y + qr_size,
-            qr_x,
-            qr_y + qr_size,
-            &muted,
-            0.8,
-        );
-        push_rule(&mut ops, qr_x, qr_y + qr_size, qr_x, qr_y, &muted, 0.8);
-        push_text(&mut ops, fonts, 7.0, &muted, qr_x + 6.0, qr_y + 12.0, "QR");
-    } else if let Some((id, width, height)) = qr {
-        let prepared = PreparedImage {
-            id: id.clone(),
-            width: *width,
-            height: *height,
-        };
-        push_image(&mut ops, &prepared, qr_x, qr_y, qr_size, qr_size);
     }
 
     push_text(
@@ -380,10 +350,353 @@ fn render_page(
         fonts,
         7.0,
         &muted,
-        PAGE_WIDTH / 2.0 - 12.0,
+        page_width / 2.0 - 12.0,
         margin + 2.0,
         &format!("Página {page_number} de {total}"),
     );
     ops.push(Op::EndTextSection);
-    PdfPage::new(Mm(PAGE_WIDTH), Mm(PAGE_HEIGHT), ops)
+    PdfPage::new(Mm(page_width), Mm(page_height), ops)
+}
+#[allow(clippy::too_many_arguments)]
+fn render_panel(
+    ops: &mut Vec<Op>,
+    panel: &LayoutPanel,
+    layout: &DocumentLayout,
+    fonts: &Fonts,
+    images: &BTreeMap<String, PreparedImage>,
+    qr: Option<&(XObjectId, f32, f32)>,
+    provisional: bool,
+    page_width: f32,
+    page_height: f32,
+    margin: f32,
+) {
+    let panel_x = panel.x_mm;
+    let panel_width = panel.width_mm;
+    let mut y = page_height - margin;
+
+    if panel.has_letterhead {
+        if let Some(logo) = layout.logo_asset_id.as_ref().and_then(|id| images.get(id)) {
+            push_image(
+                ops,
+                logo,
+                panel_x + panel_width - 18.0,
+                y - 18.0,
+                18.0,
+                18.0,
+            );
+        }
+    }
+
+    for block in &panel.blocks {
+        match block {
+            LayoutBlock::Text {
+                lines,
+                size_pt,
+                bold,
+                color,
+                bold_prefix,
+            } => {
+                let color_value = text_color(layout, color);
+                for line in lines {
+                    y -= size_pt * 0.52;
+                    if let Some(prefix) = bold_prefix {
+                        let rest = line.strip_prefix(prefix).unwrap_or(line.as_str());
+                        push_text_bold_prefix(
+                            ops,
+                            fonts,
+                            *size_pt,
+                            &color_value,
+                            panel_x,
+                            y,
+                            prefix,
+                            rest,
+                        );
+                    } else {
+                        let font = font_for_block(fonts, *bold);
+                        ops.push(Op::SetFont {
+                            font,
+                            size: Pt(*size_pt),
+                        });
+                        push_text(ops, fonts, *size_pt, &color_value, panel_x, y, line);
+                    }
+                }
+            }
+            LayoutBlock::Rule => {
+                y -= 1.0;
+                push_rule(
+                    ops,
+                    panel_x,
+                    y,
+                    panel_x + panel_width,
+                    y,
+                    &primary_for_layout(layout),
+                    1.8,
+                );
+                y -= 1.0;
+            }
+            LayoutBlock::Table {
+                header,
+                rows,
+                col_weights,
+            } => {
+                y = render_table(
+                    ops,
+                    fonts,
+                    panel_x,
+                    y,
+                    panel_width,
+                    header,
+                    rows,
+                    col_weights,
+                );
+            }
+            LayoutBlock::Image { slot_index } => {
+                if let Some(image) = layout.images.get(*slot_index) {
+                    if let Some(prepared) = image.asset_id.as_ref().and_then(|id| images.get(id)) {
+                        y -= 29.0;
+                        push_image(ops, prepared, panel_x, y, panel_width, 27.0);
+                        if !image.caption.trim().is_empty() {
+                            y -= 2.0;
+                            push_text(
+                                ops,
+                                fonts,
+                                8.0,
+                                &color("#555555"),
+                                panel_x,
+                                y,
+                                &image.caption,
+                            );
+                        }
+                    }
+                }
+            }
+            LayoutBlock::Spacer { height_mm } => {
+                y -= *height_mm;
+            }
+            LayoutBlock::Qr => {
+                let qr_size = if page_width > page_height { 18.0 } else { 25.0 };
+                let qr_x = panel_x + panel_width - qr_size;
+                let qr_y = margin + 2.0;
+                if provisional {
+                    push_rect(ops, qr_x, qr_y, qr_size, qr_size, &color("#555555"), 0.8);
+                    push_text(
+                        ops,
+                        fonts,
+                        7.0,
+                        &color("#555555"),
+                        qr_x + 6.0,
+                        qr_y + qr_size / 2.0,
+                        "QR",
+                    );
+                } else if let Some((id, width, height)) = qr {
+                    let prepared = PreparedImage {
+                        id: id.clone(),
+                        width: *width,
+                        height: *height,
+                    };
+                    push_image(ops, &prepared, qr_x, qr_y, qr_size, qr_size);
+                }
+                y = y.min(qr_y + qr_size + 2.0);
+            }
+        }
+    }
+}
+
+fn primary_for_layout(layout: &DocumentLayout) -> Color {
+    color(&layout.primary)
+}
+#[allow(clippy::too_many_arguments)]
+fn render_table(
+    ops: &mut Vec<Op>,
+    fonts: &Fonts,
+    panel_x: f32,
+    mut y: f32,
+    panel_width: f32,
+    header: &[String],
+    rows: &[TableRow],
+    col_weights: &[f32],
+) -> f32 {
+    let border_color = color("#111111");
+    let cell_widths: Vec<f32> = col_weights
+        .iter()
+        .map(|weight| panel_width * weight)
+        .collect();
+
+    let header_chars: Vec<usize> = cell_widths
+        .iter()
+        .map(|width| text_width_chars(*width, 7.0))
+        .collect();
+    let header_row_height = header
+        .iter()
+        .enumerate()
+        .map(|(index, caption)| {
+            let chars = header_chars.get(index).copied().unwrap_or(8);
+            let lines = crate::forms::wrap_text(caption, chars).len() as f32;
+            lines * 7.0 * 0.52 + 1.5
+        })
+        .fold(0.0, f32::max)
+        .max(5.0);
+
+    let row_heights: Vec<f32> = rows
+        .iter()
+        .map(|row| {
+            if row.span_all {
+                let chars = text_width_chars(panel_width, 8.0);
+                let lines = crate::forms::wrap_text(&row.cells.join(" "), chars).len() as f32;
+                lines * 8.0 * 0.52 + 1.5
+            } else {
+                row.cells
+                    .iter()
+                    .enumerate()
+                    .map(|(index, cell)| {
+                        let width = cell_widths.get(index).copied().unwrap_or(panel_width);
+                        let chars = text_width_chars(width, 8.0);
+                        let lines = crate::forms::wrap_text(cell, chars).len() as f32;
+                        lines * 8.0 * 0.52 + 1.5
+                    })
+                    .fold(0.0, f32::max)
+                    .max(5.0)
+            }
+        })
+        .collect();
+
+    let table_height = header_row_height + row_heights.iter().sum::<f32>();
+    y -= table_height;
+
+    let mut current_y = y + table_height;
+    let top_y = current_y;
+
+    current_y -= header_row_height;
+    for (index, caption) in header.iter().enumerate() {
+        let x = panel_x + cell_widths.iter().take(index).sum::<f32>();
+        let _width = cell_widths.get(index).copied().unwrap_or(panel_width);
+        let chars = header_chars.get(index).copied().unwrap_or(8);
+        let lines = crate::forms::wrap_text(caption, chars);
+        let line_height = 7.0 * 0.52;
+        let block_height = lines.len() as f32 * line_height;
+        let start_y =
+            current_y + (header_row_height - block_height) / 2.0 + block_height - line_height;
+        for (line_index, line) in lines.iter().enumerate() {
+            push_text(
+                ops,
+                fonts,
+                7.0,
+                &color("#111111"),
+                x + 1.0,
+                start_y - line_index as f32 * line_height,
+                line,
+            );
+        }
+    }
+
+    for (row_index, row) in rows.iter().enumerate() {
+        let row_height = row_heights[row_index];
+        current_y -= row_height;
+        if row.span_all {
+            let chars = text_width_chars(panel_width, 8.0);
+            let lines = crate::forms::wrap_text(&row.cells.join(" "), chars);
+            let line_height = 8.0 * 0.52;
+            for (line_index, line) in lines.iter().enumerate() {
+                let font = if row.bold {
+                    fonts.bold.clone()
+                } else {
+                    fonts.regular.clone()
+                };
+                ops.push(Op::SetFont {
+                    font,
+                    size: Pt(8.0),
+                });
+                push_text(
+                    ops,
+                    fonts,
+                    8.0,
+                    &color("#111111"),
+                    panel_x + 1.0,
+                    current_y + row_height - 1.5 - line_index as f32 * line_height,
+                    line,
+                );
+            }
+        } else {
+            for (cell_index, cell) in row.cells.iter().enumerate() {
+                let x = panel_x + cell_widths.iter().take(cell_index).sum::<f32>();
+                let width = cell_widths.get(cell_index).copied().unwrap_or(panel_width);
+                let chars = text_width_chars(width, 8.0);
+                let lines = crate::forms::wrap_text(cell, chars);
+                let line_height = 8.0 * 0.52;
+                for (line_index, line) in lines.iter().enumerate() {
+                    let font = if row.bold {
+                        fonts.bold.clone()
+                    } else {
+                        fonts.regular.clone()
+                    };
+                    ops.push(Op::SetFont {
+                        font,
+                        size: Pt(8.0),
+                    });
+                    push_text(
+                        ops,
+                        fonts,
+                        8.0,
+                        &color("#111111"),
+                        x + 1.0,
+                        current_y + row_height - 1.5 - line_index as f32 * line_height,
+                        line,
+                    );
+                }
+            }
+        }
+    }
+
+    let mut x = panel_x;
+    push_rule(
+        ops,
+        panel_x,
+        top_y,
+        panel_x + panel_width,
+        top_y,
+        &border_color,
+        0.4,
+    );
+    push_rule(
+        ops,
+        panel_x,
+        y,
+        panel_x + panel_width,
+        y,
+        &border_color,
+        0.4,
+    );
+    for width in &cell_widths {
+        x += width;
+        push_rule(ops, x, top_y, x, y, &border_color, 0.4);
+    }
+    let mut row_y = top_y;
+    push_rule(
+        ops,
+        panel_x,
+        row_y - header_row_height,
+        panel_x + panel_width,
+        row_y - header_row_height,
+        &border_color,
+        0.4,
+    );
+    row_y -= header_row_height;
+    for row_height in &row_heights {
+        row_y -= *row_height;
+        push_rule(
+            ops,
+            panel_x,
+            row_y,
+            panel_x + panel_width,
+            row_y,
+            &border_color,
+            0.4,
+        );
+    }
+
+    y
+}
+
+fn text_width_chars(width_mm: f32, size_pt: f32) -> usize {
+    (width_mm / (1.95 * size_pt / 10.0)).floor().max(8.0) as usize
 }

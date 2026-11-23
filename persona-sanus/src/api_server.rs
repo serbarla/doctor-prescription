@@ -63,6 +63,10 @@ pub struct PatientCreateRequest {
     phone: Option<String>,
     #[serde(default)]
     notes: Option<String>,
+    #[serde(default, alias = "medical_record_no")]
+    medical_record_no: Option<String>,
+    #[serde(default, alias = "allergies")]
+    allergies: Option<String>,
     #[serde(default, alias = "confirm_duplicate")]
     confirm_duplicate: bool,
     #[serde(default, alias = "client_id")]
@@ -84,6 +88,10 @@ pub struct PatientUpdateRequest {
     phone: Option<String>,
     #[serde(default)]
     notes: Option<String>,
+    #[serde(default, alias = "medical_record_no")]
+    medical_record_no: Option<String>,
+    #[serde(default, alias = "allergies")]
+    allergies: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +119,8 @@ pub struct TemplateCreateRequest {
     owner_type: Option<String>,
     #[serde(default, alias = "client_id")]
     client_id: Option<String>,
+    #[serde(default)]
+    preset: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,6 +184,12 @@ pub struct PrescriptionCreateRequest {
     diagnosis: Option<String>,
     #[serde(default)]
     validity: Option<String>,
+    #[serde(default, alias = "recetario_type")]
+    recetario_type: Option<String>,
+    #[serde(default, alias = "validity_days")]
+    validity_days: Option<i32>,
+    #[serde(default, alias = "warning_signs")]
+    warning_signs: Option<String>,
     #[serde(default)]
     instructions: Option<String>,
 }
@@ -185,6 +201,12 @@ pub struct PrescriptionUpdateRequest {
     diagnosis: Option<String>,
     #[serde(default)]
     validity: Option<String>,
+    #[serde(default, alias = "recetario_type")]
+    recetario_type: Option<String>,
+    #[serde(default, alias = "validity_days")]
+    validity_days: Option<i32>,
+    #[serde(default, alias = "warning_signs")]
+    warning_signs: Option<String>,
     #[serde(default)]
     instructions: Option<String>,
 }
@@ -206,6 +228,8 @@ pub struct PrescriptionItemRequest {
     duration: Option<String>,
     #[serde(default)]
     quantity: Option<String>,
+    #[serde(default, alias = "quantity_number")]
+    quantity_number: Option<i32>,
     #[serde(default)]
     notes: Option<String>,
 }
@@ -309,6 +333,8 @@ fn patient_json(patient: &db::Patient) -> Value {
         "sex": patient.sex,
         "phone": patient.phone,
         "notes": patient.notes,
+        "medicalRecordNo": patient.medical_record_no,
+        "allergies": patient.allergies,
         "createdAt": patient.created_at,
         "updatedAt": patient.updated_at,
     })
@@ -327,6 +353,9 @@ fn prescription_json(prescription: &db::Prescription, patient_name: &str) -> Val
         "rxBlockId": prescription.rx_block_id,
         "diagnosis": prescription.diagnosis,
         "validity": prescription.validity,
+        "recetarioType": prescription.recetario_type,
+        "validityDays": prescription.validity_days,
+        "warningSigns": prescription.warning_signs,
         "instructions": prescription.instructions,
         "signedAt": prescription.signed_at,
         "voidedAt": prescription.voided_at,
@@ -350,6 +379,7 @@ fn prescription_item_json(item: &db::PrescriptionItem) -> Value {
         "frequency": item.frequency,
         "duration": item.duration,
         "quantity": item.quantity,
+        "quantityNumber": item.quantity_number,
         "notes": item.notes,
     })
 }
@@ -773,6 +803,9 @@ pub async fn create_prescription(
             client_id: request.client_id,
             diagnosis: request.diagnosis,
             validity: request.validity,
+            recetario_type: request.recetario_type,
+            validity_days: request.validity_days,
+            warning_signs: request.warning_signs,
             instructions: request.instructions,
         },
     )
@@ -805,6 +838,9 @@ pub async fn update_prescription(
         PrescriptionUpdate {
             diagnosis: request.diagnosis,
             validity: request.validity,
+            recetario_type: request.recetario_type,
+            validity_days: request.validity_days,
+            warning_signs: request.warning_signs,
             instructions: request.instructions,
         },
     )
@@ -832,6 +868,7 @@ pub async fn upsert_prescription_item(
             frequency: request.frequency,
             duration: request.duration,
             quantity: request.quantity,
+            quantity_number: request.quantity_number,
             notes: request.notes,
         },
     )
@@ -967,6 +1004,8 @@ pub async fn create_patient(
             sex: request.sex,
             phone: request.phone,
             notes: request.notes,
+            medical_record_no: request.medical_record_no,
+            allergies: request.allergies,
             client_id: request.client_id,
         },
         request.confirm_duplicate,
@@ -1010,6 +1049,8 @@ pub async fn update_patient(
             sex: request.sex,
             phone: request.phone,
             notes: request.notes,
+            medical_record_no: request.medical_record_no,
+            allergies: request.allergies,
         },
     )
     .await?;
@@ -1054,6 +1095,7 @@ pub async fn create_template(
         request.name,
         request.owner_type,
         request.client_id,
+        request.preset,
     )
     .await?;
     Ok(Json(template_json(&template, &[])).into_response())

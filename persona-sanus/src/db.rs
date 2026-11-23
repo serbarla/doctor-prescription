@@ -322,6 +322,8 @@ pub struct Patient {
     pub sex: Option<String>,
     pub phone: Option<String>,
     pub notes: Option<String>,
+    pub medical_record_no: Option<String>,
+    pub allergies: Option<String>,
     pub client_id: Option<String>,
     pub deleted_at: Option<String>,
     pub created_at: String,
@@ -340,6 +342,8 @@ pub struct NewPatient<'a> {
     pub sex: Option<&'a str>,
     pub phone: Option<&'a str>,
     pub notes: Option<&'a str>,
+    pub medical_record_no: Option<&'a str>,
+    pub allergies: Option<&'a str>,
     pub client_id: Option<&'a str>,
     pub deleted_at: Option<&'a str>,
     pub created_at: &'a str,
@@ -354,6 +358,8 @@ pub struct PatientFields<'a> {
     pub sex: Option<&'a str>,
     pub phone: Option<&'a str>,
     pub notes: Option<&'a str>,
+    pub medical_record_no: Option<&'a str>,
+    pub allergies: Option<&'a str>,
 }
 
 #[derive(Debug, Insertable)]
@@ -1240,6 +1246,8 @@ pub fn update_patient(
         patients::sex.eq(fields.sex),
         patients::phone.eq(fields.phone),
         patients::notes.eq(fields.notes),
+        patients::medical_record_no.eq(fields.medical_record_no),
+        patients::allergies.eq(fields.allergies),
         patients::updated_at.eq(now),
     ))
     .execute(connection)
@@ -1723,6 +1731,9 @@ pub struct Prescription {
     pub rx_block_id: Option<String>,
     pub diagnosis: Option<String>,
     pub validity: Option<String>,
+    pub recetario_type: String,
+    pub validity_days: Option<i32>,
+    pub warning_signs: Option<String>,
     pub instructions: Option<String>,
     pub signed_at: Option<String>,
     pub synced_at: Option<String>,
@@ -1748,6 +1759,9 @@ pub struct NewPrescription<'a> {
     pub rx_block_id: Option<&'a str>,
     pub diagnosis: Option<&'a str>,
     pub validity: Option<&'a str>,
+    pub recetario_type: &'a str,
+    pub validity_days: Option<i32>,
+    pub warning_signs: Option<&'a str>,
     pub instructions: Option<&'a str>,
     pub signed_at: Option<&'a str>,
     pub synced_at: Option<&'a str>,
@@ -1773,6 +1787,7 @@ pub struct PrescriptionItem {
     pub frequency: Option<String>,
     pub duration: Option<String>,
     pub quantity: Option<String>,
+    pub quantity_number: Option<i32>,
     pub notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -1791,6 +1806,7 @@ pub struct NewPrescriptionItem<'a> {
     pub frequency: Option<&'a str>,
     pub duration: Option<&'a str>,
     pub quantity: Option<&'a str>,
+    pub quantity_number: Option<i32>,
     pub notes: Option<&'a str>,
     pub created_at: &'a str,
     pub updated_at: &'a str,
@@ -1942,12 +1958,16 @@ pub fn insert_prescription(
         .execute(connection)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_prescription_draft(
     connection: &mut SqliteConnection,
     clinic_id: &str,
     id: &str,
     diagnosis: Option<&str>,
     validity: Option<&str>,
+    recetario_type: &str,
+    validity_days: Option<i32>,
+    warning_signs: Option<&str>,
     instructions: Option<&str>,
     now: &str,
 ) -> QueryResult<usize> {
@@ -1960,6 +1980,9 @@ pub fn update_prescription_draft(
     .set((
         prescriptions::diagnosis.eq(diagnosis),
         prescriptions::validity.eq(validity),
+        prescriptions::recetario_type.eq(recetario_type),
+        prescriptions::validity_days.eq(validity_days),
+        prescriptions::warning_signs.eq(warning_signs),
         prescriptions::instructions.eq(instructions),
         prescriptions::updated_at.eq(now),
     ))
@@ -2074,6 +2097,7 @@ pub struct PrescriptionItemFields<'a> {
     pub frequency: Option<&'a str>,
     pub duration: Option<&'a str>,
     pub quantity: Option<&'a str>,
+    pub quantity_number: Option<i32>,
     pub notes: Option<&'a str>,
 }
 
@@ -2097,6 +2121,7 @@ pub fn update_prescription_item(
         prescription_items::frequency.eq(fields.frequency),
         prescription_items::duration.eq(fields.duration),
         prescription_items::quantity.eq(fields.quantity),
+        prescription_items::quantity_number.eq(fields.quantity_number),
         prescription_items::notes.eq(fields.notes),
         prescription_items::updated_at.eq(now),
     ))

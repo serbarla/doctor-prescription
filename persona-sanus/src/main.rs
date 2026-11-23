@@ -1,3 +1,4 @@
+#![allow(unreachable_code)]
 mod api;
 
 #[cfg(feature = "server")]
@@ -482,6 +483,8 @@ async fn replay_outbox_row(operation: &str, payload: &serde_json::Value) -> Resu
                 sex: payload_text(payload, "sex"),
                 phone: payload_text(payload, "phone"),
                 notes: payload_text(payload, "notes"),
+                medical_record_no: payload_text(payload, "medicalRecordNo"),
+                allergies: payload_text(payload, "allergies"),
             };
             match api::create_patient_with_client_id(&form, &payload_text(payload, "clientId"))
                 .await?
@@ -500,6 +503,8 @@ async fn replay_outbox_row(operation: &str, payload: &serde_json::Value) -> Resu
                 sex: payload_text(payload, "sex"),
                 phone: payload_text(payload, "phone"),
                 notes: payload_text(payload, "notes"),
+                medical_record_no: payload_text(payload, "medicalRecordNo"),
+                allergies: payload_text(payload, "allergies"),
             };
             api::update_patient(&payload_text(payload, "patientId"), &form).await?;
             Ok(())
@@ -528,6 +533,9 @@ async fn replay_outbox_row(operation: &str, payload: &serde_json::Value) -> Resu
                 &payload_text(payload, "clientId"),
                 &payload_text(payload, "diagnosis"),
                 &payload_text(payload, "validity"),
+                &payload_text(payload, "recetarioType"),
+                &payload_number(payload, "validityDays").to_string(),
+                &payload_text(payload, "warningSigns"),
                 &payload_text(payload, "instructions"),
             )
             .await?;
@@ -538,6 +546,9 @@ async fn replay_outbox_row(operation: &str, payload: &serde_json::Value) -> Resu
                 &payload_text(payload, "prescriptionId"),
                 &payload_text(payload, "diagnosis"),
                 &payload_text(payload, "validity"),
+                &payload_text(payload, "recetarioType"),
+                &payload_number(payload, "validityDays").to_string(),
+                &payload_text(payload, "warningSigns"),
                 &payload_text(payload, "instructions"),
             )
             .await?;
@@ -552,6 +563,7 @@ async fn replay_outbox_row(operation: &str, payload: &serde_json::Value) -> Resu
                 frequency: payload_text(payload, "frequency"),
                 duration: payload_text(payload, "duration"),
                 quantity: payload_text(payload, "quantity"),
+                quantity_number: payload_text(payload, "quantityNumber"),
                 notes: payload_text(payload, "notes"),
             };
             api::upsert_prescription_item(&payload_text(payload, "prescriptionId"), &form).await?;
@@ -794,6 +806,9 @@ fn update_prescription_offline(
     profile: &Me,
     diagnosis: &str,
     validity: &str,
+    recetario_type: &str,
+    validity_days: Option<i32>,
+    warning_signs: &str,
     instructions: &str,
 ) -> Result<api::Prescription, String> {
     let mut conn = desktop_local::open_local_db()?;
@@ -808,6 +823,9 @@ fn update_prescription_offline(
         "rx_block_id": prescription.rx_block_id,
         "diagnosis": prescription.diagnosis,
         "validity": prescription.validity,
+        "recetario_type": prescription.recetario_type,
+        "validity_days": prescription.validity_days,
+        "warning_signs": prescription.warning_signs,
         "instructions": prescription.instructions,
         "signed_at": prescription.signed_at,
         "synced_at": Value::Null,
@@ -825,6 +843,9 @@ fn update_prescription_offline(
         &prescription.id,
         diagnosis,
         validity,
+        recetario_type,
+        validity_days,
+        warning_signs,
         instructions,
         &profile.profile.id,
     )?;
@@ -839,6 +860,23 @@ fn update_prescription_offline(
     };
     updated.validity = {
         let trimmed = validity.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        }
+    };
+    updated.recetario_type = {
+        let trimmed = recetario_type.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        }
+    };
+    updated.validity_days = validity_days;
+    updated.warning_signs = {
+        let trimmed = warning_signs.trim();
         if trimmed.is_empty() {
             None
         } else {
@@ -874,6 +912,9 @@ fn upsert_prescription_item_offline(
         "rx_block_id": prescription.rx_block_id,
         "diagnosis": prescription.diagnosis,
         "validity": prescription.validity,
+        "recetario_type": prescription.recetario_type,
+        "validity_days": prescription.validity_days,
+        "warning_signs": prescription.warning_signs,
         "instructions": prescription.instructions,
         "signed_at": prescription.signed_at,
         "synced_at": Value::Null,
@@ -886,6 +927,7 @@ fn upsert_prescription_item_offline(
         "created_by": prescription.created_by,
     });
     desktop_local::cache_prescription(&mut conn, &value)?;
+    let quantity_number = form.quantity_number.trim().parse::<i32>().ok();
     desktop_local::upsert_local_prescription_item(
         &mut conn,
         &prescription.id,
@@ -896,6 +938,7 @@ fn upsert_prescription_item_offline(
         &form.frequency,
         &form.duration,
         &form.quantity,
+        quantity_number,
         &form.notes,
         &profile.profile.id,
     )?;
@@ -1019,13 +1062,14 @@ fn create_template_offline(
     })
 }
 
-async fn create_template_dispatch(
+async fn create_template_dispatch_with_preset(
     name: &str,
     owner_type: &str,
     fallback: Option<Me>,
+    preset: Option<&str>,
 ) -> Result<api::Template, String> {
     if http::is_server_reachable().await {
-        return api::create_template(name, owner_type).await;
+        return api::create_template_with_preset(name, owner_type, preset).await;
     }
     #[cfg(feature = "desktop")]
     {
@@ -3726,6 +3770,8 @@ fn PatientNew() -> Element {
     let mut sex = use_signal(String::new);
     let mut phone = use_signal(String::new);
     let mut notes = use_signal(String::new);
+    let mut medical_record_no = use_signal(String::new);
+    let mut allergies = use_signal(String::new);
     let warning_ids = use_signal(Vec::<String>::new);
     let message = use_signal(String::new);
     let saving = use_signal(|| false);
@@ -3786,6 +3832,8 @@ fn PatientNew() -> Element {
         sex: sex(),
         phone: phone(),
         notes: notes(),
+        medical_record_no: medical_record_no(),
+        allergies: allergies(),
     };
 
     let profile_for_duplicate = profile.clone();
@@ -3893,6 +3941,38 @@ fn PatientNew() -> Element {
                         step: None,
                         wide: false,
                         hide_label: false,
+                    }
+                    TextField {
+                        label: "Historia clínica (HCL)".to_owned(),
+                        value: medical_record_no(),
+                        oninput: move |next| medical_record_no.set(next),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "off".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: false,
+                        hide_label: false,
+                    }
+                    TextAreaField {
+                        label: "Alergias".to_owned(),
+                        value: allergies(),
+                        oninput: move |next| allergies.set(next),
+                        placeholder: String::new(),
+                        wide: true,
+                        hint: None,
+                        error: None,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        hide_label: false,
+                        rows: None,
                     }
                     TextAreaField {
                         label: "Notas".to_owned(),
@@ -4296,6 +4376,8 @@ fn PatientEdit(id: String) -> Element {
     let mut sex = use_signal(String::new);
     let mut phone = use_signal(String::new);
     let mut notes = use_signal(String::new);
+    let mut medical_record_no = use_signal(String::new);
+    let mut allergies = use_signal(String::new);
     let mut message = use_signal(String::new);
     let saving = use_signal(|| false);
     let mut initialized = use_signal(|| false);
@@ -4321,6 +4403,8 @@ fn PatientEdit(id: String) -> Element {
                         sex.set(patient.sex.unwrap_or_default());
                         phone.set(patient.phone.unwrap_or_default());
                         notes.set(patient.notes.unwrap_or_default());
+                        medical_record_no.set(patient.medical_record_no.unwrap_or_default());
+                        allergies.set(patient.allergies.unwrap_or_default());
                         initialized.set(true);
                     }
                     Err(_error) => {
@@ -4340,6 +4424,9 @@ fn PatientEdit(id: String) -> Element {
                                             sex.set(mapped.sex.unwrap_or_default());
                                             phone.set(mapped.phone.unwrap_or_default());
                                             notes.set(mapped.notes.unwrap_or_default());
+                                            medical_record_no
+                                                .set(mapped.medical_record_no.unwrap_or_default());
+                                            allergies.set(mapped.allergies.unwrap_or_default());
                                             initialized.set(true);
                                         }
                                         break;
@@ -4406,6 +4493,8 @@ fn PatientEdit(id: String) -> Element {
         sex: sex(),
         phone: phone(),
         notes: notes(),
+        medical_record_no: medical_record_no(),
+        allergies: allergies(),
     };
     if !initialized() && message().is_empty() {
         return rsx! {
@@ -4532,6 +4621,38 @@ fn PatientEdit(id: String) -> Element {
                         step: None,
                         wide: false,
                         hide_label: false,
+                    }
+                    TextField {
+                        label: "Historia clínica (HCL)".to_owned(),
+                        value: medical_record_no(),
+                        oninput: move |next| medical_record_no.set(next),
+                        placeholder: String::new(),
+                        hint: None,
+                        error: None,
+                        autocomplete: "off".to_owned(),
+                        spellcheck: false,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        min: None,
+                        max: None,
+                        step: None,
+                        wide: false,
+                        hide_label: false,
+                    }
+                    TextAreaField {
+                        label: "Alergias".to_owned(),
+                        value: allergies(),
+                        oninput: move |next| allergies.set(next),
+                        placeholder: String::new(),
+                        wide: true,
+                        hint: None,
+                        error: None,
+                        required: false,
+                        disabled: false,
+                        readonly: false,
+                        hide_label: false,
+                        rows: None,
                     }
                     TextAreaField {
                         label: "Notas".to_owned(),
@@ -4730,6 +4851,13 @@ fn Templates() -> Element {
     }
 }
 
+fn vigencia_label(current: &api::Prescription) -> String {
+    if let Some(days) = current.validity_days {
+        return format!("{days} {}", if days == 1 { "día" } else { "días" });
+    }
+    current.validity.clone().unwrap_or_else(|| "—".to_string())
+}
+
 #[component]
 fn TemplateNew() -> Element {
     let user = use_context::<Signal<Option<SessionUser>>>();
@@ -4737,6 +4865,7 @@ fn TemplateNew() -> Element {
     let checked = use_context::<Signal<bool>>();
     let navigator = use_navigator();
     let mut name = use_signal(String::new);
+    let mut preset = use_signal(|| "blank".to_owned());
     let mut message = use_signal(String::new);
     let mut saving = use_signal(|| false);
 
@@ -4820,6 +4949,18 @@ fn TemplateNew() -> Element {
                         wide: false,
                         hide_label: false,
                     }
+                    SelectField {
+                        label: "Tipo de plantilla".to_owned(),
+                        value: preset(),
+                        onchange: move |value: String| preset.set(value),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
+                        option { value: "blank", "En blanco (una columna)" }
+                        option { value: "hvq", "HVQ — Recetario ambulatorio (2 paneles)" }
+                    }
                 }
                 HintText { text: format!("Tipo: {owner}") }
             }
@@ -4849,7 +4990,8 @@ fn TemplateNew() -> Element {
                         let profile = profile.clone();
                         message.set(String::new());
                         spawn(async move {
-                            match create_template_dispatch(&value, owner_type, Some(profile.clone())).await {
+                            let preset_value = preset();
+                            match create_template_dispatch_with_preset(&value, owner_type, Some(profile.clone()), Some(&preset_value)).await {
                                 Ok(template) => {
                                     navigator.push(Route::TemplateEdit { id: template.id });
                                 }
@@ -5859,7 +6001,9 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
     let prefill_patient = patient_id.unwrap_or_default();
     let prefill_template = template_id.unwrap_or_default();
     let mut diagnosis = use_signal(String::new);
-    let mut validity = use_signal(String::new);
+    let mut recetario_type = use_signal(|| "ambulatorio".to_owned());
+    let mut validity_days = use_signal(String::new);
+    let mut warning_signs = use_signal(String::new);
     let mut instructions = use_signal(String::new);
     let mut message = use_signal(String::new);
     let mut saving = use_signal(|| false);
@@ -5869,7 +6013,6 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
     let mut prefill_medications = use_signal(Vec::<forms::MedicationBlock>::new);
     let mut prefill_variables = use_signal(Vec::<String>::new);
     let mut prefilled_version = use_signal(String::new);
-    let mut prefilled_diagnosis = use_signal(String::new);
 
     use_effect(move || {
         if loaded() || !checked() {
@@ -5985,10 +6128,6 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
             return;
         };
         if let Ok(document) = forms::parse_document(&version.doc_json) {
-            if diagnosis().is_empty() || diagnosis() == prefilled_diagnosis() {
-                diagnosis.set(document.diagnosis.clone());
-            }
-            prefilled_diagnosis.set(document.diagnosis.clone());
             prefill_medications.set(
                 document
                     .medications
@@ -6129,27 +6268,46 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                         hide_label: false,
                         rows: None,
                     }
-                    TextField {
+                    SelectField {
+                        label: "Tipo de recetario".to_owned(),
+                        value: recetario_type(),
+                        onchange: move |value: String| recetario_type.set(value),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
+                        option { value: "ambulatorio", "Ambulatorio" }
+                    }
+                    SelectField {
                         label: "Vigencia".to_owned(),
-                        value: validity(),
-                        oninput: move |value: String| validity.set(value),
-                        input_type: "text".to_owned(),
+                        value: validity_days(),
+                        onchange: move |value: String| validity_days.set(value),
+                        wide: false,
+                        hint: None,
+                        error: None,
+                        disabled: false,
+                        hide_label: false,
+                        option { value: "", "Sin vigencia" }
+                        option { value: "1", "1 día" }
+                        option { value: "3", "3 días" }
+                    }
+                    TextAreaField {
+                        label: "Signos de alarma".to_owned(),
+                        value: warning_signs(),
+                        oninput: move |value: String| warning_signs.set(value),
                         placeholder: String::new(),
                         wide: false,
                         hint: None,
                         error: None,
-                        autocomplete: "off".to_owned(),
-                        spellcheck: false,
                         required: false,
                         disabled: false,
                         readonly: false,
-                        min: None,
-                        max: None,
-                        step: None,
                         hide_label: false,
+                        rows: None,
                     }
                     TextAreaField {
-                        label: "Indicaciones generales".to_owned(),
+                        label: "Recomendaciones no farmacológicas".to_owned(),
                         value: instructions(),
                         oninput: move |value: String| instructions.set(value),
                         placeholder: String::new(),
@@ -6202,7 +6360,14 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                         saving.set(true);
                         message.set(String::new());
                         let diagnosis = diagnosis();
-                        let validity = validity();
+                        let validity = match validity_days().as_str() {
+                            "1" => "1 DIA".to_owned(),
+                            "3" => "3 DIAS".to_owned(),
+                            _ => String::new(),
+                        };
+                        let recetario_type = recetario_type();
+                        let validity_days = validity_days();
+                        let warning_signs = warning_signs();
                         let instructions = instructions();
                         let profile_clone = profile.clone();
                         let _ = &profile_clone;
@@ -6239,6 +6404,9 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                                 "",
                                 &diagnosis,
                                 &validity,
+                                &recetario_type,
+                                &validity_days,
+                                &warning_signs,
                                 &instructions,
                             )
                             .await
@@ -6284,6 +6452,10 @@ fn reload_prescription(
                             frequency: item.frequency.clone().unwrap_or_default(),
                             duration: item.duration.clone().unwrap_or_default(),
                             quantity: item.quantity.clone().unwrap_or_default(),
+                            quantity_number: item
+                                .quantity_number
+                                .map(|n| n.to_string())
+                                .unwrap_or_default(),
                             notes: item.notes.clone().unwrap_or_default(),
                         })
                         .collect(),
@@ -6338,6 +6510,11 @@ fn reload_prescription(
                                                 .to_owned(),
                                             quantity: item
                                                 .get("quantity")
+                                                .and_then(Value::as_str)
+                                                .unwrap_or_default()
+                                                .to_owned(),
+                                            quantity_number: item
+                                                .get("quantityNumber")
                                                 .and_then(Value::as_str)
                                                 .unwrap_or_default()
                                                 .to_owned(),
@@ -6501,6 +6678,10 @@ fn PrescriptionPreview(id: String) -> Element {
                                             .and_then(Value::as_str)
                                             .unwrap_or_default()
                                             .to_owned(),
+                                        quantity_number: item
+                                            .get("quantityNumber")
+                                            .and_then(Value::as_i64)
+                                            .map(|value| value as i32),
                                         notes: item
                                             .get("notes")
                                             .and_then(Value::as_str)
@@ -6848,7 +7029,10 @@ fn PrescriptionDetail(id: String) -> Element {
     let mut allocating = use_signal(|| false);
     let mut message = use_signal(String::new);
     let mut draft_diagnosis = use_signal(String::new);
-    let mut draft_validity = use_signal(String::new);
+    let mut draft_legacy_validity = use_signal(String::new);
+    let mut draft_recetario_type = use_signal(|| "ambulatorio".to_owned());
+    let mut draft_validity_days = use_signal(String::new);
+    let mut draft_warning_signs = use_signal(String::new);
     let mut draft_instructions = use_signal(String::new);
     let mut initialized = use_signal(|| false);
     let mut saving = use_signal(|| false);
@@ -6878,7 +7062,14 @@ fn PrescriptionDetail(id: String) -> Element {
             match api::fetch_prescription(&load_id).await {
                 Ok(found) => {
                     draft_diagnosis.set(found.diagnosis.clone().unwrap_or_default());
-                    draft_validity.set(found.validity.clone().unwrap_or_default());
+                    draft_legacy_validity.set(found.validity.clone().unwrap_or_default());
+                    draft_recetario_type.set(
+                        found
+                            .recetario_type
+                            .clone()
+                            .unwrap_or_else(|| "ambulatorio".to_owned()),
+                    );
+                    draft_warning_signs.set(found.warning_signs.clone().unwrap_or_default());
                     draft_instructions.set(found.instructions.clone().unwrap_or_default());
                     items.set(
                         found
@@ -6892,6 +7083,10 @@ fn PrescriptionDetail(id: String) -> Element {
                                 frequency: item.frequency.clone().unwrap_or_default(),
                                 duration: item.duration.clone().unwrap_or_default(),
                                 quantity: item.quantity.clone().unwrap_or_default(),
+                                quantity_number: item
+                                    .quantity_number
+                                    .map(|n| n.to_string())
+                                    .unwrap_or_default(),
                                 notes: item.notes.clone().unwrap_or_default(),
                             })
                             .collect(),
@@ -6912,7 +7107,22 @@ fn PrescriptionDetail(id: String) -> Element {
                                 {
                                     draft_diagnosis
                                         .set(mapped.diagnosis.clone().unwrap_or_default());
-                                    draft_validity.set(mapped.validity.clone().unwrap_or_default());
+                                    draft_legacy_validity
+                                        .set(mapped.validity.clone().unwrap_or_default());
+                                    draft_recetario_type.set(
+                                        mapped
+                                            .recetario_type
+                                            .clone()
+                                            .unwrap_or_else(|| "ambulatorio".to_owned()),
+                                    );
+                                    draft_validity_days.set(
+                                        mapped
+                                            .validity_days
+                                            .map(|days| days.to_string())
+                                            .unwrap_or_default(),
+                                    );
+                                    draft_warning_signs
+                                        .set(mapped.warning_signs.clone().unwrap_or_default());
                                     draft_instructions
                                         .set(mapped.instructions.clone().unwrap_or_default());
                                     let local_items = desktop_local::local_prescription_items(
@@ -6955,6 +7165,11 @@ fn PrescriptionDetail(id: String) -> Element {
                                                     .to_owned(),
                                                 quantity: item
                                                     .get("quantity")
+                                                    .and_then(Value::as_str)
+                                                    .unwrap_or_default()
+                                                    .to_owned(),
+                                                quantity_number: item
+                                                    .get("quantityNumber")
                                                     .and_then(Value::as_str)
                                                     .unwrap_or_default()
                                                     .to_owned(),
@@ -7156,27 +7371,46 @@ fn PrescriptionDetail(id: String) -> Element {
                             hide_label: false,
                             rows: Some(2),
                         }
-                        TextField {
+                        SelectField {
+                            label: "Tipo de recetario".to_owned(),
+                            value: draft_recetario_type(),
+                            onchange: move |value: String| draft_recetario_type.set(value),
+                            wide: false,
+                            hint: None,
+                            error: None,
+                            disabled: false,
+                            hide_label: false,
+                            option { value: "ambulatorio", "Ambulatorio" }
+                        }
+                        SelectField {
                             label: "Vigencia".to_owned(),
-                            value: draft_validity(),
-                            oninput: move |value: String| draft_validity.set(value),
-                            input_type: "text".to_owned(),
+                            value: draft_validity_days(),
+                            onchange: move |value: String| draft_validity_days.set(value),
+                            wide: false,
+                            hint: None,
+                            error: None,
+                            disabled: false,
+                            hide_label: false,
+                            option { value: "", "Sin vigencia" }
+                            option { value: "1", "1 día" }
+                            option { value: "3", "3 días" }
+                        }
+                        TextAreaField {
+                            label: "Signos de alarma".to_owned(),
+                            value: draft_warning_signs(),
+                            oninput: move |value: String| draft_warning_signs.set(value),
                             placeholder: String::new(),
                             wide: false,
                             hint: None,
                             error: None,
-                            autocomplete: "off".to_owned(),
-                            spellcheck: false,
                             required: false,
                             disabled: false,
                             readonly: false,
-                            min: None,
-                            max: None,
-                            step: None,
                             hide_label: false,
+                            rows: Some(2),
                         }
                         TextAreaField {
-                            label: "Indicaciones generales".to_owned(),
+                            label: "Recomendaciones no farmacológicas".to_owned(),
                             value: draft_instructions(),
                             oninput: move |value: String| draft_instructions.set(value),
                             placeholder: String::new(),
@@ -7251,13 +7485,23 @@ fn PrescriptionDetail(id: String) -> Element {
                                 #[cfg(not(feature = "desktop"))]
                                 let _ = &profile;
                                 let diagnosis = draft_diagnosis();
-                                let validity = draft_validity();
+                                let validity = match draft_validity_days().as_str() {
+                                    "1" => "1 DIA".to_owned(),
+                                    "3" => "3 DIAS".to_owned(),
+                                    _ => draft_legacy_validity(),
+                                };
+                                let recetario_type = draft_recetario_type();
+                                let validity_days = draft_validity_days();
+                                let warning_signs = draft_warning_signs();
                                 let instructions = draft_instructions();
                                 spawn(async move {
                                     match api::update_prescription(
                                         &current.id,
                                         &diagnosis,
                                         &validity,
+                                        &recetario_type,
+                                        &validity_days,
+                                        &warning_signs,
                                         &instructions,
                                     )
                                     .await
@@ -7273,6 +7517,9 @@ fn PrescriptionDetail(id: String) -> Element {
                                                 &profile,
                                                 &diagnosis,
                                                 &validity,
+                                                &recetario_type,
+                                                validity_days.trim().parse::<i32>().ok(),
+                                                &warning_signs,
                                                 &instructions,
                                             ) {
                                                 Ok(updated) => {
@@ -7329,11 +7576,20 @@ fn PrescriptionDetail(id: String) -> Element {
                             "{current.diagnosis.clone().unwrap_or_else(|| \"—\".to_string())}"
                         }
                         DetailItem {
-                            label: "Vigencia".to_owned(),
-                            "{current.validity.clone().unwrap_or_else(|| \"—\".to_string())}"
+                            label: "Tipo de recetario".to_owned(),
+                            "{current.recetario_type.clone().unwrap_or_else(|| \"—\".to_string())}"
                         }
                         DetailItem {
-                            label: "Indicaciones generales".to_owned(),
+                            label: "Vigencia".to_owned(),
+                            "{vigencia_label(&current)}"
+                        }
+                        DetailItem {
+                            label: "Signos de alarma".to_owned(),
+                            wide: true,
+                            "{current.warning_signs.clone().unwrap_or_else(|| \"—\".to_string())}"
+                        }
+                        DetailItem {
+                            label: "Recomendaciones no farmacológicas".to_owned(),
                             wide: true,
                             "{current.instructions.clone().unwrap_or_else(|| \"—\".to_string())}"
                         }
@@ -7529,6 +7785,31 @@ fn PrescriptionDetail(id: String) -> Element {
                                     hide_label: false,
                                 }
                                 TextField {
+                                    label: "Cantidad (número)".to_owned(),
+                                    value: item.quantity_number.clone(),
+                                    oninput: move |value: String| {
+                                        items.with_mut(|list| {
+                                            if let Some(entry) = list.get_mut(index) {
+                                                entry.quantity_number = value;
+                                            }
+                                        });
+                                    },
+                                    input_type: "number".to_owned(),
+                                    placeholder: String::new(),
+                                    wide: false,
+                                    hint: None,
+                                    error: None,
+                                    autocomplete: "off".to_owned(),
+                                    spellcheck: false,
+                                    required: false,
+                                    disabled: false,
+                                    readonly: false,
+                                    min: Some("0".to_owned()),
+                                    max: None,
+                                    step: Some("1".to_owned()),
+                                    hide_label: false,
+                                }
+                                TextField {
                                     label: "Notas".to_owned(),
                                     value: item.notes.clone(),
                                     oninput: move |value: String| {
@@ -7717,6 +7998,10 @@ fn PrescriptionDetail(id: String) -> Element {
                                 DetailItem {
                                     label: "Cantidad".to_owned(),
                                     "{item.quantity}"
+                                }
+                                DetailItem {
+                                    label: "Cantidad (número)".to_owned(),
+                                    "{item.quantity_number}"
                                 }
                                 DetailItem {
                                     label: "Notas".to_owned(),

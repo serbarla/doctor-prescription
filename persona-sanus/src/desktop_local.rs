@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS patients (
   sex TEXT,
   phone TEXT,
   notes TEXT,
+  medical_record_no TEXT,
+  allergies TEXT,
   client_id TEXT,
   deleted_at TEXT,
   created_at TEXT NOT NULL,
@@ -111,6 +113,9 @@ CREATE TABLE IF NOT EXISTS prescriptions (
   rx_block_id TEXT,
   diagnosis TEXT,
   validity TEXT,
+  recetario_type TEXT NOT NULL DEFAULT 'ambulatorio',
+  validity_days INTEGER,
+  warning_signs TEXT,
   instructions TEXT,
   signed_at TEXT,
   synced_at TEXT,
@@ -132,6 +137,7 @@ CREATE TABLE IF NOT EXISTS prescription_items (
   frequency TEXT,
   duration TEXT,
   quantity TEXT,
+  quantity_number INTEGER,
   notes TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -317,6 +323,14 @@ pub fn open_local_db() -> Result<SqliteConnection, String> {
     use diesel::connection::SimpleConnection;
     conn.batch_execute(SCHEMA)
         .map_err(|error| error.to_string())?;
+    let _ = conn.batch_execute(
+        "ALTER TABLE patients ADD COLUMN medical_record_no TEXT; \
+         ALTER TABLE patients ADD COLUMN allergies TEXT; \
+         ALTER TABLE prescriptions ADD COLUMN recetario_type TEXT NOT NULL DEFAULT 'ambulatorio'; \
+         ALTER TABLE prescriptions ADD COLUMN validity_days INTEGER; \
+         ALTER TABLE prescriptions ADD COLUMN warning_signs TEXT; \
+         ALTER TABLE prescription_items ADD COLUMN quantity_number INTEGER;",
+    );
     if outbox_needs_migration(&mut conn)? {
         migrate_outbox(&mut conn)?;
     }
@@ -519,6 +533,8 @@ pub fn cache_patient(conn: &mut SqliteConnection, patient: &Value) -> Result<(),
             "sex",
             "phone",
             "notes",
+            "medical_record_no",
+            "allergies",
             "client_id",
             "deleted_at",
             "created_at",
@@ -584,6 +600,9 @@ pub fn cache_prescription(conn: &mut SqliteConnection, prescription: &Value) -> 
             "rx_block_id",
             "diagnosis",
             "validity",
+            "recetario_type",
+            "validity_days",
+            "warning_signs",
             "instructions",
             "signed_at",
             "synced_at",
@@ -660,6 +679,7 @@ pub fn cache_prescription_item(conn: &mut SqliteConnection, item: &Value) -> Res
             "frequency",
             "duration",
             "quantity",
+            "quantity_number",
             "notes",
             "created_at",
             "updated_at",
@@ -773,8 +793,8 @@ pub fn list_prescriptions(conn: &mut SqliteConnection, status: &str) -> Result<V
              COALESCE((SELECT full_name FROM patients WHERE patients.id = prescriptions.patient_id), 'Paciente'), \
              'doctorId', doctor_id, 'clinicId', clinic_id, 'templateVersionId', template_version_id, \
              'status', status, 'rxNumber', rx_number, 'rxBlockId', rx_block_id, \
-             'diagnosis', diagnosis, 'validity', validity, 'instructions', instructions, \
-             'signedAt', signed_at, 'voidedAt', voided_at, 'voidReason', void_reason, \
+             'diagnosis', diagnosis, 'validity', validity, 'recetarioType', recetario_type, 'validityDays', validity_days, 'warningSigns', warning_signs, 'instructions', instructions, \
+             'signedAt', signed_at, 'syncedAt', synced_at, 'voidedAt', voided_at, 'voidReason', void_reason, \
              'clientId', client_id, 'supersedesId', supersedes_id, 'createdAt', created_at, \
              'updatedAt', updated_at, 'createdBy', created_by, 'items', json_array()) AS row_json \
              FROM prescriptions{filter} ORDER BY created_at DESC"
@@ -1326,12 +1346,14 @@ pub fn create_local_patient(
         "sex": form.get("sex").and_then(Value::as_str).unwrap_or_default(),
         "phone": form.get("phone").and_then(Value::as_str).unwrap_or_default(),
         "notes": form.get("notes").and_then(Value::as_str).unwrap_or_default(),
+        "medicalRecordNo": form.get("medicalRecordNo").and_then(Value::as_str).unwrap_or_default(),
+        "allergies": form.get("allergies").and_then(Value::as_str).unwrap_or_default(),
         "clientId": id,
         "createdBy": actor_id,
     });
     diesel::sql_query(
-        "INSERT INTO patients (id, clinic_id, full_name, national_id, birth_date, sex, phone, notes, client_id, deleted_at, created_at, updated_at, created_by) \
-         VALUES (:id, :clinic_id, :full_name, :national_id, :birth_date, :sex, :phone, :notes, :client_id, NULL, :created_at, :updated_at, :created_by)",
+        "INSERT INTO patients (id, clinic_id, full_name, national_id, birth_date, sex, phone, notes, medical_record_no, allergies, client_id, deleted_at, created_at, updated_at, created_by) \
+         VALUES (:id, :clinic_id, :full_name, :national_id, :birth_date, :sex, :phone, :notes, :medical_record_no, :allergies, :client_id, NULL, :created_at, :updated_at, :created_by)",
     )
     .bind::<Text, _>(id.as_str())
     .bind::<Text, _>(clinic_id)
@@ -1341,6 +1363,8 @@ pub fn create_local_patient(
     .bind::<Text, _>(form.get("sex").and_then(Value::as_str).unwrap_or_default())
     .bind::<Text, _>(form.get("phone").and_then(Value::as_str).unwrap_or_default())
     .bind::<Text, _>(form.get("notes").and_then(Value::as_str).unwrap_or_default())
+    .bind::<Text, _>(form.get("medicalRecordNo").and_then(Value::as_str).unwrap_or_default())
+    .bind::<Text, _>(form.get("allergies").and_then(Value::as_str).unwrap_or_default())
     .bind::<Text, _>(id.as_str())
     .bind::<Text, _>(at.as_str())
     .bind::<Text, _>(at.as_str())
@@ -1372,10 +1396,11 @@ pub fn create_local_prescription(
     let at = now();
     let diagnosis = clean_local_text(diagnosis, 2000);
     let validity = clean_local_text(validity, 200);
+    let recetario_type = "ambulatorio";
     let instructions = clean_local_text(instructions, 8000);
     diesel::sql_query(
-        "INSERT INTO prescriptions (id, patient_id, doctor_id, clinic_id, template_version_id, diagnosis, validity, instructions, status, rx_number, rx_block_id, signed_at, synced_at, client_id, created_at, updated_at, created_by) \
-         VALUES (:id, :patient_id, :doctor_id, :clinic_id, :template_version_id, :diagnosis, :validity, :instructions, 'draft', NULL, NULL, NULL, NULL, :client_id, :created_at, :updated_at, :created_by)",
+        "INSERT INTO prescriptions (id, patient_id, doctor_id, clinic_id, template_version_id, diagnosis, validity, recetario_type, validity_days, warning_signs, instructions, status, rx_number, rx_block_id, signed_at, synced_at, client_id, created_at, updated_at, created_by) \
+         VALUES (:id, :patient_id, :doctor_id, :clinic_id, :template_version_id, :diagnosis, :validity, :recetario_type, :validity_days, :warning_signs, :instructions, 'draft', NULL, NULL, NULL, NULL, :client_id, :created_at, :updated_at, :created_by)",
     )
     .bind::<Text, _>(id.as_str())
     .bind::<Text, _>(patient_id)
@@ -1384,6 +1409,9 @@ pub fn create_local_prescription(
     .bind::<Text, _>(template_version_id)
     .bind::<Nullable<Text>, _>(diagnosis.as_deref())
     .bind::<Nullable<Text>, _>(validity.as_deref())
+    .bind::<Text, _>(recetario_type)
+    .bind::<Nullable<Integer>, _>(None::<i32>)
+    .bind::<Nullable<Text>, _>(None::<&str>)
     .bind::<Nullable<Text>, _>(instructions.as_deref())
     .bind::<Text, _>(id.as_str())
     .bind::<Text, _>(at.as_str())
@@ -1403,6 +1431,9 @@ pub fn create_local_prescription(
             "doctorId": doctor_id,
             "diagnosis": diagnosis,
             "validity": validity,
+            "recetarioType": recetario_type,
+            "validityDays": Value::Null,
+            "warningSigns": Value::Null,
             "instructions": instructions,
             "clientId": id,
             "createdBy": actor_id,
@@ -1425,6 +1456,9 @@ pub fn update_local_prescription(
     prescription_id: &str,
     diagnosis: &str,
     validity: &str,
+    recetario_type: &str,
+    validity_days: Option<i32>,
+    warning_signs: &str,
     instructions: &str,
     actor_id: &str,
 ) -> Result<String, String> {
@@ -1435,13 +1469,23 @@ pub fn update_local_prescription(
     }
     let diagnosis = clean_local_text(diagnosis, 2000);
     let validity = clean_local_text(validity, 200);
+    let recetario_type = recetario_type.trim();
+    let recetario_type = if recetario_type.is_empty() {
+        "ambulatorio"
+    } else {
+        recetario_type
+    };
+    let warning_signs = clean_local_text(warning_signs, 2000);
     let instructions = clean_local_text(instructions, 8000);
     let at = now();
     diesel::sql_query(
-        "UPDATE prescriptions SET diagnosis = :diagnosis, validity = :validity, instructions = :instructions, synced_at = NULL, updated_at = :updated_at WHERE id = :id",
+        "UPDATE prescriptions SET diagnosis = :diagnosis, validity = :validity, recetario_type = :recetario_type, validity_days = :validity_days, warning_signs = :warning_signs, instructions = :instructions, synced_at = NULL, updated_at = :updated_at WHERE id = :id",
     )
     .bind::<Nullable<Text>, _>(diagnosis.as_deref())
     .bind::<Nullable<Text>, _>(validity.as_deref())
+    .bind::<Text, _>(recetario_type)
+    .bind::<Nullable<Integer>, _>(validity_days)
+    .bind::<Nullable<Text>, _>(warning_signs.as_deref())
     .bind::<Nullable<Text>, _>(instructions.as_deref())
     .bind::<Text, _>(at.as_str())
     .bind::<Text, _>(prescription_id)
@@ -1461,6 +1505,9 @@ pub fn update_local_prescription(
             "prescriptionId": prescription_id,
             "diagnosis": diagnosis,
             "validity": validity,
+            "recetarioType": recetario_type,
+            "validityDays": validity_days,
+            "warningSigns": warning_signs,
             "instructions": instructions,
             "clientId": client_id,
             "createdBy": actor_id,
@@ -1478,6 +1525,7 @@ pub fn upsert_local_prescription_item(
     frequency: &str,
     duration: &str,
     quantity: &str,
+    quantity_number: Option<i32>,
     notes: &str,
     actor_id: &str,
 ) -> Result<String, String> {
@@ -1514,7 +1562,7 @@ pub fn upsert_local_prescription_item(
                 return Err("Medicamento no encontrado.".to_owned());
             }
             diesel::sql_query(
-                "UPDATE prescription_items SET med_name = :med_name, dose = :dose, route = :route, frequency = :frequency, duration = :duration, quantity = :quantity, notes = :notes, updated_at = :updated_at WHERE id = :id",
+                "UPDATE prescription_items SET med_name = :med_name, dose = :dose, route = :route, frequency = :frequency, duration = :duration, quantity = :quantity, quantity_number = :quantity_number, notes = :notes, updated_at = :updated_at WHERE id = :id",
             )
             .bind::<Text, _>(med_name.as_str())
             .bind::<Nullable<Text>, _>(dose.as_deref())
@@ -1522,6 +1570,7 @@ pub fn upsert_local_prescription_item(
             .bind::<Nullable<Text>, _>(frequency.as_deref())
             .bind::<Nullable<Text>, _>(duration.as_deref())
             .bind::<Nullable<Text>, _>(quantity.as_deref())
+            .bind::<Nullable<Integer>, _>(quantity_number)
             .bind::<Nullable<Text>, _>(notes.as_deref())
             .bind::<Text, _>(at.as_str())
             .bind::<Text, _>(item_id.as_str())
@@ -1543,7 +1592,7 @@ pub fn upsert_local_prescription_item(
                 .map(|row| row.value)
                 .unwrap_or(1);
             diesel::sql_query(
-                "INSERT INTO prescription_items (id, prescription_id, position, med_name, dose, route, frequency, duration, quantity, notes, created_at, updated_at, created_by) VALUES (:id, :prescription_id, :position, :med_name, :dose, :route, :frequency, :duration, :quantity, :notes, :created_at, :updated_at, :created_by)",
+                "INSERT INTO prescription_items (id, prescription_id, position, med_name, dose, route, frequency, duration, quantity, quantity_number, notes, created_at, updated_at, created_by) VALUES (:id, :prescription_id, :position, :med_name, :dose, :route, :frequency, :duration, :quantity, :quantity_number, :notes, :created_at, :updated_at, :created_by)",
             )
             .bind::<Text, _>(generated.as_str())
             .bind::<Text, _>(prescription_id)
@@ -1554,6 +1603,7 @@ pub fn upsert_local_prescription_item(
             .bind::<Nullable<Text>, _>(frequency.as_deref())
             .bind::<Nullable<Text>, _>(duration.as_deref())
             .bind::<Nullable<Text>, _>(quantity.as_deref())
+            .bind::<Nullable<Integer>, _>(quantity_number)
             .bind::<Nullable<Text>, _>(notes.as_deref())
             .bind::<Text, _>(at.as_str())
             .bind::<Text, _>(at.as_str())
@@ -1577,6 +1627,7 @@ pub fn upsert_local_prescription_item(
             "frequency": frequency,
             "duration": duration,
             "quantity": quantity,
+            "quantityNumber": quantity_number,
             "notes": notes,
             "createdBy": actor_id,
         }),
@@ -1736,7 +1787,7 @@ pub fn update_local_patient(
         .unwrap_or_default();
     let at = now();
     diesel::sql_query(
-        "UPDATE patients SET full_name = :full_name, national_id = :national_id, birth_date = :birth_date, sex = :sex, phone = :phone, notes = :notes, updated_at = :updated_at WHERE id = :id",
+        "UPDATE patients SET full_name = :full_name, national_id = :national_id, birth_date = :birth_date, sex = :sex, phone = :phone, notes = :notes, medical_record_no = :medical_record_no, allergies = :allergies, updated_at = :updated_at WHERE id = :id",
     )
     .bind::<Text, _>(form.get("fullName").and_then(Value::as_str).unwrap_or_default())
     .bind::<Text, _>(national_id)
@@ -1744,6 +1795,8 @@ pub fn update_local_patient(
     .bind::<Text, _>(form.get("sex").and_then(Value::as_str).unwrap_or_default())
     .bind::<Text, _>(form.get("phone").and_then(Value::as_str).unwrap_or_default())
     .bind::<Text, _>(form.get("notes").and_then(Value::as_str).unwrap_or_default())
+    .bind::<Text, _>(form.get("medicalRecordNo").and_then(Value::as_str).unwrap_or_default())
+    .bind::<Text, _>(form.get("allergies").and_then(Value::as_str).unwrap_or_default())
     .bind::<Text, _>(at.as_str())
     .bind::<Text, _>(patient_id)
     .execute(conn)
@@ -1762,6 +1815,8 @@ pub fn update_local_patient(
             "sex": form.get("sex").and_then(Value::as_str).unwrap_or_default(),
             "phone": form.get("phone").and_then(Value::as_str).unwrap_or_default(),
             "notes": form.get("notes").and_then(Value::as_str).unwrap_or_default(),
+            "medicalRecordNo": form.get("medicalRecordNo").and_then(Value::as_str).unwrap_or_default(),
+            "allergies": form.get("allergies").and_then(Value::as_str).unwrap_or_default(),
             "createdBy": actor_id,
         }),
     )

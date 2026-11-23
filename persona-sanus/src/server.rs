@@ -113,19 +113,6 @@ fn same_origin(request: &Request<Body>) -> Option<String> {
     Some(format!("{scheme}://{host}"))
 }
 
-fn loopback_origin(origin: &str) -> bool {
-    let Ok(uri) = origin.parse::<Uri>() else {
-        return false;
-    };
-    if !matches!(uri.scheme_str(), Some("http" | "https")) {
-        return false;
-    }
-    let host = uri.host().unwrap_or_default().trim_matches(['[', ']']);
-    host.eq_ignore_ascii_case("localhost")
-        || host.ends_with(".localhost")
-        || matches!(host, "127.0.0.1" | "::1" | "0.0.0.0")
-}
-
 fn dev_proxy_origin(request: &Request<Body>, origin: &str) -> bool {
     if request.headers().get("x-proxied-by-dioxus").is_none() {
         return false;

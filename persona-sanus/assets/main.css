@@ -228,83 +228,99 @@ select {
   box-shadow:var(--shadow-paper);
 }
 
-.a4-header {
-  position: relative;
-  border-bottom: 2px solid currentColor;
-  padding-bottom: 3mm;
-  margin-bottom: 5mm;
+.a4-page--landscape {
+  width: 297mm;
+  height: 210mm;
 }
 
-.a4-logo-image {
-  position: absolute;
-  top: 0;
-  right: 0;
-  max-width: 22mm;
-  max-height: 22mm;
-  object-fit: contain;
+.a4-panels {
+  display: flex;
+  flex-direction: row;
+  gap: 6mm;
+  flex: 1;
+  min-height: 0;
+}
+
+.a4-panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.a4-text {
+  white-space: pre-wrap;
+}
+
+.a4-text p {
+  margin: 0 0 1mm;
+  white-space: pre-wrap;
+}
+
+.a4-text--bold {
+  font-weight: 700;
+}
+
+.a4-panel-title {
+  font-size: 10pt;
+  font-weight: 700;
+}
+
+.a4-rule {
+  border-top: 0.75pt solid currentColor;
+  margin: 1mm 0;
+}
+
+.a4-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1mm 0 2mm;
+}
+
+.a4-table th,
+.a4-table td {
+  border: 0.4pt solid #111111;
+  padding: 0.8mm 1mm;
+  font-size: 8pt;
+  vertical-align: top;
+}
+
+.a4-table th {
+  font-size: 6.5pt;
+  font-weight: 700;
+  text-align: center;
+}
+
+.a4-image-wrap {
+  margin: 0 0 3mm;
 }
 
 .a4-image {
   display: block;
   max-width: 100%;
-  max-height: 30mm;
-  margin: 0 0 3mm;
+  max-height: 29mm;
   object-fit: contain;
 }
 
-.a4-body {
-  flex: 1;
-}
-
-.a4-doctor {
-  font-size: 15pt;
-  font-weight: 700;
-  margin: 0 0 1mm;
-}
-
-.a4-clinic,
-.a4-logo {
-  font-size: 10pt;
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.a4-body {
-  flex: 1;
-}
-
-.a4-body p,
-.a4-footer p {
-  margin: 0 0 2.5mm;
-  white-space: pre-wrap;
-}
-
-.a4-footer {
-  position: relative;
-  border-top: 1px solid currentColor;
-  padding-top: 3mm;
-  margin-top: 5mm;
-  padding-right: 32mm;
-  font-size: 9.5pt;
+.a4-image-caption {
+  font-size: 8pt;
+  margin: 1mm 0 0;
 }
 
 .a4-qr {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 25mm;
-  height: 25mm;
+  align-self: flex-end;
+  margin-top: auto;
 }
 
 .a4-qr img {
-  width: 25mm;
-  height: 25mm;
+  width: 100%;
+  height: 100%;
   display: block;
 }
 
 .a4-qr-placeholder {
-  width: 25mm;
-  height: 25mm;
+  width: 100%;
+  height: 100%;
   border: 1px dashed currentColor;
   display: flex;
   align-items: center;
@@ -316,21 +332,13 @@ select {
 .a4-page-no {
   text-align: right;
   font-size: 8.5pt;
+  margin: 2mm 0 0;
 }
 
 .a4-warnings {
   color: var(--color-ember-ring);
   font-family: var(--font-mint);
   font-size: var(--text-body-sm);
-}
-
-.a4-images {
-  margin-bottom: 3mm;
-  font-size: 9.5pt;
-}
-
-.a4-images p {
-  margin: 0 0 1.5mm;
 }
 
 .ui-page {

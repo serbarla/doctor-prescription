@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # /// block
 # name = "persona-probe"
-# summary = "Probe persona-sanus: auth, roles, patients, devices, template versions, and prescriptions."
+# summary = "Probe persona-sanus: auth, roles, patients, devices, template versions, prescriptions, and HVQ (flow hvq)."
 # effects = "network"
 # example = ["--base", "http://127.0.0.1:8080", "--email", "probe@example.com", "--password", "ProbePass123!"]
 # matches = ['/api/auth/sign-up/email', '/api/auth/(sign-in|sign-out|get-session)', '/api/me', '/api/settings/users', '/api/patients', '/api/devices', '/api/templates', '/api/prescriptions', '/api/rx', '/api/verify', '/api/sync', '/api/audit', '/api/auth/mfa/*', '/api/auth/change-password']
 #
 # [returns]
 # keys = ["ok", "checks", "base", "patient_id", "template_id", "prescription_id", "rx_number", "code"]
-# doc = "checks maps probe names to booleans; flow=signin checks signin plus session; flow=roles checks bootstrap signup, unaffiliated second signup, role assignment, server-side refusal, and the assigned role; flow=patients checks clinic-scoped CRUD, search, dedupe, administrator read-only, and soft delete; flow=devices checks registration, session linking, listing, revocation, revoked-session rejection, and re-linking on a fresh sign-in; flow=templates checks clinic-master create, doctor ownership, draft edit, publish, current version, immutable published version, canonical variables, and archive refusal; flow=rx checks number-block allocation and refusal, draft creation with ordered items, signing with a block number and verification code, idempotent replay, supersede, and void; flow=verify runs the rx fixtures and checks the public verification endpoint unauthenticated for each status, not found, absence of PHI keys, and a 429 rate limit under repetition (last)"
+# doc = "checks maps probe names to booleans; flow=signin checks signin plus session; flow=roles checks bootstrap signup, unaffiliated second signup, role assignment, server-side refusal, and the assigned role; flow=patients checks clinic-scoped CRUD, search, dedupe, administrator read-only, and soft delete; flow=devices checks registration, session linking, listing, revocation, revoked-session rejection, and re-linking on a fresh sign-in; flow=templates checks clinic-master create, doctor ownership, draft edit, publish, current version, immutable published version, canonical variables, and archive refusal; flow=rx checks number-block allocation and refusal, draft creation with ordered items, signing with a block number and verification code, idempotent replay, supersede, and void; flow=hvq creates an HVQ-preset template (no preset param on the API, so the v2 HVQ doc_json is posted as a version), publishes it, creates a patient with medicalRecordNo 722846-774928 and allergies Penicilina, asserts EDAD matches regex \\d+a \\d+m \\d+d via the prescription preview, creates a signed prescription with validityDays 3, warningSigns, instructions, and 2 items with quantityNumber 40 and notes; flow=verify runs the rx fixtures and checks the public verification endpoint unauthenticated for each status, not found, absence of PHI keys, and a 429 rate limit under repetition (last)"
 #
 # [params]
 # base = { type = "str", required = true, help = "server origin, e.g. http://127.0.0.1:8080" }
 # email = { type = "str", default = "probe@example.com", help = "account email for the probe flow" }
 # password = { type = "str", default = "ProbePass123!", help = "account password for the probe flow" }
 # name = { type = "str", default = "Probe Tester", help = "display name used by signup (full flow only)" }
-# flow = { type = "enum", values = ["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify", "sync", "security"], default = "full", help = "full runs signup then signout then signin; signin only signs in (needs an existing account); roles exercises bootstrap, membership, role assignment, and server-side refusal; patients exercises CRUD, search, dedupe, scoping, and soft delete; devices exercises registration, session linking, listing, revocation, and re-linking; templates exercises creation, draft editing, publishing, immutability, and archiving; rx exercises blocks, drafts, items, signing, replay, supersede, and void; verify runs the rx fixtures then checks the public verification endpoint unauthenticated (statuses, not found, no PHI, rate limit; security checks token hygiene, uniform errors, Origin, headers, MFA, password rotation, audit, and rate limitast); sync exercises idempotent replay, foreign and reused number rejection, burned tails, and the sync channels" }
+# flow = { type = "enum", values = ["full", "signin", "roles", "patients", "devices", "templates", "rx", "hvq", "verify", "sync", "security"], default = "full", help = "full runs signup then signout then signin; signin only signs in (needs an existing account); roles exercises bootstrap, membership, role assignment, and server-side refusal; patients exercises CRUD, search, dedupe, scoping, and soft delete; devices exercises registration, session linking, listing, revocation, and re-linking; templates exercises creation, draft editing, publishing, immutability, and archiving; rx exercises blocks, drafts, items, signing, replay, supersede, and void; hvq exercises the HVQ-preset template, HCL/allergies patient, and signed HVQ prescription; verify runs the rx fixtures then checks the public verification endpoint unauthenticated (statuses, not found, no PHI, rate limit; security checks token hygiene, uniform errors, Origin, headers, MFA, password rotation, audit, and rate limitast); sync exercises idempotent replay, foreign and reused number rejection, burned tails, and the sync channels" }
 # db = { type = "path", default = "", help = "SQLite file used by the server for the second-clinic fixture; defaults to DATABASE_URL or persona-sanus/app.db" }
 #
 # [provenance]
@@ -48,6 +48,7 @@ SECURITY = [
 MFA_SECRETS_PATH = "/tmp/persona-probe-mfa-secrets.json"
 import hmac
 import time
+import re
 
 FULL = ["home", "login", "dashboard", "signup", "session", "signout", "session_after_signout", "signin"]
 SIGNIN = ["signin", "session"]
@@ -98,11 +99,19 @@ TEMPLATES = [
     "current_version", "variables_spec", "archive_template", "archived_refused",
 ]
 VARIABLES = [
-    "patient.name", "patient.national_id", "patient.age",
-    "doctor.name", "doctor.specialty", "doctor.national_id", "doctor.contact",
-    "clinic.name", "clinic.address", "clinic.phone",
-    "prescription.number", "prescription.date", "prescription.diagnosis",
-    "medications[]",
+    "patient.name", "patient.national_id", "patient.age", "patient.age_detail",
+    "patient.sex", "patient.hcl", "patient.allergies",
+    "doctor.name", "doctor.specialty", "doctor.national_id", "doctor.license_no",
+    "doctor.contact", "clinic.name", "clinic.address", "clinic.phone",
+    "prescription.number", "prescription.date", "prescription.time",
+    "prescription.recetario_type", "prescription.validity", "prescription.diagnosis",
+    "prescription.warning_signs", "prescription.instructions", "medications[]",
+]
+HVQ = [
+    "signup_admin", "admin_me", "doctor_signup", "assign_doctor", "doctor_me",
+    "create_template", "save_hvq_version", "publish_hvq", "create_patient",
+    "patient_hcl_allergies", "create_draft", "add_item_one", "add_item_two",
+    "sign_prescription", "edad_regex", "hvq_fields",
 ]
 
 
@@ -672,14 +681,8 @@ def register_device(base, jar, device_id, name):
 
 
 def sign_in_account(base, jar, email, password):
-    """Sign the fixture account in; return True on success."""
-    status, data = http_post(
-        base,
-        "/api/auth/sign-in/email",
-        jar,
-        {"email": email, "password": password, "rememberMe": True},
-    )
-    return cookie_session_ok(status, data, jar)
+    """Sign the fixture account in, completing MFA when required."""
+    return signin_with_mfa(base, jar, email, password)
 
 
 def probe_devices(base, password, flow):
@@ -1118,17 +1121,24 @@ def probe_rx(base, password, flow):
         status == 200 and bool(item_two_id) and item_two_id != item_one_id
     )
 
+    _, current = get_json(base, f"/api/prescriptions/{prescription_id}", doctor_jar)
+    seeded_ids = [
+        item["id"] for item in current.get("items", [])
+        if item.get("id") not in (item_one_id, item_two_id)
+    ]
+    reorder_ids = [item_two_id, item_one_id, *seeded_ids]
     status, ordered = http_post(
         base,
         f"/api/prescriptions/{prescription_id}/items/reorder",
         doctor_jar,
-        {"itemIds": [item_two_id, item_one_id]},
+        {"itemIds": reorder_ids},
     )
     items = ordered.get("items", [])
     checks["reorder_items"] = (
         status == 200
-        and [item.get("id") for item in items] == [item_two_id, item_one_id]
-        and [item.get("position") for item in items] == [1, 2]
+        and [item.get("id") for item in items] == reorder_ids
+        and [item.get("position") for item in items]
+        == list(range(1, len(reorder_ids) + 1))
     )
 
     status, signed = http_post(
@@ -1300,6 +1310,250 @@ def probe_rx(base, password, flow):
     if not ok:
         verdict["error"] = "one or more prescription checks failed"
     return verdict
+
+
+def hvq_preset_document():
+    """Return the v2 HVQ preset document (mirrors hvq_preset_document in forms.rs)."""
+    patient_fields = [
+        "recetario_type", "issue_date", "issue_time", "patient_national_id",
+        "patient_hcl", "patient_name", "patient_age",
+    ]
+
+    def panel(title, sections):
+        return {"title": title, "sections": sections}
+
+    letterhead = [{"type": "letterhead"}]
+    patient = [{"type": "patient_fields", "fields": patient_fields}]
+    validity = [{"type": "validity", "label_1_day": "1 DIA", "label_3_days": "3 DIAS"}]
+    return {
+        "schema_version": 2,
+        "page": {"orientation": "landscape", "panel_count": 2},
+        "letterhead": {
+            "logo_asset_id": None,
+            "doctor_details": "{{doctor.name}}\n{{doctor.specialty}}",
+            "clinic_details": "{{clinic.name}}\n{{clinic.address}}\nTelf.: {{clinic.phone}}",
+            "form_code": "5-189113",
+            "colors": {"primary": "#111111", "accent": "#111111"},
+        },
+        "panels": [
+            panel(
+                "MEDICACIÓN:",
+                letterhead + patient + validity
+                + [
+                    {"type": "diagnosis", "show_allergies": True},
+                    {
+                        "type": "medication_table",
+                        "style": "full",
+                        "header_captions": [
+                            "DATOS DEL MEDICAMENTO (DENOMINACIÓN COMÚN INTERNACIONAL (DCI), FORMA FARMACÉUTICA Y CONCENTRACIÓN/DISPOSITIVO MÉDICO (TAMAÑO, CALIBRE, VOLUMEN...))",
+                            "CANTIDAD (EN NÚMEROS Y LETRAS)",
+                            "DOSIS / POSOLOGÍA",
+                            "VÍA DE ADMINISTRACIÓN",
+                            "FRECUENCIA DE LA ADMINISTRACIÓN",
+                            "DURACIÓN DEL TRATAMIENTO",
+                        ],
+                        "show_observations": False,
+                    },
+                    {"type": "reception_block"},
+                    {"type": "prescriber_block"},
+                    {"type": "signature_qr"},
+                ],
+            ),
+            panel(
+                "INDICACIONES:",
+                letterhead + patient + validity
+                + [
+                    {"type": "warning_signs"},
+                    {"type": "recommendations"},
+                    {"type": "indication_list", "show_observations": True},
+                    {"type": "prescriber_block"},
+                    {"type": "signature_qr"},
+                ],
+            ),
+        ],
+        "images": [],
+        "medications": [],
+    }
+
+def probe_hvq(base, password, flow):
+    """Exercise the HVQ preset template, HCL/allergies patient, signed HVQ rx."""
+    checks = {}
+    run = uuid.uuid4().hex
+    admin_email = f"probe-{flow}-admin@example.com"
+    doctor_email = f"probe-{flow}-doctor@example.com"
+    admin_jar = http.cookiejar.CookieJar()
+    doctor_jar = http.cookiejar.CookieJar()
+    verdict_extra = {
+        "patient_id": None,
+        "template_id": None,
+        "prescription_id": None,
+        "rx_number": None,
+        "code": None,
+    }
+
+    checks["signup_admin"] = signup_or_signin(
+        base, admin_jar, admin_email, password, "Probe HVQ Admin"
+    )
+    status, admin_me = get_json(base, "/api/me", admin_jar)
+    checks["admin_me"] = (
+        status == 200
+        and admin_me.get("role") == "administrator"
+        and isinstance(admin_me.get("clinic"), dict)
+    )
+    if not checks["signup_admin"] or not checks["admin_me"]:
+        return {
+            "ok": False,
+            "checks": {item: False for item in HVQ},
+            "base": base,
+            "error": "administrator bootstrap failed",
+            **verdict_extra,
+        }
+
+    checks["doctor_signup"] = signup_or_signin(
+        base, doctor_jar, doctor_email, password, "Probe HVQ Doctor"
+    )
+    doctor_profile = find_profile(base, admin_jar, doctor_email)
+    checks["assign_doctor"] = assign_role(base, admin_jar, doctor_profile, "doctor")
+    status, doctor_me = get_json(base, "/api/me", doctor_jar)
+    checks["doctor_me"] = (
+        status == 200
+        and doctor_me.get("role") == "doctor"
+        and isinstance(doctor_me.get("doctor"), dict)
+    )
+    register_device(base, doctor_jar, f"probe-hvq-{run}", "Probe HVQ Device")
+    http_post(base, "/api/rx/blocks", doctor_jar, {})
+
+    status, template = http_post(
+        base, "/api/templates", admin_jar,
+        {"name": f"HVQ Recetario {run}", "ownerType": "clinic"},
+    )
+    template_id = template.get("id")
+    verdict_extra["template_id"] = template_id
+    checks["create_template"] = status == 200 and bool(template_id)
+
+    status, version = http_post(
+        base, f"/api/templates/{template_id}/versions", admin_jar,
+        {"docJson": json.dumps(hvq_preset_document()), "theme": json.dumps({"margin_mm": 8})},
+    )
+    version_id = version.get("id")
+    checks["save_hvq_version"] = status == 200 and bool(version_id)
+
+    status, published = http_post(
+        base, f"/api/templates/{template_id}/publish", admin_jar,
+        {"versionId": version_id},
+    )
+    checks["publish_hvq"] = (
+        status == 200 and published.get("currentVersionId") == version_id
+    )
+
+    status, patient = http_post(
+        base, "/api/patients", doctor_jar,
+        {
+            "fullName": f"Casares Romero Gabriela Andrea {run[:8]}",
+            "nationalId": f"9{run[:9]}",
+            "medicalRecordNo": "722846-774928",
+            "allergies": "Penicilina",
+            "birthDate": "2006-04-15",
+            "sex": "female",
+        },
+    )
+    patient_id = patient.get("id")
+    verdict_extra["patient_id"] = patient_id
+    checks["create_patient"] = status == 200 and bool(patient_id)
+    checks["patient_hcl_allergies"] = (
+        patient.get("medicalRecordNo") == "722846-774928"
+        and patient.get("allergies") == "Penicilina"
+    )
+
+    status, draft = http_post(
+        base, "/api/prescriptions", doctor_jar,
+        {
+            "patientId": patient_id,
+            "templateVersionId": version_id,
+            "clientId": f"hvq-{run}-one",
+            "diagnosis": "ALOPECIA AREATA (CIE-10: L63)\nDERMATITIS NUMULAR (CIE-10: L30.0)",
+            "validityDays": 3,
+            "warningSigns": "Fiebre mayor a 38.5 °C",
+            "instructions": "Reposo e hidratación",
+        },
+    )
+    prescription_id = draft.get("id")
+    checks["create_draft"] = status == 200 and bool(prescription_id)
+
+    status, item_one = http_post(
+        base, f"/api/prescriptions/{prescription_id}/items", doctor_jar,
+        {
+            "medName": "Prednisona 20mg",
+            "dose": "20 miligramos",
+            "route": "vía oral",
+            "frequency": "cada 12 horas",
+            "duration": "30 días",
+            "quantityNumber": 40,
+            "notes": "Aplicar poca cantidad",
+        },
+    )
+    checks["add_item_one"] = status == 200 and bool(item_one.get("id"))
+
+    status, item_two = http_post(
+        base, f"/api/prescriptions/{prescription_id}/items", doctor_jar,
+        {
+            "medName": "Gluconato de Zinc 50mg",
+            "dose": "1 tableta",
+            "route": "vía oral",
+            "frequency": "cada 24 horas",
+            "duration": "90 días",
+            "quantityNumber": 40,
+            "notes": "1 tableta despues de la merienda",
+        },
+    )
+    checks["add_item_two"] = status == 200 and bool(item_two.get("id"))
+
+    status, signed = http_post(
+        base, f"/api/prescriptions/{prescription_id}/sign", doctor_jar,
+        {"acknowledgeWarnings": True},
+    )
+    verdict_extra["prescription_id"] = prescription_id
+    verdict_extra["rx_number"] = signed.get("rxNumber")
+    verdict_extra["code"] = (signed.get("verification") or {}).get("code")
+    checks["sign_prescription"] = (
+        status == 200 and signed.get("status") == "signed"
+    )
+    checks["hvq_fields"] = (
+        signed.get("validityDays") == 3
+        and signed.get("warningSigns") == "Fiebre mayor a 38.5 °C"
+        and signed.get("instructions") == "Reposo e hidratación"
+    )
+
+    _req = urllib.request.Request(
+        base + f"/api/prescriptions/{prescription_id}/preview"
+    )
+    try:
+        with urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(doctor_jar)
+        ).open(_req, timeout=10) as _res:
+            _preview = json.loads(_res.read() or b"{}")
+    except Exception:
+        _preview = {}
+    preview_variables = {
+        item.get("key"): item.get("value")
+        for item in _preview.get("variables", [])
+        if isinstance(item, dict)
+    }
+    checks["edad_regex"] = bool(
+        re.search(r"\d+a \d+m \d+d", preview_variables.get("patient.age_detail", ""))
+    )
+
+    ok = all(checks.get(item) for item in HVQ)
+    verdict = {
+        "ok": ok,
+        "checks": {item: bool(checks.get(item)) for item in HVQ},
+        "base": base,
+        **verdict_extra,
+    }
+    if not ok:
+        verdict["error"] = "one or more HVQ checks failed"
+    return verdict
+
 
 def probe_sync(base, password, flow):
     """Exercise idempotent replay, foreign and reused number rejection, burned tails, and sync channels."""
@@ -1799,6 +2053,8 @@ def probe(base, email, password, name, flow, db_path=""):
         return probe_templates(base, password, flow)
     if flow == "rx":
         return probe_rx(base, password, flow)
+    if flow == "hvq":
+        return probe_hvq(base, password, flow)
     if flow == "verify":
         return probe_verify(base, password)
     if flow == "sync":
@@ -1855,7 +2111,7 @@ def main():
     parser.add_argument("--name", default="Probe Tester")
     parser.add_argument(
         "--flow",
-        choices=["full", "signin", "roles", "patients", "devices", "templates", "rx", "verify", "sync", "security"],
+        choices=["full", "signin", "roles", "patients", "devices", "templates", "rx", "hvq", "verify", "sync", "security"],
         default="full",
     )
     parser.add_argument("--db", default="")

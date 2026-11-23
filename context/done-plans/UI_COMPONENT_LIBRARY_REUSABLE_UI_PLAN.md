@@ -11,12 +11,12 @@
 
 The request is to develop every reusable component stated by `Design.md` and required by the other context files, skipping what already exists. The selected scope is full v1 adoption: all existing pages use the new primitives. Also include presentational v1.1 billing components, rebuild Home as the centered editorial landing, and add a debug-only `/dev/ui` gallery. There is still no billing route, billing API, billing persistence, or card form in this change.
 
-Hard boundaries: no rich-text, WYSIWYG, contenteditable, formatting toolbar, or formatted-text surface (PRD D-21); every text control stays a plain Dioxus input, textarea, select, or check; no patient photos or signature/stamp images (D-06); no PHI in the marketing page or gallery; public verification renders only doctor, date, and prescription number (FR-050). Add no crate, network font, CDN, icon package, API endpoint, or route other than `/dev/ui`. Authorization remains server-side; the UI only omits actions that the existing role helpers already omit. Preserve every signal, `use_effect`, API call, guard, route, and dispatch path unless a step explicitly says to extract a closure verbatim.
+Hard boundaries: no rich-text, WYSIWYG, contenteditable, formatting toolbar, or formatted-text surface (PRD D-21); every text control stays a plain Dioxus input, textarea, select, or check; no patient photos or signature/stamp images (D-06); no PHI in the marketing page or gallery; public verification renders only doctor, date, and prescription number (FR-050). Add no crate, network font, CDN, or JS bridge other than the `icons` crate, and no API endpoint or route other than `/dev/ui`. Authorization remains server-side; the UI only omits actions that the existing role helpers already omit. Preserve every signal, `use_effect`, API call, guard, route, and dispatch path unless a step explicitly says to extract a closure verbatim.
 
 ## No-go
 
 - No rich text, WYSIWYG, `contenteditable`, formatting toolbar, `execCommand`, HTML payload, or editor dependency. All text entry is plain controlled inputs, textareas, selects, and checks.
-- No new crate, CSS framework, external stylesheet, webfont, CDN, icon package, or JS bridge.
+- No new CSS framework, external stylesheet, webfont, CDN, icon package beyond the `icons` crate, or JS bridge.
 - No new product route, API handler, server function, Diesel model/table/migration, entitlement rule, or billing persistence. `/dev/ui` is the only route addition; it contains no API calls. `/settings/billing` stays reserved with no surface.
 - No card form, PAN, CVV, full card number, `ctoken`, `card_token`, or `card_holder_enc` in UI props, gallery copy, or rendered markup. Billing shows status and consent only.
 - No change to authorization, session, device registration, sync, numbering, signing, PDF, QR, verification limits, or business validation. Componentization is markup-only unless a step says to extract a closure verbatim.
@@ -72,7 +72,7 @@ All symbols are re-exported from `src/ui/mod.rs`; `main.rs` and `forms.rs` impor
 | `ButtonLink` | `button.rs` | `#[props(into)] to: NavigationTarget`, `variant`, `active_class: Option<String>`, `extra_class`, `children`. Renders Dioxus `Link` with `.ui-button` classes and passthrough active class. Used only for in-app navigation. |
 | `LinkAction` | `button.rs` | `href: String`, `variant`, `target: Option<String>`, `rel: Option<String>`, `extra_class`, `children`. Renders `<a class="ui-button ...">`; `target`/`rel` are omitted when `None`. Used for PDF, print, share, export, external LLM. |
 | `NavLink` | `button.rs` | `#[props(into)] to: NavigationTarget`, `label: String`. Renders `Link.ui-nav-link` with `active_class: "ui-nav-link--active"`. |
-| `Icon` | `icon.rs` | `name: IconName`, `size: u16 = 20`, `extra_class: String`. Renders a 24-unit `svg` with RSX attrs `view_box="0 0 24 24"`, `aria_hidden="true"`, `focusable="false"`, `stroke="currentColor"`, `stroke_width="1.5"`, `stroke_linecap="round"`, `stroke_linejoin="round"` (DOM names `viewBox`, `stroke-width`). |
+| `Icon` | `icon.rs` | `name: IconName`, `size: u16 = 20`, `extra_class: String`. Thin wrapper over `icons::DioxusIcon` / `icons::IconType` that preserves `name`, `size`, and `extra_class`; renders with `aria-hidden="true"`, `focusable="false"`, 1.5 px stroke via `.ui-icon` (filled `Cross` via `.ui-icon--filled`). |
 
 `ButtonVariant`: `Primary`, `Secondary`, `Ghost`, `Danger`. `IconName`: `Cross`, `Shield`, `Command`, `Windows`, `Globe`, `Check`, `Close`, `Alert`, `Info`, `Qr`, `ArrowRight`, `Lock`, `Image`. The filled `Cross` uses `fill="currentColor"` and no stroke; all others are line icons.
 

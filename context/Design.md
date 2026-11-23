@@ -201,7 +201,7 @@ PersonaSanus deliberately avoids drop shadows as a design primitive. Separation 
 
 ## Imagery
 
-The dominant visual treatment is the A4 prescription/template document rendered inside tinted pastel cards (mint, cream, pink), with the document itself in clean white on an 8px-radius mock. Clinic logos (the `kind='logo'` branding asset) appear in letterheads and the nav strip at native proportions. There is no photography of people — patient privacy (Ley Orgánica de Protección de Datos Personales) forbids patient photos, and the product is a form tool, not a lifestyle app. Conic gradient rings in coral/red serve as verification indicators. No illustration — everything is either document UI, type, or a QR code. Icon style: line-based, 1.5px stroke, monochrome in Ink or Deep Teal, used sparingly (nav dropdowns, workflow bullets, security marks).
+The dominant visual treatment is the A4 prescription/template document rendered inside tinted pastel cards (mint, cream, pink), with the document itself in clean white on an 8px-radius mock. Clinic logos (the `kind='logo'` branding asset) appear in letterheads and the nav strip at native proportions. There is no photography of people — patient privacy (Ley Orgánica de Protección de Datos Personales) forbids patient photos, and the product is a form tool, not a lifestyle app. Conic gradient rings in coral/red serve as verification indicators. No illustration — everything is either document UI, type, or a QR code. Icons are sourced from the `icons` crate (rust-ui, Lucide-based) and rendered through `persona-sanus/src/ui/icon.rs`. Icon style: line-based, 1.5px stroke, monochrome in Ink or Deep Teal, used sparingly (nav dropdowns, workflow bullets, security marks).
 
 ## Layout
 

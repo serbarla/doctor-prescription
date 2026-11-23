@@ -4,7 +4,7 @@
 |---|---|
 | Source | `context/PRD.md` (Draft v0.8 — 2026-11-12) §5.4, §5.8, §7–§9, `context/database-design.md`, `context/sitemap.md` |
 | Baseline | Working tree 2026-11-17 — specs 01-A–12-L and 14-N done; 13-M shipped with open divergences in `specs/divergences/` |
-| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `qrcode-generator` 6.1.2 (`std`, `qr`, `image`) for QR PNG output · `printpdf` 0.12.9 (`default-features = false`, `text_layout`, `jpeg`, `png`) |
+| Runtime | Dioxus 0.7.1 requirement, locked 0.7.10 (`router`, `fullstack`) · axum 0.8 · Diesel 2.3 (`sqlite`, `r2d2`) · Argon2 0.6 · `qrcode-generator` 6.1.2 (`std`, `qr`, `image`) for QR PNG output · `printpdf` 0.12.9 (`default-features = false`, `text_layout`, `jpeg`, `png`) · icons 0.19 (`dioxus`) |
 | Topology | One fullstack node: server binary + wasm bundle; one SQLite file on local disk |
 | Datastore | `app.db` locally · `/data/app.db` in Docker (`persona-data` volume) |
 | Public surface | `:8080` — Dioxus pages incl. ✅ `/verify/:code`, `/api/auth/*` (incl. `mfa/*`), `/health`, ✅ `/api/patients*`, `/api/templates*`, `/api/prescriptions*` (incl. `:id/pdf`, `:id/preview`), `/api/assets*`, `/api/clinic*`, `/api/verify/:code`, `/api/sync/*` (SSE), `/api/rx/*`, `/api/devices*`, `/api/settings/*`, `/api/audit`, `/api/me`, `/api/updates/manifest` |
@@ -84,6 +84,8 @@ flowchart LR
 | `mobile` | `dioxus/mobile` | declared, not v1 | — |
 
 `reqwest` and `serde_json` are unconditional and compile on both sides.
+
+`icons` 0.19 is the sole icon library used by the shared `src/ui/` client layer; `persona-sanus/src/ui/icon.rs` wraps `icons::DioxusIcon` and no other icon source (CDN, webfont, or inline path) is permitted.
 
 Rules:
 

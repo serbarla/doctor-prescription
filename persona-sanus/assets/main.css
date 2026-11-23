@@ -2326,3 +2326,19 @@ input[type="file"]:focus-visible {
   padding: var(--spacing-16) var(--spacing-20);
   margin-bottom: var(--spacing-12);
 }
+
+.ui-icon-wrap {
+  display: inline-flex;
+  --icon-size: 20px;
+}
+
+.ui-icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  stroke-width: 1.5;
+}
+
+.ui-icon--filled {
+  fill: currentColor;
+  stroke: none;
+}

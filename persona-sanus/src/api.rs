@@ -912,6 +912,8 @@ pub struct ClinicSettings {
     pub phone: Option<String>,
     pub timezone: String,
     #[serde(default)]
+    pub retention_days: i32,
+    #[serde(default)]
     pub llm_url_template: Option<String>,
     #[serde(default)]
     pub server_retention_until: Option<String>,
@@ -953,6 +955,8 @@ pub async fn update_clinic_settings(
     address: &str,
     phone: &str,
     llm_url_template: &str,
+    timezone: &str,
+    retention_days: i32,
 ) -> Result<ClinicSettings, String> {
     let value = put_json(
         "/api/clinic",
@@ -961,6 +965,8 @@ pub async fn update_clinic_settings(
             "address": address,
             "phone": phone,
             "llmUrlTemplate": llm_url_template,
+            "timezone": timezone,
+            "retentionDays": retention_days,
         }),
     )
     .await?;

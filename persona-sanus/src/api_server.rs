@@ -139,6 +139,10 @@ pub struct ClinicUpdateRequest {
     phone: Option<String>,
     #[serde(default, alias = "llm_url_template")]
     llm_url_template: Option<String>,
+    #[serde(default)]
+    timezone: Option<String>,
+    #[serde(default, alias = "retention_days")]
+    retention_days: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -489,6 +493,7 @@ fn clinic_settings_json(settings: &ClinicSettings, state: &AppState) -> Value {
         "phone": settings.clinic.phone,
         "timezone": settings.clinic.timezone,
         "llmUrlTemplate": settings.clinic.llm_url_template,
+        "retentionDays": settings.clinic.retention_days,
         "serverRetentionUntil": settings.clinic.server_retention_until,
         "dataGraceEndsAt": settings.clinic.data_grace_ends_at,
         "logo": logo,
@@ -1277,6 +1282,8 @@ pub async fn update_clinic(
         request.address,
         request.phone,
         request.llm_url_template,
+        request.timezone,
+        request.retention_days,
     )
     .await?;
     Ok(Json(clinic_settings_json(&settings, &state)).into_response())

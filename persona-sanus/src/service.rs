@@ -2024,6 +2024,47 @@ fn clinic_field(value: Option<String>, label: &str) -> Result<Option<String>, Au
     Ok(value)
 }
 
+fn clinic_timezone(value: Option<String>) -> Result<Option<String>, AuthError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let timezone = value.trim().to_owned();
+    if timezone.is_empty() {
+        return Err(AuthError::BadRequest(
+            "Escribe la zona horaria de la clínica.".to_owned(),
+        ));
+    }
+    if timezone.chars().count() > 64 {
+        return Err(AuthError::BadRequest(
+            "La zona horaria es demasiado larga.".to_owned(),
+        ));
+    }
+    let valid = timezone
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || "_/+-".contains(character))
+        && !timezone.starts_with('/')
+        && !timezone.ends_with('/')
+        && !timezone.contains("//")
+        && timezone.split('/').all(|segment| !segment.is_empty());
+    if !valid {
+        return Err(AuthError::BadRequest(
+            "La zona horaria no es válida.".to_owned(),
+        ));
+    }
+    Ok(Some(timezone))
+}
+
+fn clinic_retention_days(value: Option<i32>) -> Result<Option<i32>, AuthError> {
+    if let Some(retention_days) = value {
+        if retention_days <= 0 {
+            return Err(AuthError::BadRequest(
+                "La retención debe ser un número positivo de días.".to_owned(),
+            ));
+        }
+    }
+    Ok(value)
+}
+
 pub async fn clinic_settings(
     pool: &DbPool,
     actor: &ActorContext,
@@ -2042,6 +2083,7 @@ pub async fn clinic_settings(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_clinic_settings(
     pool: &DbPool,
     actor: &ActorContext,
@@ -2049,12 +2091,16 @@ pub async fn update_clinic_settings(
     address: Option<String>,
     phone: Option<String>,
     llm_url_template: Option<String>,
+    timezone: Option<String>,
+    retention_days: Option<i32>,
 ) -> Result<ClinicSettings, AuthError> {
     actor.require_administrator()?;
     let name = clinic_name(&name)?;
     let address = clinic_field(address, "dirección")?;
     let phone = clinic_field(phone, "teléfono")?;
     let llm_url_template = clinic_llm_url(llm_url_template)?;
+    let timezone = clinic_timezone(timezone)?;
+    let retention_days = clinic_retention_days(retention_days)?;
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
     auth_server::with_conn(pool, move |connection| {
@@ -2069,6 +2115,13 @@ pub async fn update_clinic_settings(
                 &at,
             )?;
             db::set_clinic_llm_url(connection, &clinic_id, llm_url_template.as_deref(), &at)?;
+            db::set_clinic_timezone_retention(
+                connection,
+                &clinic_id,
+                timezone.as_deref(),
+                retention_days,
+                &at,
+            )?;
             record_audit(
                 connection,
                 Some(&actor_id),
@@ -2587,6 +2640,12 @@ pub async fn create_prescription(
                 .ok_or_else(|| AuthError::NotFound("Paciente no encontrado.".to_owned()))?;
             let version =
                 template_version_for_prescription(connection, &clinic_id, &template_version_id)?;
+            let document =
+                crate::forms::parse_document(&version.doc_json).map_err(AuthError::BadRequest)?;
+            let diagnosis = match diagnosis.clone() {
+                Some(diagnosis) => Some(diagnosis),
+                None => clean_rx_text(Some(document.diagnosis.clone()), 2000),
+            };
             let id = Uuid::now_v7().to_string();
             db::insert_prescription(
                 connection,
@@ -2613,6 +2672,38 @@ pub async fn create_prescription(
                     created_by: Some(&actor_id),
                 },
             )?;
+            for (index, medication) in document.medications.iter().enumerate() {
+                let med_name = medication.name.trim().to_owned();
+                if med_name.is_empty() {
+                    continue;
+                }
+                let med_name = med_name.chars().take(500).collect::<String>();
+                let dose = clean_rx_text(Some(medication.dose.clone()), 500);
+                let route = clean_rx_text(Some(medication.route.clone()), 500);
+                let frequency = clean_rx_text(Some(medication.frequency.clone()), 500);
+                let duration = clean_rx_text(Some(medication.duration.clone()), 500);
+                let quantity = clean_rx_text(Some(medication.quantity.clone()), 500);
+                let notes = clean_rx_text(Some(medication.notes.clone()), 1000);
+                let item_id = Uuid::now_v7().to_string();
+                db::insert_prescription_item(
+                    connection,
+                    &db::NewPrescriptionItem {
+                        id: &item_id,
+                        prescription_id: &id,
+                        position: (index + 1) as i32,
+                        med_name: &med_name,
+                        dose: dose.as_deref(),
+                        route: route.as_deref(),
+                        frequency: frequency.as_deref(),
+                        duration: duration.as_deref(),
+                        quantity: quantity.as_deref(),
+                        notes: notes.as_deref(),
+                        created_at: &at,
+                        updated_at: &at,
+                        created_by: Some(&actor_id),
+                    },
+                )?;
+            }
             record_audit(
                 connection,
                 Some(&actor_id),

@@ -49,7 +49,7 @@ A screen file never introduces a route, an endpoint, a table, a column, or a rol
 
 | Screen doc | Surface | Component · `main.rs` | Route status | Screen spec |
 |---|---|---|---|:---:|
-| `done/Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `:1483` | 🟡 | ✅ |
+| `done/Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `:1483` | ✅ | ✅ |
 | `done/Footer.md` | Public footer band (`/`, `/login`, `/verify/:code`) | `Footer` · `:1287` | ✅ | ✅ |
 
 ### 2.2 Public, no auth (sitemap §1.1)
@@ -67,11 +67,11 @@ A screen file never introduces a route, an endpoint, a table, a column, or a rol
 | `done/Dashboard.md` | `/dashboard` | `Dashboard` · `:1938` | ✅ | ✅ |
 | `done/Patients.md` | `/patients` | `Patients` · `:3422` | ✅ | ✅ |
 | `done/PatientNew.md` | `/patients/new` | `PatientNew` · `:3635` | ✅ | ✅ |
-| `done/PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3897` | 🟡 | ✅ |
+| `done/PatientDetail.md` | `/patients/:id` | `PatientDetail` · `:3897` | ✅ | ✅ |
 | `done/PatientEdit.md` | `/patients/:id/edit` | `PatientEdit` · `:4136` | ✅ | ✅ |
-| `done/Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:5344` | 🟡 | ✅ |
+| `done/Prescriptions.md` | `/prescriptions` | `Prescriptions` · `:5344` | ✅ | ✅ |
 | `done/PrescriptionNew.md` | `/prescriptions/new` | `PrescriptionNew` · `:5692` | ✅ | ✅ |
-| `done/PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:6629` | 🟡 | ✅ |
+| `done/PrescriptionDetail.md` | `/prescriptions/:id` | `PrescriptionDetail` · `:6629` | ✅ | ✅ |
 | `done/PrescriptionPreview.md` | `/prescriptions/:id/preview` | `PrescriptionPreview` · `:6157` | ✅ | ✅ |
 | `done/Templates.md` | `/templates` | `Templates` · `:4432` | ✅ | ✅ |
 | `done/TemplateNew.md` | `/templates/new` | `TemplateNew` · `:4583` | ✅ | ✅ |

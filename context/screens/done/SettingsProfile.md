@@ -7,7 +7,7 @@
 | Route | `/settings/profile` (`Route::SettingsProfile {}`, `main.rs:70-71`) — authenticated shell, every staff role. No session replaces `/login`; a checked session with no profile is a redirect state. No path or query parameter |
 | Layout | Inside `#[layout(Navbar)]` (`main.rs:51`, never closed). `PageShell id="settings-page"` → `div#settings-page.ui-page > .ui-container.ui-stack`; Paper canvas, 48px top / 80px bottom / 24px inline, 24px stack gap; `Datos del perfil` card, then `div.ui-columns` with `Verificación en dos pasos` and `Cambiar contraseña` cards |
 | Locale | `es-EC` on every string. `perfil`, `contraseña`, `verificación`, `cédula`, `licencia`, `clínica`. Dates are not rendered; no time, money, or image copy |
-| Status | ✅ Spec complete (sections 1–7). Route status: ⬜ — sitemap §1.2 marks the profile index planned and §3 records the shipped fields; shipped: profile fields, TOTP enrolment/confirm/disable, password change. Target: step-16 shell adoption with `SectionCard` + `FormGrid` + field primitives; no new auth method, no signature/stamp asset |
+| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap §1.2: display name, specialty, license, cédula, phone/email plus TOTP enrolment and password change. Shipped: step-16 shell adoption with `SectionCard` + `FormGrid` + field primitives; profile fields, TOTP enrolment/confirm/disable, password change; no new auth method, no signature/stamp asset |
 
 ## 1. Purpose
 

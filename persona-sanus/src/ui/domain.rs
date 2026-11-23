@@ -46,7 +46,7 @@ pub fn SyncStatusIndicator(status: SyncStatus) -> Element {
     let tone = status.tone();
     rsx! {
         div { class: "ui-sync ui-sync--{tone}", role: "status", aria_live: "polite",
-            span { class: "ui-sync-dot" }
+            span { class: "ui-sync-dot", aria_hidden: "true" }
             span { "{status.label()}" }
         }
     }
@@ -184,10 +184,10 @@ pub fn VerificationSeal(status: String) -> Element {
             aria_hidden: "true",
             if slug == "valid" {
                 div { class: "ui-verify-ring",
-                    Icon { name: icon, size: 36 }
+                    Icon { name: icon, size: 24 }
                 }
             } else {
-                Icon { name: icon, size: 36 }
+                Icon { name: icon, size: 24 }
             }
         }
     }

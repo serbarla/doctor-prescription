@@ -7,7 +7,7 @@
 | Route | `/prescriptions/:id/preview` — authenticated; `Route::PrescriptionPreview { id: String }` at `persona-sanus/src/main.rs:93-94`. A signed-out visitor is replaced with `Route::AuthPage {}`. No query params; the route id is the only URL value |
 | Layout | Inside `#[layout(Navbar)]` (opened at `main.rs:51`, never closed). `PageShell id="prescriptions-page"` → `.ui-page` → `.ui-container.ui-stack`. Header and action regions are Paper; the preview canvas is Cream; the provisional Notice is Blossom. No full-bleed exception |
 | Locale | `es-EC` on every string. `receta`, `cédula` keep Ecuador spelling. Dates `DD-MM-AAAA`, 24-hour time (`%d-%m-%Y %H:%M`) |
-| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap cell is implemented; shipped: authenticated A4 projection, role/status sign branch, desktop provisional fallback, PDF and print links, wasm share, in-process provisional byte report; target: `PageShell`/`PageHeader`/`ActionRow`/`Notice`/`ErrorText` adoption and `.ui-preview-canvas` with the same data branches |
+| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap cell is implemented; shipped: authenticated A4 projection, role/status sign branch, desktop provisional fallback, PDF and print links, wasm share, in-process provisional byte report, `PageShell`/`PageHeader`/`ActionRow`/`Notice`/`ErrorText` adoption, and `.ui-preview-canvas` with the same data branches |
 
 ## 1. Purpose
 

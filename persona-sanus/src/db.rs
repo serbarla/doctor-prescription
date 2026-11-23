@@ -2321,3 +2321,27 @@ pub fn set_clinic_llm_url(
         ))
         .execute(connection)
 }
+
+pub fn set_clinic_timezone_retention(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    timezone: Option<&str>,
+    retention_days: Option<i32>,
+    now: &str,
+) -> QueryResult<usize> {
+    let mut updated = 0;
+    if let Some(timezone) = timezone {
+        updated += diesel::update(clinics::table.filter(clinics::id.eq(clinic_id)))
+            .set((clinics::timezone.eq(timezone), clinics::updated_at.eq(now)))
+            .execute(connection)?;
+    }
+    if let Some(retention_days) = retention_days {
+        updated += diesel::update(clinics::table.filter(clinics::id.eq(clinic_id)))
+            .set((
+                clinics::retention_days.eq(retention_days),
+                clinics::updated_at.eq(now),
+            ))
+            .execute(connection)?;
+    }
+    Ok(updated)
+}

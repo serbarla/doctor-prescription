@@ -7,7 +7,7 @@
 | Route | `/audit` (`Route::Audit {}`, `main.rs:74-75`) — authenticated shell, Administrator only. No session replaces `/login` (`Route::AuthPage {}`); a non-Administrator paints `Acceso denegado`. The API independently returns `403` for a non-Administrator. No path or query parameter; filters are local signals |
 | Layout | Inside `#[layout(Navbar)]` (`main.rs:51`, never closed). `PageShell id="audit-page"` → `div#audit-page.ui-page > .ui-container.ui-stack`; Paper canvas, 48px top / 80px bottom / 24px inline, 24px stack gap; `PageHeader`, `FilterBar`, feedback line, one `DataTable`; no full-bleed band, sidebar, drawer, modal, or per-row expansion |
 | Locale | `es-EC` on every label and date. `Auditoría`, `Acción`, `Entidad`, `Buscar`, `Filtrar`, `Fecha`, `Actor`, `Metadatos`. Timestamps `DD-MM-AAAA HH:MM`; 24-hour. Metadata is machine JSON, not translated |
-| Status | ✅ Spec complete (sections 1–7). Route status: ⬜ — sitemap §1.2: planned Administrator audit surface, retained 5 years, append-only; §3 notes the shipped component and spec 12-L. Shipped: Administrator gate, three free-text filters, generation-driven fetch, raw timestamp, raw metadata JSON, no pagination/export. Target: step-16 shell adoption with `FilterBar` + `DataTable`, frozen `es-EC` labels, `format_timestamp`, monospace metadata, `loaded`/`LoadingState`, and an empty state that does not flash |
+| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap §1.2: Administrator audit surface, retained 5 years, append-only. Shipped: Administrator gate, `FilterBar` with three free-text filters, generation-driven fetch, `DataTable` with `format_timestamp`, monospace metadata, `loaded`/`LoadingState`, `EmptyState` that does not flash; no pagination/export |
 
 ## 1. Purpose
 

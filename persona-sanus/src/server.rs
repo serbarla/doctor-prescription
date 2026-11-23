@@ -198,10 +198,10 @@ fn security_headers(router: Router, cookie_secure: bool) -> Router {
 }
 
 fn url_host(value: &str) -> Option<String> {
-    value
-        .parse::<Uri>()
-        .ok()
-        .and_then(|uri| uri.host().map(|host| host.trim_matches(['[', ']']).to_owned()))
+    value.parse::<Uri>().ok().and_then(|uri| {
+        uri.host()
+            .map(|host| host.trim_matches(['[', ']']).to_owned())
+    })
 }
 
 fn url_scheme(value: &str) -> Option<String> {
@@ -254,9 +254,7 @@ fn production_config_error() -> Option<String> {
             ));
         }
         if !cookie_secure {
-            return Some(
-                "PERSONA_ENV=production requires PERSONA_COOKIE_SECURE=true".to_owned(),
-            );
+            return Some("PERSONA_ENV=production requires PERSONA_COOKIE_SECURE=true".to_owned());
         }
         if let Some(assets) = assets_public.as_deref() {
             if let Some(assets_host) = url_host(assets) {
@@ -274,7 +272,8 @@ fn production_config_error() -> Option<String> {
             if !is_loopback_host(&host) {
                 if !cookie_secure {
                     return Some(
-                        "PUBLIC_BASE_URL is public but PERSONA_COOKIE_SECURE is not true".to_owned(),
+                        "PUBLIC_BASE_URL is public but PERSONA_COOKIE_SECURE is not true"
+                            .to_owned(),
                     );
                 }
                 if let Some(assets) = assets_public.as_deref() {

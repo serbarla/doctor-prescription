@@ -7,7 +7,7 @@
 | Route | `/` — public, no auth guard |
 | Layout | Inside `#[layout(Navbar)]`. Root is `<div id="home-page">`; never wrapped in `PageShell` — the tinted bands must stay full-bleed. Page max-width 1200px via `.ui-container` inside each band |
 | Locale | `es-EC` on every string. `receta`, `cédula` keep Ecuador Spanish spelling |
-| Status | 🟡 Partial. Shipped: minimal `#hero` with the wordmark, one English line, and links to `/login` + `/dashboard` (`assets/main.css:196-229`). Target described below; copy frozen by `UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` step 11 and this file |
+| Status | ✅ Spec complete (sections 1–7). Shipped: centered `Hero` with the `es-EC` dual CTA, `Cómo funciona` steps (`NumberedStepCard` + `A4Mock`), mint `Verifica una receta` band with the verification code form, and `Footer`; the signed-in CTA resolves `Completar perfil` for an incomplete profile |
 
 ## 1. Purpose
 

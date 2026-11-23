@@ -37,6 +37,8 @@ pub struct TemplateDocument {
     pub body: String,
     pub footer: String,
     #[serde(default)]
+    pub diagnosis: String,
+    #[serde(default)]
     pub images: Vec<ImageSlot>,
     #[serde(default)]
     pub medications: Vec<MedicationBlock>,
@@ -96,6 +98,7 @@ impl Default for TemplateDocument {
             body: "Paciente: {{patient.name}}\nEdad: {{patient.age}}\n\nIndicaciones generales."
                 .to_owned(),
             footer: "Firma y sello del médico\n{{doctor.name}} · {{doctor.contact}}".to_owned(),
+            diagnosis: String::new(),
             images: Vec::new(),
             medications: vec![MedicationBlock::default()],
         }
@@ -159,6 +162,7 @@ pub fn validate_document(document: &TemplateDocument) -> Result<(), String> {
     )?;
     check_text(&document.body, "cuerpo", 40000)?;
     check_text(&document.footer, "pie de página", 4000)?;
+    check_text(&document.diagnosis, "diagnóstico de la plantilla", 2000)?;
     if document.images.len() > 10 {
         return Err("El documento admite como máximo 10 imágenes.".to_owned());
     }
@@ -284,7 +288,7 @@ pub fn document_warnings(document: &TemplateDocument) -> Vec<String> {
     warnings
 }
 
-fn medication_line(medication: &MedicationBlock) -> Option<String> {
+pub fn medication_line(medication: &MedicationBlock) -> Option<String> {
     if medication.name.trim().is_empty() && medication.dose.trim().is_empty() {
         return None;
     }
@@ -830,6 +834,20 @@ pub fn TemplateDocumentForm(
                 label: "Pie de página".to_owned(),
                 value: document().footer.clone(),
                 oninput: move |value| document.write().footer = value,
+                placeholder: String::new(),
+                wide: true,
+                hint: None,
+                error: None,
+                required: false,
+                disabled: false,
+                readonly: false,
+                hide_label: false,
+                rows: None,
+            }
+            TextAreaField {
+                label: "Diagnóstico".to_owned(),
+                value: document().diagnosis.clone(),
+                oninput: move |value| document.write().diagnosis = value,
                 placeholder: String::new(),
                 wide: true,
                 hint: None,

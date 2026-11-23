@@ -7,7 +7,7 @@
 | Route | `/templates/new` — authenticated. Requires `Me::can_manage_templates()` (`api.rs:68`: administrator or doctor). Signed out replaces `/login`; an absent actor paints the redirect gate; nursing, secretary, and unroled profiles see the denial. No query parameter. Success pushes `/templates/{id}/edit` |
 | Layout | Inside `#[layout(Navbar)]` (`main.rs:51`, never closed). Target `PageShell id="templates-page"` wrapping `div#templates-page.ui-page > .ui-container.ui-stack`; Paper canvas, 48px top, 80px bottom, 24px inline, 24px stack gap; one Card; no full-bleed band, sidebar, or tabs |
 | Locale | `es-EC` on every string; `plantilla`, `clínica`, `médico`. No date, time, cédula, or currency is rendered or formatted on this screen |
-| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap §1.2 "Create template: letterhead … + body + footer … No signature or stamp images (D-06)." Shipped: a name-only draft row with a role-derived owner label, blank-name guard, API and desktop-local insert, navigation to the editor. Target: the same single-field draft creation through `PageShell`/`PageHeader`/`Card`/`FormGrid`/`TextField`/`HintText`/`ErrorText`/`ActionRow`; letterhead, body, footer, variables, and the one library image remain editor scope |
+| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap §1.2 "Create template: letterhead … + body + footer … No signature or stamp images (D-06)." Shipped: a name-only draft row through `PageShell`/`PageHeader`/`Card`/`FormGrid`/`TextField`/`HintText`/`ErrorText`/`ActionRow`, with a role-derived owner label, blank-name guard, API and desktop-local insert, navigation to the editor; letterhead, body, footer, variables, and the one library image remain editor scope |
 
 ## 1. Purpose
 

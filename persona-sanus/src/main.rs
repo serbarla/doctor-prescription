@@ -1441,19 +1441,21 @@ fn Verify(code: String) -> Element {
 
     rsx! {
         div { id: "verify-page", class: "ui-public",
-            div { class: "ui-public-head",
+            header { class: "ui-public-head",
                 LogoLockup {}
                 PillBadge {}
             }
-            div { class: "ui-public-main ui-stack",
+            main { class: "ui-public-main ui-stack",
                 h1 { class: "ui-visually-hidden", "Verificación de receta" }
-                if !loaded() {
-                    LoadingState { label: "Verificando receta…".to_owned() }
-                } else if let Some(verification) = result() {
-                    VerificationResultCard { verification }
-                } else if !message().is_empty() {
-                    Notice { tone: NoticeTone::Error,
-                        p { "{message()}" }
+                div { class: "ui-verify-inline",
+                    if !loaded() {
+                        LoadingState { label: "Verificando receta…".to_owned() }
+                    } else if let Some(verification) = result() {
+                        VerificationResultCard { verification }
+                    } else if !message().is_empty() {
+                        Notice { tone: NoticeTone::Error,
+                            p { "{message()}" }
+                        }
                     }
                 }
                 SectionCard { title: "Verificar otra receta".to_owned(), description: None,
@@ -2359,6 +2361,8 @@ fn SettingsClinic() -> Element {
     let mut address = use_signal(String::new);
     let mut phone = use_signal(String::new);
     let mut llm_url = use_signal(String::new);
+    let mut timezone = use_signal(String::new);
+    let mut retention_days = use_signal(String::new);
     let mut message = use_signal(String::new);
     let mut status = use_signal(String::new);
     let mut saving = use_signal(|| false);
@@ -2391,6 +2395,8 @@ fn SettingsClinic() -> Element {
                     address.set(found.address.clone().unwrap_or_default());
                     phone.set(found.phone.clone().unwrap_or_default());
                     llm_url.set(found.llm_url_template.clone().unwrap_or_default());
+                    timezone.set(found.timezone.clone());
+                    retention_days.set(found.retention_days.to_string());
                     settings.set(Some(found));
                 }
                 Err(_) => {
@@ -2540,15 +2546,26 @@ fn SettingsClinic() -> Element {
                         oninput: move |next| phone.set(next),
                     }
                     TextField {
+                        label: "Zona horaria".to_owned(),
+                        value: timezone(),
+                        oninput: move |next| timezone.set(next),
+                        placeholder: "America/Guayaquil".to_owned(),
+                    }
+                    TextField {
+                        label: "Días de retención".to_owned(),
+                        value: retention_days(),
+                        oninput: move |next| retention_days.set(next),
+                        input_type: "number".to_owned(),
+                        inputmode: "numeric".to_owned(),
+                        min: "1".to_owned(),
+                    }
+                    TextField {
                         label: "Plantilla del enlace LLM".to_owned(),
                         value: llm_url(),
                         oninput: move |next| llm_url.set(next),
                         placeholder: "https://chat.openai.com/?q=".to_owned(),
                         wide: true,
                     }
-                }
-                if let Some(timezone) = clinic.as_ref().map(|value| value.timezone.clone()).filter(|value| !value.is_empty()) {
-                    HintText { text: format!("Zona horaria: {timezone}") }
                 }
                 ActionRow {
                     Button {
@@ -2558,13 +2575,18 @@ fn SettingsClinic() -> Element {
                             if saving() {
                                 return;
                             }
+                            let Ok(retention) = retention_days().trim().parse::<i32>() else {
+                                message.set("La retención debe ser un número positivo de días.".to_owned());
+                                return;
+                            };
                             saving.set(true);
                             let value = name();
                             let street = address();
                             let telephone = phone();
                             let llm = llm_url();
+                            let zone = timezone();
                             spawn(async move {
-                                match api::update_clinic_settings(&value, &street, &telephone, &llm).await {
+                                match api::update_clinic_settings(&value, &street, &telephone, &llm, &zone, retention).await {
                                     Ok(_) => {
                                         status.set("Datos de la clínica actualizados.".to_owned());
                                         generation += 1;
@@ -2646,6 +2668,7 @@ fn SettingsUsers() -> Element {
     let refresh = use_signal(|| 0);
     let mut message = use_signal(String::new);
     let busy = use_signal(|| None::<String>);
+    let mut confirming = use_signal(|| None::<String>);
 
     use_effect(move || {
         let _ = refresh();
@@ -2788,51 +2811,89 @@ fn SettingsUsers() -> Element {
                                     td {
                                         div { class: "ui-actions",
                                             if row.role.is_some() {
-                                                Button {
-                                                    variant: ButtonVariant::Danger,
-                                                    disabled: busy().as_deref() == Some(format!("remove:{}", row.profile_id).as_str()),
-                                                    onclick: {
-                                                        let profile_id = row.profile_id.clone();
-                                                        let mut refresh = refresh;
-                                                        let mut message = message;
-                                                        let mut busy = busy;
-                                                        move |_| {
-                                                            let profile_id = profile_id.clone();
-                                                            busy.set(Some(format!("remove:{profile_id}")));
-                                                            spawn(async move {
-                                                                match api::remove_member(&profile_id).await {
-                                                                    Ok(()) => refresh += 1,
-                                                                    Err(error) => message.set(error),
-                                                                }
-                                                                busy.set(None);
-                                                            });
-                                                        }
-                                                    },
-                                                    if busy().as_deref() == Some(format!("remove:{}", row.profile_id).as_str()) { "Quitando..." } else { "Quitar del equipo" }
+                                                if confirming().as_deref() == Some(format!("remove:{}", row.profile_id).as_str()) {
+                                                    ConfirmPanel {
+                                                        message: "La persona pierde el acceso a esta clínica.".to_owned(),
+                                                        confirm_label: "Confirmar eliminación".to_owned(),
+                                                        cancel_label: "Cancelar".to_owned(),
+                                                        busy: busy().as_deref() == Some(format!("remove:{}", row.profile_id).as_str()),
+                                                        busy_label: "Quitando...".to_owned(),
+                                                        on_cancel: move |_| confirming.set(None),
+                                                        on_confirm: {
+                                                            let profile_id = row.profile_id.clone();
+                                                            let mut refresh = refresh;
+                                                            let mut message = message;
+                                                            let mut busy = busy;
+                                                            let mut confirming = confirming;
+                                                            move |_| {
+                                                                let profile_id = profile_id.clone();
+                                                                busy.set(Some(format!("remove:{profile_id}")));
+                                                                spawn(async move {
+                                                                    match api::remove_member(&profile_id).await {
+                                                                        Ok(()) => refresh += 1,
+                                                                        Err(error) => message.set(error),
+                                                                    }
+                                                                    busy.set(None);
+                                                                    confirming.set(None);
+                                                                });
+                                                            }
+                                                        },
+                                                        span {}
+                                                    }
+                                                } else {
+                                                    Button {
+                                                        variant: ButtonVariant::Danger,
+                                                        disabled: busy().as_deref() == Some(format!("remove:{}", row.profile_id).as_str()) || confirming().is_some(),
+                                                        onclick: {
+                                                            let profile_id = row.profile_id.clone();
+                                                            let mut confirming = confirming;
+                                                            move |_| confirming.set(Some(format!("remove:{profile_id}")))
+                                                        },
+                                                        "Quitar del equipo"
+                                                    }
                                                 }
                                             }
                                             if row.status == "active" {
-                                                Button {
-                                                    variant: ButtonVariant::Danger,
-                                                    disabled: busy().as_deref() == Some(format!("disable:{}", row.profile_id).as_str()),
-                                                    onclick: {
-                                                        let profile_id = row.profile_id.clone();
-                                                        let mut refresh = refresh;
-                                                        let mut message = message;
-                                                        let mut busy = busy;
-                                                        move |_| {
-                                                            let profile_id = profile_id.clone();
-                                                            busy.set(Some(format!("disable:{profile_id}")));
-                                                            spawn(async move {
-                                                                match api::disable_profile(&profile_id, true).await {
-                                                                    Ok(()) => refresh += 1,
-                                                                    Err(error) => message.set(error),
-                                                                }
-                                                                busy.set(None);
-                                                            });
-                                                        }
-                                                    },
-                                                    if busy().as_deref() == Some(format!("disable:{}", row.profile_id).as_str()) { "Deshabilitando..." } else { "Deshabilitar" }
+                                                if confirming().as_deref() == Some(format!("disable:{}", row.profile_id).as_str()) {
+                                                    ConfirmPanel {
+                                                        message: "La cuenta no podrá iniciar sesión.".to_owned(),
+                                                        confirm_label: "Confirmar deshabilitación".to_owned(),
+                                                        cancel_label: "Cancelar".to_owned(),
+                                                        busy: busy().as_deref() == Some(format!("disable:{}", row.profile_id).as_str()),
+                                                        busy_label: "Deshabilitando...".to_owned(),
+                                                        on_cancel: move |_| confirming.set(None),
+                                                        on_confirm: {
+                                                            let profile_id = row.profile_id.clone();
+                                                            let mut refresh = refresh;
+                                                            let mut message = message;
+                                                            let mut busy = busy;
+                                                            let mut confirming = confirming;
+                                                            move |_| {
+                                                                let profile_id = profile_id.clone();
+                                                                busy.set(Some(format!("disable:{profile_id}")));
+                                                                spawn(async move {
+                                                                    match api::disable_profile(&profile_id, true).await {
+                                                                        Ok(()) => refresh += 1,
+                                                                        Err(error) => message.set(error),
+                                                                    }
+                                                                    busy.set(None);
+                                                                    confirming.set(None);
+                                                                });
+                                                            }
+                                                        },
+                                                        span {}
+                                                    }
+                                                } else {
+                                                    Button {
+                                                        variant: ButtonVariant::Danger,
+                                                        disabled: busy().as_deref() == Some(format!("disable:{}", row.profile_id).as_str()) || confirming().is_some(),
+                                                        onclick: {
+                                                            let profile_id = row.profile_id.clone();
+                                                            let mut confirming = confirming;
+                                                            move |_| confirming.set(Some(format!("disable:{profile_id}")))
+                                                        },
+                                                        "Deshabilitar"
+                                                    }
                                                 }
                                             } else {
                                                 Button {
@@ -2894,27 +2955,46 @@ fn SettingsUsers() -> Element {
                                     td { DeviceStatusBadge { revoked: device.revoked_at.is_some() } }
                                     td {
                                         if device.revoked_at.is_none() {
-                                            Button {
-                                                variant: ButtonVariant::Danger,
-                                                disabled: busy().as_deref() == Some(format!("revoke:{}", device.id).as_str()),
-                                                onclick: {
-                                                    let device_id = device.id.clone();
-                                                    let mut refresh = refresh;
-                                                    let mut message = message;
-                                                    let mut busy = busy;
-                                                    move |_| {
-                                                        let device_id = device_id.clone();
-                                                        busy.set(Some(format!("revoke:{device_id}")));
-                                                        spawn(async move {
-                                                            match api::revoke_device(&device_id).await {
-                                                                Ok(()) => refresh += 1,
-                                                                Err(error) => message.set(error),
-                                                            }
-                                                            busy.set(None);
-                                                        });
-                                                    }
-                                                },
-                                                if busy().as_deref() == Some(format!("revoke:{}", device.id).as_str()) { "Revocando..." } else { "Revocar" }
+                                            if confirming().as_deref() == Some(format!("revoke:{}", device.id).as_str()) {
+                                                ConfirmPanel {
+                                                    message: "El dispositivo perderá su sesión.".to_owned(),
+                                                    confirm_label: "Confirmar revocación".to_owned(),
+                                                    cancel_label: "Cancelar".to_owned(),
+                                                    busy: busy().as_deref() == Some(format!("revoke:{}", device.id).as_str()),
+                                                    busy_label: "Revocando...".to_owned(),
+                                                    on_cancel: move |_| confirming.set(None),
+                                                    on_confirm: {
+                                                        let device_id = device.id.clone();
+                                                        let mut refresh = refresh;
+                                                        let mut message = message;
+                                                        let mut busy = busy;
+                                                        let mut confirming = confirming;
+                                                        move |_| {
+                                                            let device_id = device_id.clone();
+                                                            busy.set(Some(format!("revoke:{device_id}")));
+                                                            spawn(async move {
+                                                                match api::revoke_device(&device_id).await {
+                                                                    Ok(()) => refresh += 1,
+                                                                    Err(error) => message.set(error),
+                                                                }
+                                                                busy.set(None);
+                                                                confirming.set(None);
+                                                            });
+                                                        }
+                                                    },
+                                                    span {}
+                                                }
+                                            } else {
+                                                Button {
+                                                    variant: ButtonVariant::Danger,
+                                                    disabled: busy().as_deref() == Some(format!("revoke:{}", device.id).as_str()) || confirming().is_some(),
+                                                    onclick: {
+                                                        let device_id = device.id.clone();
+                                                        let mut confirming = confirming;
+                                                        move |_| confirming.set(Some(format!("revoke:{device_id}")))
+                                                    },
+                                                    "Revocar"
+                                                }
                                             }
                                         } else {
                                             "—"
@@ -3864,7 +3944,7 @@ fn PatientNew() -> Element {
                     }
                 }
             }
-            if warning_ids().is_empty() && !message().is_empty() {
+            if !message().is_empty() {
                 ErrorText { text: message() }
             }
             ActionRow {
@@ -3905,6 +3985,9 @@ fn PatientDetail(id: String) -> Element {
     let mut message = use_signal(String::new);
     let mut confirm_delete = use_signal(|| false);
     let mut deleting = use_signal(|| false);
+    let mut history = use_signal(Vec::<api::Prescription>::new);
+    let mut history_message = use_signal(String::new);
+    let mut history_loaded = use_signal(|| false);
     let load_id = id.clone();
 
     use_effect(move || {
@@ -3919,6 +4002,7 @@ fn PatientDetail(id: String) -> Element {
             return;
         }
         let load_id = load_id.clone();
+        let history_id = load_id.clone();
         spawn(async move {
             match api::fetch_patient(&load_id).await {
                 Ok(found) => patient.set(Some(found)),
@@ -3942,6 +4026,34 @@ fn PatientDetail(id: String) -> Element {
                     message.set("No se pudo cargar la ficha del paciente.".to_string());
                 }
             }
+            match api::fetch_prescriptions(&history_id, "", "").await {
+                Ok(found) => {
+                    history.set(found);
+                    history_message.set(String::new());
+                }
+                Err(_error) => {
+                    #[cfg(feature = "desktop")]
+                    if let Ok(mut conn) = desktop_local::open_local_db() {
+                        if let Ok(found) = desktop_local::list_prescriptions(&mut conn, "") {
+                            let mut mapped = Vec::new();
+                            for value in found {
+                                if value.get("patientId").and_then(Value::as_str)
+                                    == Some(history_id.as_str())
+                                {
+                                    if let Ok(prescription) =
+                                        serde_json::from_value::<api::Prescription>(value)
+                                    {
+                                        mapped.push(prescription);
+                                    }
+                                }
+                            }
+                            history.set(mapped);
+                        }
+                    }
+                    history_message.set("No se pudieron cargar las recetas.".to_string());
+                }
+            }
+            history_loaded.set(true);
         });
     });
 
@@ -4016,13 +4128,6 @@ fn PatientDetail(id: String) -> Element {
                         "Nueva receta"
                     }
                 }
-                ButtonLink {
-                    to: Route::Prescriptions { status: None },
-                    variant: ButtonVariant::Secondary,
-                    active_class: None,
-                    extra_class: String::new(),
-                    "Historial de recetas"
-                }
             }
             if !message().is_empty() {
                 ErrorText { text: message() }
@@ -4043,6 +4148,50 @@ fn PatientDetail(id: String) -> Element {
                         label: "Notas".to_owned(),
                         wide: true,
                         "{patient.notes.clone().unwrap_or_else(|| \"—\".to_owned())}"
+                    }
+                }
+            }
+            SectionCard { title: "Historial de recetas".to_owned(), description: None,
+                if !history_loaded() {
+                    LoadingState { label: "Cargando recetas...".to_owned() }
+                }
+                if history_loaded() && !history_message().is_empty() {
+                    ErrorText { text: history_message() }
+                }
+                if history_loaded() && history().is_empty() && history_message().is_empty() {
+                    EmptyState {
+                        title: "Sin recetas".to_owned(),
+                        description: "Este paciente todavía no tiene recetas.".to_owned(),
+                    }
+                }
+                if history_loaded() && !history().is_empty() {
+                    div { class: "ui-list",
+                        for row in history() {
+                            ListRow {
+                                key: "{row.id}",
+                                title: row.patient_name.clone(),
+                                meta: {
+                                    let mut parts = vec![
+                                        prescription_status_label(&row.status).to_owned(),
+                                        format_date(&row.created_at),
+                                    ];
+                                    if let Some(number) = row.rx_number {
+                                        parts.push(format!("No. {number}"));
+                                    }
+                                    parts
+                                },
+                                badge: Some(rsx! {
+                                    PrescriptionStatusBadge { status: row.status.clone() }
+                                }),
+                                ButtonLink {
+                                    to: Route::PrescriptionDetail { id: row.id.clone() },
+                                    variant: ButtonVariant::Secondary,
+                                    active_class: None,
+                                    extra_class: String::new(),
+                                    "Abrir"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -5627,7 +5776,7 @@ fn Prescriptions(status: Option<String>) -> Element {
                             },
                             badge: Some(rsx! {
                                 PrescriptionStatusBadge { status: row.status.clone() }
-                                if row.status == "pending_sync" {
+                                if selected_view == "pending_sync" {
                                     Badge { tone: BadgeTone::Cream, "Provisional · PENDIENTE DE SINCRONIZACIÓN" }
                                 }
                             }),
@@ -5717,6 +5866,10 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
     let mut loaded = use_signal(|| false);
     let mut patient_error = use_signal(String::new);
     let mut template_error = use_signal(String::new);
+    let mut prefill_medications = use_signal(Vec::<forms::MedicationBlock>::new);
+    let mut prefill_variables = use_signal(Vec::<String>::new);
+    let mut prefilled_version = use_signal(String::new);
+    let mut prefilled_diagnosis = use_signal(String::new);
 
     use_effect(move || {
         if loaded() || !checked() {
@@ -5817,6 +5970,38 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                 }
             }
         }
+    });
+
+    use_effect(move || {
+        let version_id = selected_template();
+        if version_id.is_empty() || version_id == prefilled_version() {
+            return;
+        }
+        let Some(version) = templates()
+            .iter()
+            .find_map(|template| template.current_version.clone())
+            .filter(|version| version.id == version_id)
+        else {
+            return;
+        };
+        if let Ok(document) = forms::parse_document(&version.doc_json) {
+            if diagnosis().is_empty() || diagnosis() == prefilled_diagnosis() {
+                diagnosis.set(document.diagnosis.clone());
+            }
+            prefilled_diagnosis.set(document.diagnosis.clone());
+            prefill_medications.set(
+                document
+                    .medications
+                    .iter()
+                    .filter(|medication| !medication.name.trim().is_empty())
+                    .cloned()
+                    .collect(),
+            );
+        }
+        if let Ok(keys) = serde_json::from_value::<Vec<String>>(version.variables_spec.clone()) {
+            prefill_variables.set(keys);
+        }
+        prefilled_version.set(version_id);
     });
 
     if !checked() || user().is_none() {
@@ -5976,6 +6161,24 @@ fn PrescriptionNew(patient_id: Option<String>, template_id: Option<String>) -> E
                         readonly: false,
                         hide_label: false,
                         rows: None,
+                    }
+                }
+                if !prefill_medications().is_empty() {
+                    div { class: "ui-stack",
+                        HintText { text: "Medicamentos de la plantilla:".to_owned() }
+                        for medication in prefill_medications() {
+                            p {
+                                "{forms::medication_line(&medication).unwrap_or_default()}"
+                            }
+                        }
+                    }
+                }
+                if !prefill_variables().is_empty() {
+                    div { class: "ui-stack",
+                        HintText { text: "Variables de la plantilla:".to_owned() }
+                        for key in prefill_variables() {
+                            p { "{forms::variable_label(&key)} — {key}" }
+                        }
                     }
                 }
             }

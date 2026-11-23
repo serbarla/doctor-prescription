@@ -7,7 +7,7 @@
 | Route | `/patients` (`Route::Patients {}`) — authenticated shell; signed-out visitors redirect to `/login` (`Route::AuthPage {}`); reading requires `Me::can_read_patients()`; no query params; the search term is a signal and never a URL parameter; Administrator is read-only |
 | Layout | `PageShell id="patients-page"` inside `#[layout(Navbar)]` (opens at `main.rs:51`); root `#patients-page.ui-page` > `.ui-container.ui-stack`; Paper band, hairline row borders; no full-bleed exception |
 | Locale | `es-EC` on every string; `cédula` spelling; dates `DD-MM-AAAA`; 24-hour time where a timestamp appears |
-| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap cell: search by name and cédula, list scoped by `clinic_id`, entry to create/detail. Shipped as a bare `div#patients-page` with no `loaded` signal; target scope is the plan step 13 adoption below |
+| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap cell: search by name and cédula, list scoped by `clinic_id`, entry to create/detail. Shipped: step-13 adoption — `PageShell`/`PageHeader`, `loaded` signal, `ListRow` rows, `LoadingState`/`EmptyState`/`ErrorText` |
 
 The clinic patient directory. It is the entry point to an existing record and to the creation form, and it searches only the caller's own clinic. This file freezes region order, copy, geometry, and states for the shipped component; it introduces no route, endpoint, table, column, role, or permission.
 

@@ -7,7 +7,7 @@
 | Route | `/settings/users` (`Route::SettingsUsers {}`, `main.rs:68-69`) — authenticated shell, Administrator only. No session replaces `/login`; a non-Administrator sees `Acceso denegado`; an Administrator stays. The route has no path or query parameter |
 | Layout | Inside `#[layout(Navbar)]` (`main.rs:51`, never closed). `PageShell id="settings-page"` → `div#settings-page.ui-page > .ui-container.ui-stack`; Paper canvas, 48px top / 80px bottom / 24px inline, 24px stack gap; one `SectionCard` `Personal`, then one `SectionCard` `Dispositivos`; no full-bleed band, tabs, drawer, or modal |
 | Locale | `es-EC` on every string. Role labels `Administrador`, `Doctor`, `Enfermería`, `Secretaría`; status `Activo`, `Deshabilitado`, `Revocado`, `Nunca`; platform `macOS`, `Windows`, `Web`, `Desconocido`; dates `DD-MM-AAAA`, times 24-hour |
-| Status | ✅ Spec complete (sections 1–7). Route status: ⬜ — sitemap §1.2: planned, with §3 noting the shipped component. Shipped: Administrator gate, staff list with role select, disable/enable, remove membership, device list, revoke device, shared page message, refresh counter. Target: step-16 shell adoption with `SectionCard` + `DataTable`, row-scoped pending/error state, explicit destructive confirms, and no invite form (not shipped and no endpoint) |
+| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap §1.2: staff, roles, disable/remove, devices. Shipped: Administrator gate, `SectionCard` + `DataTable` staff and device tables with role select, row-scoped pending state, inline `ConfirmPanel` destructive confirms for disable/remove/revoke, enable, device list, shared page message, refresh counter; no invite form (not shipped and no endpoint) |
 
 ## 1. Purpose
 
@@ -96,7 +96,7 @@ Revoking ends the device's sessions on the next request (`sessions.device_id`), 
 
 The shipped component has one `refresh: Signal<i32>` and one page-level `message`. A successful role change, enable/disable, remove, or revoke increments `refresh`; the effect re-runs both fetches and the row list settles. A failure writes the server message; the row stays as it was. There is no optimistic cell edit and no per-row error placement in the shipped code.
 
-Target adds one in-flight key for the row action (`profile_id` or `device_id`) so only that action disables and shows its busy label; the page-level `ErrorText` remains the failure surface. The key is local UI state, not an API field. A failure clears the key and re-enables the action. Do not add a toast or a modal.
+The shipped code keys in-flight state by row action (`profile_id` or `device_id`) via the `busy` signal, so only that action disables and shows its busy label; the page-level `ErrorText` remains the failure surface. The key is local UI state, not an API field. A failure clears the key and re-enables the action. Destructive actions (disable, remove, revoke) open an inline `ConfirmPanel` in the row before firing; cancelling fires no request. Do not add a toast or a modal.
 
 The effect fetches users and then devices even if the users fetch failed. The second failure overwrites the first message; target keeps the first message if both fail and records the second in a hidden diagnostic, or shows a combined page error naming both lists. Do not claim a partial success as a complete load.
 
@@ -172,6 +172,10 @@ All strings verbatim, `es-EC`; punctuation belongs to the copy. Navbar copy is o
 | Enable busy | `Habilitando...` |
 | Disable busy | `Deshabilitando...` |
 | Remove busy | `Quitando...` |
+| Remove confirm | Danger `Quitar del equipo` opens the inline confirm; message `La persona pierde el acceso a esta clínica.`, confirm label `Confirmar eliminación` |
+| Disable confirm | Danger `Deshabilitar` opens the inline confirm; message `La cuenta no podrá iniciar sesión.`, confirm label `Confirmar deshabilitación` |
+| Revoke confirm | Danger `Revocar` opens the inline confirm; message `El dispositivo perderá su sesión.`, confirm label `Confirmar revocación` |
+| Confirm cancel | `Cancelar` closes the inline confirm without a request |
 | Revoke busy | `Revocando...` |
 | Last-administrator refusal | `The clinic needs an administrator.` rendered verbatim from the server (target: localize at the source, do not rewrite here) |
 | Unknown role refusal | `Unknown role.` rendered verbatim from the server (target: localize at the source) |
@@ -242,13 +246,14 @@ The tables are read from the API on mount and after every successful mutation. N
 | Enable/disable in flight | That row's action disabled with the §3.4 busy label; status badge stays |
 | Enable/disable success | `refresh`; `Activo`/`Deshabilitado` flips; action set follows |
 | Enable/disable failure | Message in `ErrorText`; status unchanged |
-| Remove idle/confirm | Danger `Quitar del equipo`; if a confirm step is added, it is an inline `ConfirmPanel`, never a browser dialog or modal focus trap |
+| Remove idle/confirm | Danger `Quitar del equipo` opens the inline `ConfirmPanel` (`La persona pierde el acceso a esta clínica.`, `Confirmar eliminación`); `Cancelar` closes without a request; no browser dialog or modal focus trap |
 | Remove busy | The confirm button reads `Quitando...` and is disabled; the row remains until refresh |
 | Remove success | `refresh`; the row disappears from the staff table; its devices may remain until the next read |
 | Remove failure | Message in `ErrorText`; the row stays; confirm remains open for retry or is dismissed |
 | Last Administrator refusal | `400` sentence in `ErrorText`; no optimistic demotion/disable/removal; the role/status stay |
 | Unknown role refusal | `400` `Unknown role.`; the select returns to its previous value |
-| Revoke idle | Active row shows Danger `Revocar`; revoked row shows no action |
+| Disable idle/confirm | Danger `Deshabilitar` opens the inline `ConfirmPanel` (`La cuenta no podrá iniciar sesión.`, `Confirmar deshabilitación`); `Cancelar` closes without a request |
+| Revoke idle/confirm | Active row shows Danger `Revocar` opening the inline `ConfirmPanel` (`El dispositivo perderá su sesión.`, `Confirmar revocación`); revoked row shows no action |
 | Revoke busy | That action reads `Revocando...`, disabled; other rows usable |
 | Revoke success | `refresh`; row state `Revocado`; action gone |
 | Revoke failure | Message in `ErrorText`; state stays `Activo`; action returns |
@@ -337,7 +342,7 @@ Line icons only, 1.5px stroke, 20px, Ink or Plum: `Alert` in the error notice; n
 - Render (`main.rs:2672-2925`): `!checked()` → `PageShell` + `LoadingState` (`Cargando...`); checked without profile → `LoadingState` `Redirigiendo...`; non-Administrator → `PageShell` + `PageHeader` (`Usuarios y roles`, shipped subtitle) + `Notice tone=Error` (`Acceso denegado`, `Solo el administrador puede gestionar usuarios y roles.`) + Secondary `ButtonLink` `Ir a mi perfil` → `SettingsProfile` (`main.rs:2688-2710`) — no redirect, no fetch.
 - Administrator render: `PageShell` + `PageHeader`, `ErrorText` for `message`, then `SectionCard` `Personal` and `SectionCard` `Dispositivos` (description `Equipos registrados y su último acceso.`). Each card renders `EmptyState` when its vector is empty — `Sin usuarios` / `No hay usuarios para mostrar.` and `Sin dispositivos` / `No hay equipos registrados.` (the former shipped gap is fixed; the card stays mounted) — and `DataTable` otherwise with `caption: Some("Personal")` / `Some("Dispositivos")` (caption ships in `ui/feedback.rs:160-165`, `th scope="col"`), six columns per §2, one `<tr>` per row.
 - Staff rows: `display_name`, `email`, `Alta: {format_date}`, `Estado` badge, role `SelectField` (`Sin rol` disabled placeholder, `Administrador`/`Doctor`/`Enfermería`/`Secretaría`) calling `api::set_role(profile_id, value)` on change and ignoring empty; actions `Habilitar`/`Deshabilitar` (`api::disable_profile`), `Quitar del equipo` when a role exists (`api::remove_member`). Device rows: `{profile_name} · {device_name_label}`, `platform_label`, version or `—`, `last_seen_label`, `DeviceStatusBadge`, Danger `Revocar` (`api::revoke_device`) only when active, `—` when revoked. Success bumps `refresh`; failure writes the server message verbatim (`The clinic needs an administrator.`, `Unknown role.`) to `message`/`ErrorText`.
-- Per-action busy (shipped): `busy` keys `role:{id}`/`remove:{id}`/`disable:{id}`/`enable:{id}`/`revoke:{id}` disable only that control and drive `Guardando rol...` (hint), `Quitando...`, `Deshabilitando...`/`Habilitando...`, `Revocando...`; cleared on success, failure, and cancel. No optimistic cell edit. Remove/disable/revoke are direct — no confirm panel ships (the spec makes confirmation conditional, so none is required).
+- Per-action busy (shipped): `busy` keys `role:{id}`/`remove:{id}`/`disable:{id}`/`enable:{id}`/`revoke:{id}` disable only that control and drive `Guardando rol...` (hint), `Quitando...`, `Deshabilitando...`/`Habilitando...`, `Revocando...`; cleared on success, failure, and cancel. No optimistic cell edit. Remove/disable/revoke open per-row inline `ConfirmPanel` confirms (`La persona pierde el acceso a esta clínica.` / `La cuenta no podrá iniciar sesión.` / `El dispositivo perderá su sesión.`); `Cancelar` closes without a request.
 - Verification commands, from the repo root; none is recorded here as executed:
 
 ```sh

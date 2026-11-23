@@ -1,5 +1,5 @@
 use std::ffi::{CStr, CString};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
 
@@ -31,7 +31,14 @@ async fn loopback_only(request: Request<Body>, next: Next) -> Response {
     let allowed = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
-        .is_some_and(|info| info.0.ip().is_loopback());
+        .is_some_and(|info| {
+            let peer = info.0.ip();
+            peer.is_loopback()
+                || std::env::var("DIOXUS_DEVSERVER_IP")
+                    .ok()
+                    .and_then(|ip| ip.parse::<IpAddr>().ok())
+                    == Some(peer)
+        });
     if allowed {
         next.run(request).await
     } else {

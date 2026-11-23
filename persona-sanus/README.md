@@ -46,6 +46,16 @@ dx serve --fullstack
 
 Open `http://127.0.0.1:8080`, sign up at `/login`, then visit the protected `/dashboard` route.
 
+### Serve over the network
+
+Bind `dx serve` to a non-loopback address to reach it from another device (for example, a Tailscale interface):
+
+```bash
+dx serve --fullstack --addr 100.97.159.42 --port 8080
+```
+
+Then open `http://100.97.159.42:8080` from a browser on the same network. The dev SQLite browser at `/dev/db` is also reachable from that bound address when running under `dx serve`.
+
 Debug builds also mount a read-only SQLite browser at `http://127.0.0.1:8080/dev/db` (`src/dev_db.rs`). It lists the live schema, paginates every table, shows the DDL, and runs read-only SQL against `DATABASE_URL`.
 
 | Surface | Purpose |
@@ -58,7 +68,7 @@ Debug builds also mount a read-only SQLite browser at `http://127.0.0.1:8080/dev
 Guards:
 
 - Only compiled with `debug_assertions`; `dx serve --release --fullstack` and release binaries return 404.
-- Loopback peer addresses only; non-loopback connections return 403.
+- Loopback peer addresses only, unless `dx serve` bound to a non-loopback address, in which case the bound address is also allowed; other non-loopback connections return 403.
 - SQLite is opened with `SQLITE_OPEN_READONLY`.
 - Writes are rejected via `sqlite3_stmt_readonly`; multiple statements are rejected.
 - GET only; no write endpoint is mounted.

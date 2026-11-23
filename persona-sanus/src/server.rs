@@ -127,7 +127,7 @@ fn loopback_origin(origin: &str) -> bool {
 }
 
 fn dev_proxy_origin(request: &Request<Body>, origin: &str) -> bool {
-    if request.headers().get("x-proxied-by-dioxus").is_none() || !loopback_origin(origin) {
+    if request.headers().get("x-proxied-by-dioxus").is_none() {
         return false;
     }
     match std::env::var("DIOXUS_DEVSERVER_PORT")

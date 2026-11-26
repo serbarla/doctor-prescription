@@ -15,6 +15,8 @@ pub enum IconName {
     ArrowRight,
     Lock,
     Image,
+    Users,
+    FileText,
 }
 
 impl IconName {
@@ -33,6 +35,8 @@ impl IconName {
             IconName::ArrowRight => icons::IconType::ArrowRight,
             IconName::Lock => icons::IconType::Lock,
             IconName::Image => icons::IconType::Image,
+            IconName::Users => icons::IconType::Users,
+            IconName::FileText => icons::IconType::FileText,
         }
     }
 }

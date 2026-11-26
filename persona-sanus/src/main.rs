@@ -43,14 +43,15 @@ mod verify_server;
 use crate::ui::{
     device_name_label, format_date, format_timestamp, last_seen_label, optional_date,
     platform_label, prescription_status_label, role_label, sex_label, template_owner_label,
-    template_status_label, version_status_label, A4MockKind, AccentTone, AccountStatusBadge,
-    ActionRow, Badge, BadgeTone, Button, ButtonLink, ButtonVariant, Card, ConfirmPanel, DataTable,
-    DetailGrid, DetailItem, DeviceStatusBadge, EmptyState, ErrorText, FileField, FilterBar,
-    FormColumns, FormGrid, Hero, HintText, ImageLibrary, LinkAction, ListRow, LlmExplainLink,
-    LoadingState, LogoLockup, NavLink, Notice, NoticeTone, NumberedStepCard, PageHeader, PageShell,
-    PillBadge, PrescriptionStatusBadge, RxBlockIndicator, SearchField, SectionBand, SectionCard,
-    SectionHeader, SelectField, SurfaceTone, SyncStatus, SyncStatusIndicator, TemplateStatusBadge,
-    TextAreaField, TextField, TrustSecurityRow, VerificationCodeForm, VerificationResultCard,
+    template_status_label, version_status_label, A4Mock, A4MockKind, A4PreviewCard, AccentTone,
+    AccountStatusBadge, ActionRow, Badge, BadgeTone, Button, ButtonLink, ButtonVariant, Card,
+    ConfirmPanel, DataTable, DetailGrid, DetailItem, DeviceStatusBadge, EmptyState, ErrorText,
+    FileField, FilterBar, FormColumns, FormGrid, Hero, HintText, Icon, IconName, ImageLibrary,
+    LinkAction, ListRow, LlmExplainLink, LoadingState, LogoLockup, NavLink, Notice, NoticeTone,
+    NumberedStepCard, PageHeader, PageShell, PillBadge, PrescriptionStatusBadge, RxBlockIndicator,
+    SearchField, SectionBand, SectionCard, SectionHeader, SelectField, SurfaceTone, SyncStatus,
+    SyncStatusIndicator, TemplateStatusBadge, TextAreaField, TextField, TrustSecurityRow,
+    VerificationCodeForm, VerificationResultCard,
 };
 use api::Me;
 use auth::SessionUser;
@@ -1392,7 +1393,7 @@ fn Home() -> Element {
                 subtitle: "PersonaSanus reúne pacientes, plantillas y recetas en un espacio sereno, pensado para el trabajo clínico en Ecuador.".to_owned(),
                 div {
                     ActionRow {
-                        ButtonLink { to: cta_route, variant: ButtonVariant::Primary, active_class: None, "{cta_label}" }
+                        ButtonLink { to: cta_route.clone(), variant: ButtonVariant::Primary, active_class: None, "{cta_label}" }
                         LinkAction {
                             href: "#verificar".to_owned(),
                             variant: ButtonVariant::Secondary,
@@ -1402,7 +1403,55 @@ fn Home() -> Element {
                         }
                     }
                     p { class: "ui-microcopy", "Diseñado para clínicas y consultorios · Datos protegidos" }
+                    div { class: "ui-hero-visual",
+                        A4PreviewCard { accent: AccentTone::Mint, tag: Some("Verificable".to_owned()),
+                            A4Mock { kind: A4MockKind::Medication }
+                        }
+                        ul { class: "ui-hero-shot-chips",
+                            li { "PDF listo para imprimir" }
+                            li { "QR verificable" }
+                            li { "A4 a escala real" }
+                        }
+                    }
                     TrustSecurityRow {}
+                }
+            }
+            SectionBand { tone: SurfaceTone::Cream,
+                div {
+                    SectionHeader {
+                        title: "Todo lo que tu consultorio necesita".to_owned(),
+                        subtitle: Some("Pacientes, plantillas y recetas verificables en un flujo simple, sin fricción.".to_owned()),
+                    }
+                    div { class: "ui-features",
+                        article { class: "ui-feature",
+                            span { class: "ui-feature-icon",
+                                Icon { name: IconName::Users, size: 22 }
+                            }
+                            h3 { class: "ui-feature-title", "Pacientes" }
+                            p { class: "ui-feature-body", "Busca por nombre o cédula, evita duplicados y mantén el historial de recetas junto a cada paciente." }
+                        }
+                        article { class: "ui-feature",
+                            span { class: "ui-feature-icon",
+                                Icon { name: IconName::FileText, size: 22 }
+                            }
+                            h3 { class: "ui-feature-title", "Plantillas propias" }
+                            p { class: "ui-feature-body", "Logo, membrete y variables para que cada receta lleve la identidad de tu consultorio. Las versiones publicadas son inmutables." }
+                        }
+                        article { class: "ui-feature",
+                            span { class: "ui-feature-icon",
+                                Icon { name: IconName::Qr, size: 22 }
+                            }
+                            h3 { class: "ui-feature-title", "Recetas verificables" }
+                            p { class: "ui-feature-body", "Vista previa A4 a escala real, PDF para imprimir y un código verificable que no expone datos del paciente." }
+                        }
+                        article { class: "ui-feature",
+                            span { class: "ui-feature-icon",
+                                Icon { name: IconName::Shield, size: 22 }
+                            }
+                            h3 { class: "ui-feature-title", "Datos protegidos" }
+                            p { class: "ui-feature-body", "Roles por miembro del consultorio, auditoría y sesiones seguras. La verificación pública nunca muestra datos del paciente." }
+                        }
+                    }
                 }
             }
             SectionBand { id: Some("como-funciona".to_owned()), tone: SurfaceTone::Paper,
@@ -1452,6 +1501,20 @@ fn Home() -> Element {
                             on_submit: move |code| {
                                 navigator.push(Route::Verify { code });
                             },
+                        }
+                    }
+                    TrustSecurityRow {}
+                }
+            }
+            SectionBand { tone: SurfaceTone::Paper,
+                div { class: "ui-closing",
+                    h2 { class: "ui-section-title", "Tu consultorio, listo para firmar." }
+                    ActionRow {
+                        ButtonLink {
+                            to: cta_route.clone(),
+                            variant: ButtonVariant::Secondary,
+                            active_class: None,
+                            "{cta_label}"
                         }
                     }
                     TrustSecurityRow {}

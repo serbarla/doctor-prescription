@@ -22,23 +22,25 @@ Vertical, centered, symmetric. Bands alternate white and tinted wash. No sidebar
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
 | — | Navbar (layout) | `#navbar` · `header.ui-navbar`, inner `.ui-navbar-inner` | Paper `#ffffff`, bottom hairline 1px `#e5e7eb` | Owned by `context/screens/done/Header.md` — `LogoLockup` + `PillBadge`, zero to five role-guarded `NavLink`s when a session exists, session-aware right group |
-| 1 | Hero | — | Paper `#ffffff` | `h1` display headline, subtitle, `ActionRow` (one filled teal + one outlined), microcopy line, `TrustSecurityRow` |
-| 2 | Cómo funciona | `#como-funciona` | Paper `#ffffff` | `SectionHeader` + `ui-steps` grid of three `NumberedStepCard`s + centered note |
-| 3 | Verifica una receta | `#verificar` | Mint `#b9ffe8` | `SectionHeader` + `Card` holding `VerificationCodeForm` (Secondary) + `TrustSecurityRow` |
+| 1 | Hero | — | Paper `#ffffff` | `h1` display headline, subtitle, `ActionRow` (one filled teal + one outlined), microcopy line, decorative `ui-hero-visual` (`A4PreviewCard` `Medication` mock + `Verificable` tag + three `ui-hero-shot-chips`), `TrustSecurityRow` |
+| 2 | Características | — | Cream `#fffded` | `SectionHeader` + `ui-features` grid of four `ui-feature` cards (`Icon` + title + body) |
+| 3 | Cómo funciona | `#como-funciona` | Paper `#ffffff` | `SectionHeader` + `ui-steps` grid of three `NumberedStepCard`s + centered note |
+| 4 | Verifica una receta | `#verificar` | Mint `#b9ffe8` | `SectionHeader` + `Card` holding `VerificationCodeForm` (Secondary) + `TrustSecurityRow` |
+| 5 | Cierre | — | Paper `#ffffff` | Centered `h2`, `ActionRow` with one outlined `ButtonLink` (same resolved target as the Hero CTA, Secondary), `TrustSecurityRow` |
 
 Nothing else renders on this screen. `TrustLogoStrip` is excluded until real clinic marks exist (`UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` No-go). The header band renders above this screen as the layout's first element; its structure and copy are owned by `context/screens/done/Header.md`. The public footer band renders as the page's last element; its structure and copy are owned by `context/screens/done/Footer.md`.
 
 ### 2.1 Signed-out visitor (default)
 
-Bands 1–3 as ordered. The Hero CTA is the `no session` row of §3.3 (`Emitir receta` → `/login`). The Hero secondary CTA anchors to band 3, the visitor's verify path. No region reads a session that does not exist.
+Bands 1–5 as ordered. The Hero CTA is the `no session` row of §3.3 (`Emitir receta` → `/login`). The Hero secondary CTA anchors to band 4, the visitor's verify path. The Cierre outlined button reuses the same resolved `cta_route`/`cta_label` as the Hero. No region reads a session that does not exist.
 
 ### 2.2 Signed-in staff
 
-Same three bands, same order. Only the Hero CTA row changes, resolved by role in §3.3 rows 2–4; no other Home region reads the session. The sync indicator, when a session exists, is rendered by the navbar band, not by Home (§4.1, `context/screens/done/Header.md` §4).
+Same five bands, same order. Only the Hero CTA row changes, resolved by role in §3.3 rows 2–4; the Cierre outlined button mirrors it. No other Home region reads the session. The sync indicator, when a session exists, is rendered by the navbar band, not by Home (§4.1, `context/screens/done/Header.md` §4).
 
 ### 2.3 Public verifier
 
-Band 3 renders for every visitor regardless of session or role — it is the surface for someone arriving with a printed code, and the anchor target of the Hero secondary CTA. Submitting the code navigates to `/verify/:code`; the verification result surface is `context/screens/done/Verify.md`, never Home. Home renders no verification result.
+Band 4 renders for every visitor regardless of session or role — it is the surface for someone arriving with a printed code, and the anchor target of the Hero secondary CTA. Submitting the code navigates to `/verify/:code`; the verification result surface is `context/screens/done/Verify.md`, never Home. Home renders no verification result.
 
 ## 3. Copy text
 
@@ -57,6 +59,7 @@ The navbar band is shared chrome, not Home copy: its strings, role guards, sessi
 | Primary CTA | see §3.3 |
 | Secondary CTA | `Verificar una receta` → anchor `#verificar` |
 | Microcopy line | `Diseñado para clínicas y consultorios · Datos protegidos` |
+| Product visual | `A4PreviewCard` `Medication` mock (`RECETA`, `Diagnóstico / Faringitis aguda`, `1. Amoxicilina 500 mg`, `Cada 8 horas · 7 días`) + `Verificable` tag + chips `PDF listo para imprimir` · `QR verificable` · `A4 a escala real` |
 | Trust row | `Datos protegidos · Ley Orgánica de Protección de Datos Personales` + visually hidden platform label `macOS, Windows, Web` |
 
 ### 3.3 Primary CTA — resolved before the `rsx!` block, in this exact order
@@ -70,7 +73,23 @@ The navbar band is shared chrome, not Home copy: its strings, role guards, sessi
 
 Exactly one filled teal button per viewport, always this one. The Secondary CTA and the verify-band button are outlined.
 
-### 3.4 Cómo funciona (`#como-funciona`)
+### 3.4 Características
+
+| Element | Copy |
+|---|---|
+| Section headline (`h2`) | `Todo lo que tu consultorio necesita` |
+| Section subtext | `Pacientes, plantillas y recetas verificables en un flujo simple, sin fricción.` |
+
+| Card | Icon (`IconName`) | Title | Body |
+|---|---|---|---|
+| 1 | `Users` | `Pacientes` | `Busca por nombre o cédula, evita duplicados y mantén el historial de recetas junto a cada paciente.` |
+| 2 | `FileText` | `Plantillas propias` | `Logo, membrete y variables para que cada receta lleve la identidad de tu consultorio. Las versiones publicadas son inmutables.` |
+| 3 | `Qr` | `Recetas verificables` | `Vista previa A4 a escala real, PDF para imprimir y un código verificable que no expone datos del paciente.` |
+| 4 | `Shield` | `Datos protegidos` | `Roles por miembro del consultorio, auditoría y sesiones seguras. La verificación pública nunca muestra datos del paciente.` |
+
+Card bodies describe FR-001/002/003 (patients, cédula dedupe, history), FR-020/023/024 (templates, variables, immutable versions), FR-022/030/033/050 (A4 preview, PDF, QR verification), and the roles/audit/secure-session guarantees of §3/§6.
+
+### 3.5 Cómo funciona (`#como-funciona`)
 
 | Element | Copy |
 |---|---|
@@ -89,7 +108,7 @@ Step bodies describe FR-001/002 (search and dedup by cédula), FR-010/021 (form-
 |---|---|
 | Note under the grid | `Vistas de ejemplo del formato A4.` |
 
-### 3.5 Verifica una receta (`#verificar`)
+### 3.6 Verifica una receta (`#verificar`)
 
 | Element | Copy |
 |---|---|
@@ -100,6 +119,14 @@ Step bodies describe FR-001/002 (search and dedup by cédula), FR-010/021 (form-
 | Button | `Verificar` (Secondary / outlined) |
 | Empty-field error | `Ingresa el código de verificación.` |
 
+### 3.7 Cierre
+
+| Element | Copy |
+|---|---|
+| Section headline (`h2`) | `Tu consultorio, listo para firmar.` |
+| Button | Same resolved `cta_label` as the Hero, rendered as an outlined `ButtonLink` (Secondary) to the same `cta_route` — never a second filled teal |
+| Trust row | `Datos protegidos · Ley Orgánica de Protección de Datos Personales` + visually hidden platform label `macOS, Windows, Web` |
+
 ## 4. Displayed information
 
 ### 4.1 What the screen shows
@@ -109,6 +136,8 @@ Step bodies describe FR-001/002 (search and dedup by cédula), FR-010/021 (form-
 | CTA label + route | session (`GET /api/auth/get-session`) and `Me.role` via `can_create_prescriptions()` | one of the four rows in §3.3 |
 | Step-card A4 mocks | hardcoded constants in `A4Mock`; never from the API | `Patient`: `FICHA DEL PACIENTE`, `María Fernanda Ruiz`, rows `Cédula` / `Edad` / `Especialidad`. `Medication`: `RECETA`, `Diagnóstico / Faringitis aguda`, `1. Amoxicilina 500 mg`, `Cada 8 horas · 7 días`. `Verification`: `VERIFICACIÓN`, a CSS QR glyph, `PS-7K2F-9Q`, a 44px conic ring with a check |
 | Verification tag on step 3 | static | `Verificable` |
+| Hero product visual | hardcoded constants in `A4Mock`; never from the API | the `Medication` mock inside an `A4PreviewCard` (Mint) with a `Verificable` tag, plus three chips `PDF listo para imprimir` · `QR verificable` · `A4 a escala real` |
+| Feature cards | hardcoded constants | four `ui-feature` cards: `Users`/`Pacientes`, `FileText`/`Plantillas propias`, `Qr`/`Recetas verificables`, `Shield`/`Datos protegidos` |
 | Verify form | local signal only | typed code; on submit it is trimmed, uppercased, and pushed to `/verify/{CODE}` (`Route::Verify`) |
 | Trust row | static | shield glyph + law line + macOS/Windows/Web icons |
 | Sync indicator (signed-in only) | rendered by the header band, not by `Home` — `context/screens/done/Header.md` §4 | `En línea` / `Sincronizando` / `Sin conexión` / `Error de sincronización` + pending count (FR-043); counts are desktop-only; not rendered for signed-out visitors |
@@ -122,7 +151,7 @@ The A4 mock content is fictional and constant. It is the only patient-shaped tex
 - No billing, price, plan, trial, `sync_locked`, or image-quota copy in v1 (D-04).
 - No invented proof: no fake partner logos, no testimonials, no counters ("+500 clínicas"), no medical-accuracy or legal-validity guarantees (PRD §15 O-01 is open).
 - No text-entry surface other than the verification code input; all clinical text entry stays in forms and inputs (D-21), and Home contains no rich-text affordance.
-- Verification copy must state the disclosure limit exactly once on this screen (§3.5) — doctor, date, prescription number, nothing else.
+- Verification copy must state the disclosure limit exactly once on this screen (§3.6) — doctor, date, prescription number, nothing else.
 - Home renders no verification result; the result belongs to `/verify/:code` (`context/screens/done/Verify.md`).
 
 ### 4.3 Dynamic states
@@ -169,6 +198,9 @@ Measured contrast (WCAG AA needs ≥ 4.5 for body): Ink on white 17.28 · Ink on
 | Step title | `--font-mint` | 500 | 20px / 1.25, Ink |
 | Step body | `--font-mint` | 400 | 16px / 1.5, Mist |
 | Step number in circle | `--font-mint` | 500 | 14px |
+| Feature title | `--font-mint` | 500 | 20px / 1.25, Ink |
+| Feature body | `--font-mint` | 400 | 16px / 1.5, Mist |
+| Hero chips | `--font-mint` | 500 | 14px / 1.4, Ink on mint |
 | Button label | `--font-mint` | 500 | 16px |
 | Microcopy, steps note | `--font-mint` | 400 | 14px, Mist |
 | Pill badge | `--font-mint` | 500 | 12–13px, Ink on mint |
@@ -183,6 +215,8 @@ Reality check: `assets/main.css` declares no `@font-face`. `grenette` and `mint`
 - Base unit 4px. Hero: centered column, max-width 720px, `--spacing-80` block padding, `--spacing-24` inline padding.
 - Bands: 80px vertical padding, 64px below 640px wide; inner `.ui-container` max-width 1200px; 64–80px between sections.
 - Steps grid: 3 columns, `--spacing-24` gap, single column below 860px, centered.
+- Features grid: 2 columns, `--spacing-24` gap, single column below 860px; each card is white on the cream band with a 1px `#e5e7eb` hairline, 24px radius, 24px padding; icon circle 44px (mint wash, Deep Teal glyph).
+- Hero visual: max-width 420px, centered; `A4PreviewCard` at 32px padding; chips wrap on one row with an 8px gap, mint pill fill.
 - Card radii: 24px for `A4PreviewCard`, `Card`, and section cards; 8px for the inner A4 mock, buttons, and inputs; 9999px for pills and tags.
 - Padding: buttons 12px 24px; cards 24px; pill 4px 12px; tag 6px 12px.
 - Number circle: 28px diameter, 1px `#061d29` border, transparent fill.
@@ -190,12 +224,12 @@ Reality check: `assets/main.css` declares no `@font-face`. `grenette` and `mint`
 
 ### 5.4 Iconography and imagery
 
-Line icons only, 1.5px stroke, monochrome Ink or Deep Teal (Mist for the platform glyphs). No photography, no illustration, no patient imagery. The only document visuals are the three decorative A4 mocks and the static QR glyph inside the Verification mock.
+Line icons only, 1.5px stroke, monochrome Ink or Deep Teal (Mist for the platform glyphs). No photography, no illustration, no patient imagery. Document visuals are the hero `Medication` mock (with the `Verificable` tag) and the three step mocks; the static QR glyph lives inside the Verification mock. The feature cards carry `Users`, `FileText`, `Qr`, and `Shield` line icons in Deep Teal on a mint circle.
 
 ## 6. Accessibility
 
-- Heading order `h1` (Hero) → `h2` (`Cómo funciona`, `Verifica una receta`); the mock document titles are styled spans, not headings.
-- Keyboard: tab order navbar → primary CTA → secondary CTA → verify field → verify button; visible 1px `#006e75` focus ring on every control.
+- Heading order `h1` (Hero) → `h2` (`Características`, `Cómo funciona`, `Verifica una receta`, `Cierre`); feature titles are `h3`; the mock document titles are styled spans, not headings.
+- Keyboard: tab order navbar → primary CTA → secondary CTA → verify field → verify button; visible 1px `#006e75` focus ring on every control. The Cierre outlined button is a real link and enters the tab order.
 - The A4 mocks are `aria-hidden` decoration; the `Verificable` tag text carries the meaning.
 - Anchor CTA is a real `<a href="#verificar">`; the code field is a real labeled `input` with `autocomplete="off"`, `spellcheck="false"`, and an inline error wired by `aria-describedby`.
 - Icon-only glyphs carry a visually hidden label (`macOS, Windows, Web`).
@@ -205,6 +239,7 @@ Line icons only, 1.5px stroke, monochrome Ink or Deep Teal (Mist for the platfor
 - Shipped: `Home` at `persona-sanus/src/main.rs:1322`, root `div#home-page`, inside `#[layout(Navbar)]` (`main.rs:66`, never closed — the navbar wraps `/` and `/login`; owned by `context/screens/done/Header.md`). It composes the shipped primitives in `persona-sanus/src/ui/`: `Hero` (title `Recetas claras, verificables y listas para firmar.` at `main.rs:1345`, subtitle, `ActionRow` with one Primary `ButtonLink` + Secondary `LinkAction` `Verificar una receta` → `#verificar`, microcopy, `TrustSecurityRow`), `SectionBand` `#como-funciona` (three `NumberedStepCard`s, step 3 tagged `Verificable`) and `#verificar` (Mint, `SectionHeader` + `Card` > `VerificationCodeForm` Secondary + `TrustSecurityRow`), ending with `Footer { surface: FooterSurface::Home }` at `main.rs:1414`.
 - CTA resolution (`main.rs:1329-1342`) reads the same `Signal<Option<Me>>` context the Navbar uses, in §3.3 order: no session → `Emitir receta` → `/login`; `can_create_prescriptions()` → `Emitir receta` → `/prescriptions/new`; role that cannot create → `Ver recetas` → `/prescriptions`; no profile/role → `Completar perfil` → `/settings/profile`. Home adds no fetch, no endpoint, and no permission logic beyond `can_create_prescriptions()`.
 - Verify form submit pushes `Route::Verify { code }` (trimmed/uppercased inside `VerificationCodeForm`, `persona-sanus/src/ui/domain.rs:259`); Home renders no verification result.
+- Poolmoney-inspired bands: a cream `Características` `SectionBand` (`ui-features` grid of four `ui-feature` cards using `Icon` `Users`/`FileText`/`Qr`/`Shield`) and a paper `Cierre` `SectionBand` (`ui-closing`, one outlined `ButtonLink` reusing the resolved `cta_route`/`cta_label`). `IconName::Users` and `IconName::FileText` were added to `persona-sanus/src/ui/icon.rs` (mapped to `icons::IconType::Users`/`FileText`); no other icon source is used (architecture §2). The hero `A4Mock` visual and chips are decorative and carry no patient-shaped text beyond the constant `Medication` mock.
 - Verify, in order:
   - `cargo check` passes;
   - `dx build --release --fullstack` succeeds;

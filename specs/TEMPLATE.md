@@ -1,84 +1,75 @@
-# Spec NN — Phase X: <short title>
+# Spec <ID> — <short title>
 
-- Source: <which document and section this came from — e.g. a plan file, an
-  issue, or an audit finding — and what triggered it>.
-- Depends on: <spec IDs this builds on, or "nothing">.
-- Repo root: `<path>`. Every path and command below is relative to it.
-- Owned files: `<comma-separated paths/globs the executing worker may modify>`
-- Gate: `<exact .blocks or cargo command that must exit 0>`
-- Desktop-verify: `<yes|no>`
-- Result carried forward: <one sentence: the observable end state once this spec is done>.
+- Source: <document, section, issue, or finding that triggered this work>.
+- Depends on: <spec IDs this builds on, or "nothing"; note any incomplete dependencies>.
+- Project root: `<path>`. All paths and commands below are relative to it.
+- Owned files: `<paths/globs the executing worker may modify>`.
+- Gate: `<exact verification command that must exit 0, or "not applicable" with reason>`.
+- User-interface verification: `<required|not applicable>` — <if required, surface, workflow, and evidence; otherwise, reason>.
+- Result carried forward: <one sentence describing the observable end state>.
 
-## Before you start
+## 1. Problem and decision
 
-Unit testing is not required; avoid it. Prioritize end-to-end and integration
-testing only.
+- Problem: <who is affected, when, and the cost>.
+- Decision: <chosen approach and why; if undecided, list viable options>.
+- Open questions: <question — owner>, or "None".
 
-Read the nearest `AGENTS.md` (target workspace, then parents up to repo root)
-before executing.
+## 2. Objectives and scope
 
-If reality diverges from this spec: STOP, append a divergence (section 4), and
-NEVER improvise outside the objectives.
+*List the ordered changes and constraints. Check an objective only after its
+acceptance criteria are verified.*
 
-## 1. Objectives
+- [ ] 1. <objective> — requirements: <what must change and constraints>.
+- [ ] 2. <objective> — requirements: <what must change and constraints>.
 
-*The ordered work to implement — one item per step. Check `[x]` only after the
-step is implemented and verified.*
+### Out of scope / no-go
 
-*Item format:* `<verb phrase>` — requirements: `<what must change / constraints>`; commands: `<exact command>`.
+- <forbidden action, file, package, or behavior>.
+- <applicable policy or constraint, with a source reference>.
 
-- [ ] 1. <objective> — requirements: <requirements>; commands: `<command>`
-- [ ] 2. <objective> — requirements: <requirements>; commands: `<command>`
+## 3. Acceptance and verification
 
-## 2. No-go
+*Describe observable outcomes and relevant edge cases. For each, specify the
+verification command or manual workflow and the expected result. Completion
+requires every applicable criterion and the gate to pass.*
 
-*What this spec MUST NOT do, even if convenient. Never touch anything listed here.*
+- [ ] <observable outcome or edge case> — verification: `<command or workflow>`
+  → <expected result>.
+- [ ] Gate: `<command>` passes from the project root, or <why not applicable>.
+- [ ] User-interface verification: <surface, workflow, and evidence>, or <why not applicable>.
+- [ ] Every objective in section 2 is checked.
 
-- <forbidden action / file / package>
-- No rich-text, WYSIWYG, or contenteditable editor (PRD D-21): all text entry is plain forms and inputs (`src/forms.rs` — single-line inputs, multi-line textareas, selects, check controls; plain-text values only), identical online and offline. No editor dependency, no HTML payloads, unless the spec's Source explicitly supersedes D-21.
+Choose the least costly verification that provides meaningful evidence: unit
+tests for isolated behavior, integration tests for boundaries, and end-to-end
+tests for critical workflows. Add unit tests when they cover consequential edge
+cases or plausible user-visible failures that are otherwise difficult to catch.
+Do not add tests merely to increase coverage or pass trivially: avoid assertions
+that repeat the implementation, test wiring or incidental defaults, or only
+check that nothing throws. Reuse existing tests where they provide the proof.
 
-## 3. Testing criteria
+## 4. Execution and divergences
 
-*Observable proof the spec is complete. Every box checked = spec done.*
+Read the applicable project instructions before executing. If reality differs
+from the spec, or a necessary change falls outside the owned files, do not
+improvise outside the objectives or modify unowned files. Record the divergence
+below and stop the affected work; unaffected objectives may continue within
+their scope. Request a decision from <scope-change approver> before changing
+scope or ownership.
 
-- [ ] `<global smoke / end-to-end command for the whole change>` passes (run
-  from the repo root)
-- [ ] objective N: `<exact command from section 1>` → `<expected output>`
-- [ ] every objective in section 1 is checked
+For each divergence, record the current state, evidence and attempts actually
+made, impact, blocker, owner, and decision or follow-up needed. Leave affected
+acceptance criteria unchecked and note the divergence beside them. Do not label
+a failure non-defective merely because it is deferred.
 
-## 4. Divergences
-
-*Process and tracking-file rules: see `AGENTS.md` (§ Spec-Driven Development).
-Summary: when reality diverges from the spec, append a numbered entry below;
-leave the matching testing-criteria `- [ ]` unchecked and note the divergence
-inline next to it. Open divergences owned by a later spec also get a tracking
-file in `specs/divergences/`.*
-
-- [ ] every divergence found is appended below (or the section reads "None.")
-
-*Entry format (one numbered item per divergence):*
-
-1. <what diverged and its current state> — <why it could not be done as
-   written, citing the No-go rule or spec that blocks it> (Verified <date>:
-   <N> fix attempts — <attempt 1>, <attempt 2>, <attempt 3> — all fenced by
-   <constraint>; <impact> is deferred to <later spec> by design, not a defect.)
+Open divergences block completion until resolved or an authorized scope change
+updates the objectives and acceptance criteria. Record approved deferrals and
+their owner or later spec; follow the project's divergence tracking-file rules.
+Incomplete dependencies block affected objectives unless the scope-change
+approver explicitly decides otherwise.
 
 ### Divergences
 
-*Fill in at execution time. Generic example (same slots as the entry format
-above):*
+<Numbered entries, or "None.">
 
-1. `<check>` stays failing in `<workspace>` on the `<feature>` feature only:
-   the `<work added by objective N>` lands, but the `<code it calls>` is
-   explicitly excluded (section 2, spec <NN-Y>). (Verified <date>: <N> fix
-   attempts — <attempt 1>, <attempt 2>, <attempt 3> — all fenced by
-   <constraint>; `<what stays failing>` is deferred to spec <NN-Y> by design,
-   not a defect.)
-
----
-
-*Housekeeping: once a spec is fully done with no open divergences, move its
-file to `specs/done/` (same file name, e.g.
-`specs/done/NN-X-<short-slug>.md`).
-Specs with open divergences stay in `specs/` next to `TEMPLATE.md` until the
-tracking file is cleared.*
+*Housekeeping: archive completed specs and track open divergences according to
+the project's conventions.*

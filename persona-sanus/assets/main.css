@@ -1326,6 +1326,95 @@ input[type="file"]:focus-visible {
   margin: var(--spacing-16) auto 0;
 }
 
+.ui-hero-visual {
+  width: 100%;
+  max-width: 420px;
+  margin: var(--spacing-40) auto 0;
+}
+
+.ui-hero-visual .ui-a4-card {
+  padding: var(--spacing-32);
+}
+
+.ui-hero-shot-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--spacing-8);
+  list-style: none;
+  margin: var(--spacing-24) 0 0;
+  padding: 0;
+}
+
+.ui-hero-shot-chips li {
+  font-family: var(--font-mint);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+  color: var(--color-ink);
+  background-color: var(--color-mint-glass);
+  border-radius: var(--radius-pill);
+  padding: var(--spacing-4) var(--spacing-12);
+}
+
+.ui-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-24);
+}
+
+.ui-feature {
+  background-color: var(--color-paper);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-cards);
+  padding: var(--spacing-24);
+  text-align: left;
+}
+
+.ui-feature-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-mint-glass);
+  color: var(--color-deep-teal);
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--spacing-16);
+}
+
+.ui-feature-title {
+  font-family: var(--font-mint);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--text-subheading);
+  line-height: 1.25;
+  color: var(--color-ink);
+  margin: 0 0 var(--spacing-8);
+}
+
+.ui-feature-body {
+  font-family: var(--font-mint);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--color-mist);
+  margin: 0;
+}
+
+.ui-closing {
+  max-width: var(--content-display);
+  margin-inline: auto;
+  text-align: center;
+}
+
+.ui-closing .ui-actions {
+  justify-content: center;
+  margin-top: var(--spacing-32);
+}
+
+.ui-closing .ui-trust {
+  margin-top: var(--spacing-24);
+}
+
 .ui-steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1544,6 +1633,10 @@ input[type="file"]:focus-visible {
     grid-template-columns: 1fr;
     max-width: 420px;
     margin-inline: auto;
+  }
+
+  .ui-features {
+    grid-template-columns: 1fr;
   }
 }
 

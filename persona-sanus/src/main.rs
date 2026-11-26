@@ -1347,6 +1347,7 @@ fn Footer(surface: FooterSurface) -> Element {
                                 a { href: "#verificar", "Verificar una receta" }
                             }
                         }
+                        hr { class: "ui-footer-rule", "aria-hidden": "true" }
                     }
                     div { class: "ui-footer-legal",
                         if matches!(surface, FooterSurface::Auth) {
@@ -1615,8 +1616,8 @@ fn Navbar() -> Element {
                     LogoLockup {}
                     PillBadge {}
                 }
-                nav { class: "ui-navbar-links",
-                    if current.is_some() {
+                if current.is_some() {
+                    nav { class: "ui-navbar-links",
                         NavLink { to: Route::Dashboard {}, label: "Panel".to_owned() }
                         if profile
                             .as_ref()

@@ -742,9 +742,22 @@ pub fn list_patients(conn: &mut SqliteConnection) -> Result<Vec<Value>, String> 
         conn,
         "SELECT json_object('id', id, 'clinicId', clinic_id, 'fullName', full_name, \
          'nationalId', national_id, 'birthDate', birth_date, 'sex', sex, 'phone', phone, \
-         'notes', notes, 'createdAt', created_at, 'updatedAt', updated_at, 'createdBy', created_by) AS row_json \
+         'notes', notes, 'medicalRecordNo', medical_record_no, 'allergies', allergies, \
+         'createdAt', created_at, 'updatedAt', updated_at, 'createdBy', created_by) AS row_json \
          FROM patients WHERE deleted_at IS NULL ORDER BY full_name",
     )
+}
+
+pub fn get_clinic(conn: &mut SqliteConnection, id: &str) -> Result<Option<Value>, String> {
+    let rows = json_rows(
+        conn,
+        &format!(
+            "SELECT json_object('name', name, 'address', address, 'phone', phone) AS row_json \
+             FROM clinics WHERE id = '{}'",
+            id.replace('\'', "''")
+        ),
+    )?;
+    Ok(rows.into_iter().next())
 }
 
 pub fn list_templates(conn: &mut SqliteConnection) -> Result<Vec<Value>, String> {
@@ -1644,7 +1657,7 @@ pub fn local_prescription_items(
         &format!(
             "SELECT json_object('id', id, 'prescriptionId', prescription_id, 'position', position, \
              'medName', med_name, 'dose', dose, 'route', route, 'frequency', frequency, \
-             'duration', duration, 'quantity', quantity, 'notes', notes) AS row_json \
+             'duration', duration, 'quantity', quantity, 'quantityNumber', quantity_number, 'notes', notes) AS row_json \
              FROM prescription_items WHERE prescription_id = '{}' ORDER BY position",
             prescription_id.replace('\'', "''")
         ),

@@ -18,10 +18,12 @@ mod client_ip;
 mod db;
 #[cfg(all(feature = "server", not(target_arch = "wasm32"), debug_assertions))]
 mod dev_db;
+mod footer;
 mod forms;
 mod http;
 #[cfg(feature = "server")]
 mod jobs;
+mod navbar;
 #[cfg(any(feature = "server", feature = "desktop"))]
 mod pdf;
 #[cfg(feature = "server")]
@@ -40,6 +42,8 @@ mod ui;
 mod update;
 #[cfg(feature = "server")]
 mod verify_server;
+use crate::footer::{Footer, FooterSurface};
+use crate::navbar::Navbar;
 use crate::ui::{
     device_name_label, format_date, format_timestamp, last_seen_label, optional_date,
     platform_label, prescription_status_label, role_label, sex_label, template_owner_label,
@@ -47,16 +51,16 @@ use crate::ui::{
     AccountStatusBadge, ActionRow, Badge, BadgeTone, Button, ButtonLink, ButtonVariant, Card,
     ConfirmPanel, DataTable, DetailGrid, DetailItem, DeviceStatusBadge, EmptyState, ErrorText,
     FileField, FilterBar, FormColumns, FormGrid, Hero, HintText, Icon, IconName, ImageLibrary,
-    LinkAction, ListRow, LlmExplainLink, LoadingState, LogoLockup, NavLink, Notice, NoticeTone,
+    LinkAction, ListRow, LlmExplainLink, LoadingState, LogoLockup, Notice, NoticeTone,
     NumberedStepCard, PageHeader, PageShell, PillBadge, PrescriptionStatusBadge, RxBlockIndicator,
     SearchField, SectionBand, SectionCard, SectionHeader, SelectField, SurfaceTone, SyncStatus,
-    SyncStatusIndicator, TemplateStatusBadge, TextAreaField, TextField, TrustSecurityRow,
-    VerificationCodeForm, VerificationResultCard,
+    TemplateStatusBadge, TextAreaField, TextField, TrustSecurityRow, VerificationCodeForm,
+    VerificationResultCard,
 };
 use api::Me;
 use auth::SessionUser;
 use dioxus::prelude::*;
-use dioxus::router::{router, Navigator};
+use dioxus::router::Navigator;
 #[cfg(feature = "desktop")]
 use serde_json::Value;
 
@@ -275,6 +279,8 @@ fn populate_local_cache(profile: &Me) {
                     "sex": patient.sex,
                     "phone": patient.phone,
                     "notes": patient.notes,
+                    "medical_record_no": patient.medical_record_no,
+                    "allergies": patient.allergies,
                     "client_id": Value::Null,
                     "deleted_at": Value::Null,
                     "created_at": patient.created_at,
@@ -337,6 +343,9 @@ fn populate_local_cache(profile: &Me) {
                     "rx_block_id": prescription.rx_block_id,
                     "diagnosis": prescription.diagnosis,
                     "validity": prescription.validity,
+                    "recetario_type": prescription.recetario_type.as_deref().unwrap_or("ambulatorio"),
+                    "validity_days": prescription.validity_days,
+                    "warning_signs": prescription.warning_signs,
                     "instructions": prescription.instructions,
                     "signed_at": prescription.signed_at,
                     "synced_at": Value::Null,
@@ -368,6 +377,7 @@ fn populate_local_cache(profile: &Me) {
                                 "frequency": item.frequency,
                                 "duration": item.duration,
                                 "quantity": item.quantity,
+                                "quantity_number": item.quantity_number,
                                 "notes": item.notes,
                                 "created_at": detail.created_at,
                                 "updated_at": detail.updated_at,
@@ -984,6 +994,8 @@ fn update_patient_offline(
             "sex": form.sex,
             "phone": form.phone,
             "notes": form.notes,
+            "medicalRecordNo": form.medical_record_no,
+            "allergies": form.allergies,
         }),
         &profile.profile.id,
     )?;
@@ -995,6 +1007,9 @@ fn update_patient_offline(
         sex: (!form.sex.is_empty()).then(|| form.sex.clone()),
         phone: (!form.phone.is_empty()).then(|| form.phone.clone()),
         notes: (!form.notes.is_empty()).then(|| form.notes.clone()),
+        medical_record_no: (!form.medical_record_no.is_empty())
+            .then(|| form.medical_record_no.clone()),
+        allergies: (!form.allergies.is_empty()).then(|| form.allergies.clone()),
         created_at: String::new(),
         updated_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
     })
@@ -1323,49 +1338,6 @@ fn App() -> Element {
     }
 }
 
-#[derive(Clone, PartialEq)]
-enum FooterSurface {
-    Home,
-    Auth,
-    Verify,
-}
-
-#[component]
-fn Footer(surface: FooterSurface) -> Element {
-    #[cfg(feature = "desktop")]
-    let version = Some(format!("Versión {}", env!("CARGO_PKG_VERSION")));
-    #[cfg(not(feature = "desktop"))]
-    let version: Option<String> = None;
-    rsx! {
-        footer { id: "ui-footer", class: "ui-footer",
-            div { class: "ui-container",
-                div { class: "ui-footer-inner",
-                    if matches!(surface, FooterSurface::Home | FooterSurface::Auth) {
-                        div { class: "ui-footer-brand",
-                            LogoLockup {}
-                            if matches!(surface, FooterSurface::Home) {
-                                a { href: "#verificar", "Verificar una receta" }
-                            }
-                        }
-                        hr { class: "ui-footer-rule", "aria-hidden": "true" }
-                    }
-                    div { class: "ui-footer-legal",
-                        if matches!(surface, FooterSurface::Auth) {
-                            TrustSecurityRow {}
-                        }
-                        if matches!(surface, FooterSurface::Verify) {
-                            p { class: "ui-footer-disclosure", "Solo se muestran el médico, la fecha y el número de la receta." }
-                        }
-                        if let Some(version) = version {
-                            p { class: "ui-footer-version", "{version}" }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 #[component]
 fn Home() -> Element {
     let user = use_context::<Signal<Option<SessionUser>>>();
@@ -1591,108 +1563,6 @@ fn DevUi() -> Element {
     return ui::DevUiGallery();
     #[cfg(not(debug_assertions))]
     return rsx! { div { class: "ui-card", "Esta vista solo existe en compilaciones de desarrollo." } };
-}
-
-#[component]
-fn Navbar() -> Element {
-    let mut user = use_context::<Signal<Option<SessionUser>>>();
-    let mut actor = use_context::<Signal<Option<Me>>>();
-    let mut sync = use_context::<Signal<SyncStatus>>();
-    let navigator = use_navigator();
-    let current = user();
-    let profile = actor();
-    let status = sync();
-    let router = router();
-    use_effect(move || {
-        let _route: Route = router.current();
-        spawn(async move {
-            let current_status = probe_sync_status().await;
-            sync.set(current_status);
-        });
-    });
-
-    rsx! {
-        header { id: "navbar", class: "ui-navbar",
-            div { class: "ui-navbar-inner",
-                div { class: "ui-navbar-brand",
-                    LogoLockup {}
-                    PillBadge {}
-                }
-                if current.is_some() {
-                    nav { class: "ui-navbar-links",
-                        NavLink { to: Route::Dashboard {}, label: "Panel".to_owned() }
-                        if profile
-                            .as_ref()
-                            .is_some_and(|actor| actor.can_read_patients())
-                        {
-                            NavLink { to: Route::Patients {}, label: "Pacientes".to_owned() }
-                        }
-                        if profile
-                            .as_ref()
-                            .is_some_and(|actor| actor.can_read_prescriptions())
-                        {
-                            NavLink {
-                                to: Route::Prescriptions { status: None },
-                                label: "Recetas".to_owned(),
-                            }
-                        }
-                        if profile
-                            .as_ref()
-                            .is_some_and(|actor| actor.can_manage_templates())
-                        {
-                            NavLink { to: Route::Templates {}, label: "Plantillas".to_owned() }
-                        }
-                        NavLink { to: Route::Settings {}, label: "Configuración".to_owned() }
-                    }
-                }
-                div { class: "ui-navbar-account",
-                    if let Some(session) = current {
-                        SyncStatusIndicator { status }
-                        if status.pending > 0 {
-                            Link {
-                                class: "ui-sync-link ui-sync-link--pending",
-                                to: Route::Prescriptions { status: Some("pending_sync".to_owned()) },
-                                if status.pending == 1 {
-                                    "· 1 pendiente"
-                                } else {
-                                    "· {status.pending} pendientes"
-                                }
-                            }
-                        }
-                        if status.failed > 0 {
-                            Link {
-                                class: "ui-sync-link",
-                                to: Route::Prescriptions { status: Some("failed".to_owned()) },
-                                "{status.failed} con error"
-                            }
-                        }
-                        span { class: "ui-navbar-user", "{session.email}" }
-                        Button {
-                            variant: ButtonVariant::Ghost,
-                            onclick: move |_| {
-                                spawn(async move {
-                                    let _ = auth::sign_out().await;
-                                    clear_persisted_session();
-                                    actor.set(None);
-                                    user.set(None);
-                                    navigator.push(Route::Home {});
-                                });
-                            },
-                            "Cerrar sesión"
-                        }
-                    } else {
-                        ButtonLink {
-                            to: Route::AuthPage {},
-                            variant: ButtonVariant::Ghost,
-                            active_class: None,
-                            "Iniciar sesión"
-                        }
-                    }
-                }
-            }
-        }
-        Outlet::<Route> {}
-    }
 }
 
 #[component]
@@ -5553,7 +5423,7 @@ fn TemplatePreview(id: String) -> Element {
             PageShell { id: "templates-page".to_owned(),
                 PageHeader {
                     title: format!("Vista previa A4 — {}", model.name),
-                    subtitle: Some("210 × 297 mm con valores de ejemplo.".to_owned()),
+                    subtitle: Some("Valores de ejemplo.".to_owned()),
                 }
                 EmptyState { title: "La plantilla todavía no tiene versiones para previsualizar.".to_owned(), description: String::new() }
                 ButtonLink {
@@ -5578,7 +5448,7 @@ fn TemplatePreview(id: String) -> Element {
         PageShell { id: "templates-page".to_owned(),
             PageHeader {
                 title: format!("Vista previa A4 — {}", model.name),
-                subtitle: Some("210 × 297 mm con valores de ejemplo.".to_owned()),
+                subtitle: Some("Valores de ejemplo.".to_owned()),
                 ButtonLink {
                     to: Route::Templates {},
                     variant: ButtonVariant::Secondary,
@@ -6606,6 +6476,191 @@ fn reload_prescription(
     });
 }
 
+#[cfg(feature = "desktop")]
+fn offline_preview_variables(
+    prescription: &Value,
+    patient: Option<&Value>,
+    clinic: Option<&Value>,
+    profile: &Me,
+    issued_at: &str,
+    medications: &[forms::MedicationBlock],
+) -> Vec<api::PreviewVariable> {
+    use chrono::Datelike;
+
+    let missing = "—".to_owned();
+    let field = |row: Option<&Value>, key: &str| {
+        row.and_then(|value| value.get(key))
+            .and_then(Value::as_str)
+            .unwrap_or("—")
+            .to_owned()
+    };
+    let ecuador = chrono::FixedOffset::west_opt(5 * 3600).unwrap();
+    let issued = chrono::DateTime::parse_from_rfc3339(issued_at)
+        .ok()
+        .map(|moment| moment.with_timezone(&ecuador));
+    let date = issued
+        .as_ref()
+        .map(|moment| moment.format("%d-%m-%Y").to_string())
+        .unwrap_or_else(|| issued_at.to_owned());
+    let time = issued
+        .as_ref()
+        .map(|moment| moment.format("%H:%M").to_string())
+        .unwrap_or_else(|| issued_at.to_owned());
+    let birth = patient
+        .and_then(|row| row.get("birthDate"))
+        .and_then(Value::as_str)
+        .and_then(|value| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok());
+    let on = chrono::NaiveDate::parse_from_str(&date, "%d-%m-%Y").ok();
+    let ages = birth
+        .zip(on)
+        .filter(|(birth, on)| birth <= on)
+        .map(|(birth, on)| {
+            let before_birthday = (on.month(), on.day()) < (birth.month(), birth.day());
+            let years = on.year() - birth.year() - i32::from(before_birthday);
+            let mut cursor = birth
+                .with_year(on.year() - i32::from(before_birthday))
+                .unwrap_or(birth);
+            let mut months = 0;
+            while let Some(next) = cursor.checked_add_months(chrono::Months::new(1)) {
+                if next > on {
+                    break;
+                }
+                cursor = next;
+                months += 1;
+            }
+            (
+                format!("{years} años"),
+                format!("{years}a {months}m {}d", (on - cursor).num_days()),
+            )
+        });
+    let doctor = profile.doctor.as_ref().filter(|doctor| {
+        prescription.get("doctorId").and_then(Value::as_str) == Some(doctor.id.as_str())
+    });
+    let doctor_field = |value: Option<&str>| value.unwrap_or("—").to_owned();
+    let contact = doctor
+        .map(|doctor| {
+            [doctor.phone.as_deref(), doctor.email.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · ")
+        })
+        .unwrap_or_default();
+    let number = prescription
+        .get("rxNumber")
+        .and_then(Value::as_i64)
+        .map(|number| format!("{number:06}"))
+        .unwrap_or_else(|| "PENDIENTE".to_owned());
+    let recetario = field(Some(prescription), "recetarioType");
+    let validity = prescription
+        .get("validityDays")
+        .and_then(Value::as_i64)
+        .map(|days| format!("{days} DIA{}", if days == 1 { "" } else { "S" }))
+        .unwrap_or_else(|| missing.clone());
+    let medication_names = medications
+        .iter()
+        .map(|item| item.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    [
+        (
+            "patient.name",
+            patient
+                .map(|_| field(patient, "fullName"))
+                .unwrap_or_else(|| "Paciente eliminado".to_owned()),
+        ),
+        ("patient.national_id", field(patient, "nationalId")),
+        (
+            "patient.age",
+            ages.as_ref()
+                .map(|age| age.0.clone())
+                .unwrap_or_else(|| missing.clone()),
+        ),
+        (
+            "patient.age_detail",
+            ages.map(|age| age.1).unwrap_or_else(|| missing.clone()),
+        ),
+        ("patient.sex", field(patient, "sex")),
+        ("patient.hcl", field(patient, "medicalRecordNo")),
+        ("patient.allergies", field(patient, "allergies")),
+        (
+            "doctor.name",
+            doctor
+                .map(|_| profile.profile.display_name.clone())
+                .unwrap_or_else(|| missing.clone()),
+        ),
+        (
+            "doctor.specialty",
+            doctor_field(doctor.and_then(|value| value.specialty.as_deref())),
+        ),
+        (
+            "doctor.national_id",
+            doctor_field(doctor.and_then(|value| value.national_id.as_deref())),
+        ),
+        (
+            "doctor.license_no",
+            doctor_field(doctor.and_then(|value| value.license_no.as_deref())),
+        ),
+        ("doctor.contact", contact),
+        (
+            "clinic.name",
+            clinic
+                .map(|_| field(clinic, "name"))
+                .or_else(|| {
+                    profile
+                        .clinic
+                        .as_ref()
+                        .filter(|value| {
+                            prescription.get("clinicId").and_then(Value::as_str)
+                                == Some(value.id.as_str())
+                        })
+                        .map(|value| value.name.clone())
+                })
+                .unwrap_or_else(|| missing.clone()),
+        ),
+        ("clinic.address", field(clinic, "address")),
+        ("clinic.phone", field(clinic, "phone")),
+        ("prescription.number", number),
+        ("prescription.date", date),
+        ("prescription.time", time),
+        (
+            "prescription.recetario_type",
+            if recetario.trim().is_empty() {
+                missing.clone()
+            } else {
+                recetario.to_uppercase()
+            },
+        ),
+        ("prescription.validity", validity),
+        (
+            "prescription.diagnosis",
+            field(Some(prescription), "diagnosis"),
+        ),
+        (
+            "prescription.warning_signs",
+            field(Some(prescription), "warningSigns"),
+        ),
+        (
+            "prescription.instructions",
+            field(Some(prescription), "instructions"),
+        ),
+        (
+            "medications[]",
+            if medication_names.is_empty() {
+                missing
+            } else {
+                medication_names
+            },
+        ),
+    ]
+    .into_iter()
+    .map(|(key, value)| api::PreviewVariable {
+        key: key.to_owned(),
+        value,
+    })
+    .collect()
+}
+
 #[component]
 fn PrescriptionPreview(id: String) -> Element {
     let user = use_context::<Signal<Option<SessionUser>>>();
@@ -6671,44 +6726,49 @@ fn PrescriptionPreview(id: String) -> Element {
                                 .and_then(Value::as_str)
                                 .unwrap_or_default()
                                 .to_owned();
-                            let doc_json =
+                            let version =
                                 desktop_local::get_template_version(&mut conn, &version_id)
                                     .ok()
-                                    .flatten()
-                                    .and_then(|version| {
-                                        version
-                                            .get("docJson")
-                                            .and_then(Value::as_str)
-                                            .map(str::to_owned)
-                                    })
-                                    .unwrap_or_else(forms::default_document_json);
+                                    .flatten();
+                            let doc_json = version
+                                .as_ref()
+                                .and_then(|version| version.get("docJson"))
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                                .unwrap_or_else(forms::default_document_json);
+                            let margin_mm = forms::template_theme_margin(
+                                version
+                                    .as_ref()
+                                    .and_then(|version| version.get("theme"))
+                                    .and_then(Value::as_str),
+                            );
                             let patient_id = found
                                 .get("patientId")
                                 .and_then(Value::as_str)
                                 .unwrap_or_default()
                                 .to_owned();
-                            let patient_name = desktop_local::list_patients(&mut conn)
+                            let patient = desktop_local::list_patients(&mut conn)
                                 .ok()
                                 .unwrap_or_default()
                                 .into_iter()
                                 .find(|patient| {
                                     patient.get("id").and_then(Value::as_str)
                                         == Some(patient_id.as_str())
-                                })
-                                .and_then(|patient| {
-                                    patient
-                                        .get("fullName")
-                                        .and_then(Value::as_str)
-                                        .map(str::to_owned)
-                                })
-                                .unwrap_or_else(|| "Paciente".to_owned());
+                                });
+                            let clinic =
+                                found
+                                    .get("clinicId")
+                                    .and_then(Value::as_str)
+                                    .and_then(|id| {
+                                        desktop_local::get_clinic(&mut conn, id).ok().flatten()
+                                    });
                             let issued_at = found
                                 .get("signedAt")
                                 .and_then(Value::as_str)
                                 .or_else(|| found.get("createdAt").and_then(Value::as_str))
                                 .unwrap_or_default()
                                 .to_owned();
-                            let medications =
+                            let medications: Vec<forms::MedicationBlock> =
                                 desktop_local::local_prescription_items(&mut conn, &load_id)
                                     .ok()
                                     .unwrap_or_default()
@@ -6755,6 +6815,14 @@ fn PrescriptionPreview(id: String) -> Element {
                                             .to_owned(),
                                     })
                                     .collect();
+                            let variables = offline_preview_variables(
+                                &found,
+                                patient.as_ref(),
+                                clinic.as_ref(),
+                                &current_profile,
+                                &issued_at,
+                                &medications,
+                            );
                             let local_preview = api::PrescriptionPreview {
                                 id: load_id.clone(),
                                 status,
@@ -6763,11 +6831,8 @@ fn PrescriptionPreview(id: String) -> Element {
                                 issued_at,
                                 provisional: true,
                                 doc_json,
-                                margin_mm: 12,
-                                variables: vec![api::PreviewVariable {
-                                    key: "patient.name".to_owned(),
-                                    value: patient_name,
-                                }],
+                                margin_mm,
+                                variables,
                                 medications,
                                 qr_data_url: None,
                                 image_sources: Vec::new(),
@@ -6884,6 +6949,7 @@ fn PrescriptionPreview(id: String) -> Element {
     let pdf_meds = current.medications.clone();
     let pdf_rx = current.rx_number;
     let pdf_issued = current.issued_at.clone();
+    let pdf_margin = current.margin_mm;
 
     rsx! {
         PageShell { id: "prescriptions-page".to_owned(),
@@ -6992,6 +7058,7 @@ fn PrescriptionPreview(id: String) -> Element {
                                     let inputs_meds = pdf_meds.clone();
                                     let inputs_number = pdf_rx;
                                     let inputs_issued = pdf_issued.clone();
+                                    let inputs_margin = pdf_margin;
                                     let inputs_title = format!("Receta-{preview_id}.pdf");
                                     spawn(async move {
                                         #[cfg(any(feature = "server", feature = "desktop"))]
@@ -7006,7 +7073,7 @@ fn PrescriptionPreview(id: String) -> Element {
                                                 values: inputs_values,
                                                 medications: inputs_meds,
                                                 assets: cached_assets,
-                                                margin_mm: 12,
+                                                margin_mm: inputs_margin,
                                                 rx_number: inputs_number,
                                                 issued_at: Some(inputs_issued),
                                                 mode: pdf::RenderMode::Provisional,
@@ -7014,6 +7081,21 @@ fn PrescriptionPreview(id: String) -> Element {
                                             };
                                             match pdf::render(&input) {
                                                 Ok(bytes) => {
+                                                    #[cfg(feature = "desktop")]
+                                                    {
+                                                        let path = desktop_local::app_data_dir()
+                                                            .join(&input.title);
+                                                        match std::fs::write(&path, &bytes) {
+                                                            Ok(()) => hint_text.set(format!(
+                                                                "PDF provisional guardado en {}.",
+                                                                path.display()
+                                                            )),
+                                                            Err(error) => message.set(format!(
+                                                                "No se pudo guardar el PDF provisional: {error}"
+                                                            )),
+                                                        }
+                                                    }
+                                                    #[cfg(not(feature = "desktop"))]
                                                     hint_text.set(format!(
                                                         "PDF provisional generado ({} bytes) con marca PENDIENTE DE SINCRONIZACIÓN.",
                                                         bytes.len()

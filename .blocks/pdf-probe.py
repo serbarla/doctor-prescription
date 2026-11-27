@@ -193,11 +193,8 @@ def pdf_stream_objects(pdf):
         end = body.find(b"endstream", start)
         if end < 0:
             continue
-        stream = body[start:end]
-        if stream.endswith(b"\r\n"):
-            stream = stream[:-2]
-        elif stream.endswith(b"\n") or stream.endswith(b"\r"):
-            stream = stream[:-1]
+        length = re.search(rb"/Length\s+(\d+)(?!\s+\d+\s+R)", header)
+        stream = body[start:start + int(length.group(1))] if length else body[start:end]
         if b"/FlateDecode" in header:
             try:
                 stream = zlib.decompress(stream)
@@ -292,7 +289,14 @@ def font_cmaps(pdf):
         if cmap_match:
             stream_match = re.search(r"stream(.*?)endstream", cmap_match.group(1), re.S)
             if stream_match:
-                data = stream_match.group(1).strip()
+                data = stream_match.group(1)
+                if data.startswith("\r\n"):
+                    data = data[2:]
+                elif data.startswith(("\r", "\n")):
+                    data = data[1:]
+                length = re.search(r"/Length\s+(\d+)(?!\s+\d+\s+R)", cmap_match.group(1))
+                if length:
+                    data = data[:int(length.group(1))]
                 try:
                     text = zlib.decompress(data.encode("latin-1")).decode(
                         "latin-1", errors="ignore"
@@ -769,9 +773,14 @@ def probe(base, email, password, attempts, hvq=False):
             ("observacion", "Observación:"),
             ("vigencia", "VIGENCIA"),
             ("prescriptor", "DATOS DEL PRESCRIPTOR"),
+            ("doctor_license", "1803693264"),
+            ("patient_hcl", "722846-774928"),
             ("recepcion", "RECEPCIÓN"),
         ):
-            checks[f"hvq_text_{key}"] = needle in text
+            if key in ("cantidad", "cantidad_40"):
+                checks[f"hvq_text_{key}"] = re.sub(r"\s+", "", needle) in re.sub(r"\s+", "", text)
+            else:
+                checks[f"hvq_text_{key}"] = needle in text
         checks["hvq_text_checkbox"] = ("☒" in text) or ("[X]" in text)
 
     ok = all(checks.values())

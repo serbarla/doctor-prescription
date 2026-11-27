@@ -108,7 +108,7 @@ VARIABLES = [
     "prescription.warning_signs", "prescription.instructions", "medications[]",
 ]
 HVQ = [
-    "signup_admin", "admin_me", "doctor_signup", "assign_doctor", "doctor_me",
+    "signup_admin", "admin_me", "doctor_signup", "assign_doctor", "doctor_me", "doctor_license",
     "create_template", "save_hvq_version", "publish_hvq", "create_patient",
     "patient_hcl_allergies", "create_draft", "add_item_one", "add_item_two",
     "sign_prescription", "edad_regex", "hvq_fields",
@@ -1419,6 +1419,21 @@ def probe_hvq(base, password, flow):
         status == 200
         and doctor_me.get("role") == "doctor"
         and isinstance(doctor_me.get("doctor"), dict)
+    )
+    doctor = doctor_me.get("doctor") or {}
+    status, updated_doctor = http_post(
+        base, "/api/settings/profile", doctor_jar,
+        {
+            "displayName": (doctor_me.get("profile") or {}).get("displayName", "Probe HVQ Doctor"),
+            "specialty": doctor.get("specialty"),
+            "licenseNo": "1803693264",
+            "nationalId": doctor.get("nationalId"),
+            "phone": doctor.get("phone"),
+            "email": doctor.get("email"),
+        },
+    )
+    checks["doctor_license"] = (
+        status == 200 and (updated_doctor.get("doctor") or {}).get("licenseNo") == "1803693264"
     )
     register_device(base, doctor_jar, f"probe-hvq-{run}", "Probe HVQ Device")
     http_post(base, "/api/rx/blocks", doctor_jar, {})

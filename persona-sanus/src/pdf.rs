@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 
 use printpdf::{
     Color, Line, LinePoint, Mm, Op, ParsedFont, PdfDocument, PdfFontHandle, PdfPage,
-    PdfSaveOptions, Point, Pt, RawImage, Rgb, TextItem, XObjectId, XObjectTransform,
+    PdfSaveOptions, Point, Pt, RawImage, Rgb, TextItem, TextMatrix, XObjectId, XObjectTransform,
 };
 use qrcode_generator::qr::{Encoder, ErrorCorrection};
 use qrcode_generator::Renderer;
 
 use crate::forms::{
     paginate_document, parse_document, DocumentLayout, DocumentMeta, LayoutBlock, LayoutPanel,
-    MedicationBlock, TableRow, TextColor,
+    MedicationBlock, TableRow, TextColor, TABLE_BODY_SIZE, TABLE_HEADER_SIZE,
 };
 
 const FONT_REGULAR_BYTES: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
@@ -172,14 +172,6 @@ pub fn color(hex: &str) -> Color {
     })
 }
 
-fn font_for_block(fonts: &Fonts, bold: bool) -> PdfFontHandle {
-    if bold {
-        fonts.bold.clone()
-    } else {
-        fonts.regular.clone()
-    }
-}
-
 fn push_text(
     ops: &mut Vec<Op>,
     fonts: &Fonts,
@@ -197,8 +189,8 @@ fn push_text(
         size: Pt(size),
     });
     ops.push(Op::SetFillColor { col: color.clone() });
-    ops.push(Op::SetTextCursor {
-        pos: Point::new(Mm(x), Mm(y)),
+    ops.push(Op::SetTextMatrix {
+        matrix: TextMatrix::Translate(Pt(x * PT_PER_MM), Pt(y * PT_PER_MM)),
     });
     ops.push(Op::ShowText {
         items: vec![TextItem::Text(text.to_owned())],
@@ -219,8 +211,8 @@ fn push_text_bold_prefix(
         return;
     }
     ops.push(Op::SetFillColor { col: color.clone() });
-    ops.push(Op::SetTextCursor {
-        pos: Point::new(Mm(x), Mm(y)),
+    ops.push(Op::SetTextMatrix {
+        matrix: TextMatrix::Translate(Pt(x * PT_PER_MM), Pt(y * PT_PER_MM)),
     });
     ops.push(Op::SetFont {
         font: fonts.bold.clone(),
@@ -398,8 +390,11 @@ fn render_panel(
             } => {
                 let color_value = text_color(layout, color);
                 for line in lines {
-                    y -= size_pt * 0.52;
-                    if let Some(prefix) = bold_prefix {
+                    y -= size_pt * 0.4;
+                    if let Some(prefix) = bold_prefix
+                        .as_ref()
+                        .filter(|prefix| line.starts_with(prefix.as_str()))
+                    {
                         let rest = line.strip_prefix(prefix).unwrap_or(line.as_str());
                         push_text_bold_prefix(
                             ops,
@@ -412,12 +407,20 @@ fn render_panel(
                             rest,
                         );
                     } else {
-                        let font = font_for_block(fonts, *bold);
-                        ops.push(Op::SetFont {
-                            font,
-                            size: Pt(*size_pt),
-                        });
-                        push_text(ops, fonts, *size_pt, &color_value, panel_x, y, line);
+                        if *bold {
+                            push_text_bold_prefix(
+                                ops,
+                                fonts,
+                                *size_pt,
+                                &color_value,
+                                panel_x,
+                                y,
+                                line,
+                                "",
+                            );
+                        } else {
+                            push_text(ops, fonts, *size_pt, &color_value, panel_x, y, line);
+                        }
                     }
                 }
             }
@@ -522,17 +525,14 @@ fn render_table(
         .map(|weight| panel_width * weight)
         .collect();
 
-    let header_chars: Vec<usize> = cell_widths
-        .iter()
-        .map(|width| text_width_chars(*width, 7.0))
-        .collect();
     let header_row_height = header
         .iter()
         .enumerate()
         .map(|(index, caption)| {
-            let chars = header_chars.get(index).copied().unwrap_or(8);
-            let lines = crate::forms::wrap_text(caption, chars).len() as f32;
-            lines * 7.0 * 0.52 + 1.5
+            let width = cell_widths.get(index).copied().unwrap_or(panel_width);
+            let lines =
+                crate::forms::wrap_table_text(caption, width, TABLE_HEADER_SIZE).len() as f32;
+            lines * TABLE_HEADER_SIZE * 0.4 + 1.5
         })
         .fold(0.0, f32::max)
         .max(5.0);
@@ -541,18 +541,22 @@ fn render_table(
         .iter()
         .map(|row| {
             if row.span_all {
-                let chars = text_width_chars(panel_width, 8.0);
-                let lines = crate::forms::wrap_text(&row.cells.join(" "), chars).len() as f32;
-                lines * 8.0 * 0.52 + 1.5
+                let lines = crate::forms::wrap_table_text(
+                    &row.cells.join(" "),
+                    panel_width,
+                    TABLE_BODY_SIZE,
+                )
+                .len() as f32;
+                lines * TABLE_BODY_SIZE * 0.4 + 1.5
             } else {
                 row.cells
                     .iter()
                     .enumerate()
                     .map(|(index, cell)| {
                         let width = cell_widths.get(index).copied().unwrap_or(panel_width);
-                        let chars = text_width_chars(width, 8.0);
-                        let lines = crate::forms::wrap_text(cell, chars).len() as f32;
-                        lines * 8.0 * 0.52 + 1.5
+                        let lines = crate::forms::wrap_table_text(cell, width, TABLE_BODY_SIZE)
+                            .len() as f32;
+                        lines * TABLE_BODY_SIZE * 0.4 + 1.5
                     })
                     .fold(0.0, f32::max)
                     .max(5.0)
@@ -569,10 +573,9 @@ fn render_table(
     current_y -= header_row_height;
     for (index, caption) in header.iter().enumerate() {
         let x = panel_x + cell_widths.iter().take(index).sum::<f32>();
-        let _width = cell_widths.get(index).copied().unwrap_or(panel_width);
-        let chars = header_chars.get(index).copied().unwrap_or(8);
-        let lines = crate::forms::wrap_text(caption, chars);
-        let line_height = 7.0 * 0.52;
+        let width = cell_widths.get(index).copied().unwrap_or(panel_width);
+        let lines = crate::forms::wrap_table_text(caption, width, TABLE_HEADER_SIZE);
+        let line_height = TABLE_HEADER_SIZE * 0.4;
         let block_height = lines.len() as f32 * line_height;
         let start_y =
             current_y + (header_row_height - block_height) / 2.0 + block_height - line_height;
@@ -580,7 +583,7 @@ fn render_table(
             push_text(
                 ops,
                 fonts,
-                7.0,
+                TABLE_HEADER_SIZE,
                 &color("#111111"),
                 x + 1.0,
                 start_y - line_index as f32 * line_height,
@@ -593,9 +596,9 @@ fn render_table(
         let row_height = row_heights[row_index];
         current_y -= row_height;
         if row.span_all {
-            let chars = text_width_chars(panel_width, 8.0);
-            let lines = crate::forms::wrap_text(&row.cells.join(" "), chars);
-            let line_height = 8.0 * 0.52;
+            let lines =
+                crate::forms::wrap_table_text(&row.cells.join(" "), panel_width, TABLE_BODY_SIZE);
+            let line_height = TABLE_BODY_SIZE * 0.4;
             for (line_index, line) in lines.iter().enumerate() {
                 let font = if row.bold {
                     fonts.bold.clone()
@@ -604,15 +607,15 @@ fn render_table(
                 };
                 ops.push(Op::SetFont {
                     font,
-                    size: Pt(8.0),
+                    size: Pt(TABLE_BODY_SIZE),
                 });
                 push_text(
                     ops,
                     fonts,
-                    8.0,
+                    TABLE_BODY_SIZE,
                     &color("#111111"),
                     panel_x + 1.0,
-                    current_y + row_height - 1.5 - line_index as f32 * line_height,
+                    current_y + row_height - line_height - line_index as f32 * line_height,
                     line,
                 );
             }
@@ -620,9 +623,8 @@ fn render_table(
             for (cell_index, cell) in row.cells.iter().enumerate() {
                 let x = panel_x + cell_widths.iter().take(cell_index).sum::<f32>();
                 let width = cell_widths.get(cell_index).copied().unwrap_or(panel_width);
-                let chars = text_width_chars(width, 8.0);
-                let lines = crate::forms::wrap_text(cell, chars);
-                let line_height = 8.0 * 0.52;
+                let lines = crate::forms::wrap_table_text(cell, width, TABLE_BODY_SIZE);
+                let line_height = TABLE_BODY_SIZE * 0.4;
                 for (line_index, line) in lines.iter().enumerate() {
                     let font = if row.bold {
                         fonts.bold.clone()
@@ -631,15 +633,15 @@ fn render_table(
                     };
                     ops.push(Op::SetFont {
                         font,
-                        size: Pt(8.0),
+                        size: Pt(TABLE_BODY_SIZE),
                     });
                     push_text(
                         ops,
                         fonts,
-                        8.0,
+                        TABLE_BODY_SIZE,
                         &color("#111111"),
                         x + 1.0,
-                        current_y + row_height - 1.5 - line_index as f32 * line_height,
+                        current_y + row_height - line_height - line_index as f32 * line_height,
                         line,
                     );
                 }
@@ -695,8 +697,4 @@ fn render_table(
     }
 
     y
-}
-
-fn text_width_chars(width_mm: f32, size_pt: f32) -> usize {
-    (width_mm / (1.95 * size_pt / 10.0)).floor().max(8.0) as usize
 }

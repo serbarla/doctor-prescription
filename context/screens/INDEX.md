@@ -6,7 +6,7 @@
 | Purpose | Track which `context/screens/done/<Name>.md` specs exist and which are missing, and fix naming, shape, and write order for the ones not written yet. This file defines no screen: every screen's structure, copy, style, and states live in its own file |
 | Doc status key | ✅ spec complete (sections 1–7 written) · 🟡 partial (file exists, sections incomplete) · ⬜ missing (no file) |
 | Route status key | Copied verbatim from `context/sitemap.md` §1.1/§1.2 — ✅ implemented · 🟡 partial · ⬜ planned. It tracks **code**, not this doc set; the two axes are independent |
-| Component column | Dioxus component and its current definition line in `persona-sanus/src/main.rs` |
+| Component column | Dioxus component and its definition location under `persona-sanus/src/` |
 | Count | 24 specs in scope — 23 written, 1 deferred (`SettingsBilling.md`, v1.1) |
 | Locale | `es-EC` on every quoted label. `receta`, `cédula` keep Ecuador Spanish spelling |
 | Status | ✅ Complete for v1 — 23 of 24 written. `SettingsBilling.md` stays deferred by PRD D-04/D-14 |
@@ -16,7 +16,7 @@
 ### 1.1 Naming
 
 - File name = the Dioxus component of the `Route` enum, PascalCase: `/prescriptions/:id/preview` → `PrescriptionPreview.md`. Route params never appear in a file name.
-- Frozen exceptions: `Header.md` is the `Navbar` component (`main.rs:1531`); `Footer.md` is the shipped `Footer` component at `main.rs:1333`. Do not rename either.
+- Frozen exceptions: `Header.md` is the `Navbar` component (`navbar.rs`); `Footer.md` is the shipped `Footer` component in `footer.rs`. Do not rename either.
 - One file per screen. No `Patients-list.md` / `Patients-detail.md` splits, no per-role files, no `.md` for a component or a CSS class — components are specified inside the screen file that uses them.
 
 ### 1.2 Shape (identical for every file)
@@ -47,10 +47,10 @@ A screen file never introduces a route, an endpoint, a table, a column, or a rol
 
 ### 2.1 Shell chrome (no route)
 
-| Screen doc | Surface | Component · `main.rs` | Route status | Screen spec |
+| Screen doc | Surface | Component · source | Route status | Screen spec |
 |---|---|---|---|:---:|
-| `done/Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `:1531` | ✅ | ✅ |
-| `done/Footer.md` | Public footer band (`/`, `/login`, `/verify/:code`) | `Footer` · `:1333` | ✅ | ✅ |
+| `done/Header.md` | `Navbar` band — `/`, `/login`, and every shell route; not `/verify/:code` | `Navbar` · `navbar.rs` | ✅ | ✅ |
+| `done/Footer.md` | Public footer band (`/`, `/login`, `/verify/:code`) | `Footer` · `footer.rs` | ✅ | ✅ |
 
 ### 2.2 Public, no auth (sitemap §1.1)
 

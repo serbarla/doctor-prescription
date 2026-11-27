@@ -768,7 +768,7 @@ pub fn medication_line(medication: &MedicationBlock) -> Option<String> {
 }
 
 pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    let width = width.max(8);
+    let width = width.max(1);
     let mut lines = Vec::new();
     for raw in text.split('\n') {
         if raw.trim().is_empty() {
@@ -789,6 +789,9 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
                     .unwrap_or(word.len());
                 lines.push(word[..split].to_owned());
                 word = word[split..].to_owned();
+            }
+            if word.is_empty() {
+                continue;
             }
             if line.is_empty() {
                 line.push_str(&word);
@@ -1015,6 +1018,52 @@ const PRESCRIBER_TEMPLATE: &str = "APELLIDOS Y NOMBRES: {{doctor.name}}\nNÚMERO
 fn text_width_chars(width_mm: f32, size_pt: f32) -> usize {
     (width_mm / (1.95 * size_pt / 10.0)).floor().max(8.0) as usize
 }
+pub(crate) const TABLE_HEADER_SIZE: f32 = 6.5;
+pub(crate) const TABLE_BODY_SIZE: f32 = 7.0;
+
+pub(crate) fn wrap_table_text(text: &str, width_mm: f32, size_pt: f32) -> Vec<String> {
+    fn advance(ch: char) -> f32 {
+        match ch {
+            ' ' => 0.32,
+            'i' | 'j' | 'l' | 'I' => 0.45,
+            'M' | 'W' | 'm' | 'w' => 1.0,
+            'A'..='Z' => 0.85,
+            'a'..='z' => 0.72,
+            '0'..='9' => 0.65,
+            ch if ch.is_ascii() => 0.7,
+            _ => 1.2,
+        }
+    }
+    let limit = ((width_mm - 2.0).max(0.0) * 2.834_646 / size_pt - 0.1).max(0.1);
+    let mut lines = Vec::new();
+    for raw in text.split('\n') {
+        let mut line = String::new();
+        let mut used = 0.0;
+        for word in raw.split_whitespace() {
+            let word_width: f32 = word.chars().map(advance).sum();
+            if !line.is_empty() {
+                if used + advance(' ') + word_width <= limit {
+                    line.push(' ');
+                    used += advance(' ');
+                } else {
+                    lines.push(std::mem::take(&mut line));
+                    used = 0.0;
+                }
+            }
+            for ch in word.chars() {
+                let width = advance(ch);
+                if !line.is_empty() && used + width > limit {
+                    lines.push(std::mem::take(&mut line));
+                    used = 0.0;
+                }
+                line.push(ch);
+                used += width;
+            }
+        }
+        lines.push(line);
+    }
+    lines
+}
 
 fn text_block(lines: Vec<String>, size_pt: f32, bold: bool, color: TextColor) -> LayoutBlock {
     LayoutBlock::Text {
@@ -1043,8 +1092,8 @@ fn text_block_prefix(
 
 fn block_height(block: &LayoutBlock, width_mm: f32) -> f32 {
     match block {
-        LayoutBlock::Text { lines, size_pt, .. } => lines.len() as f32 * size_pt * 0.52,
-        LayoutBlock::Rule => 1.0,
+        LayoutBlock::Text { lines, size_pt, .. } => lines.len() as f32 * size_pt * 0.4,
+        LayoutBlock::Rule => 2.0,
         LayoutBlock::Table {
             header,
             rows,
@@ -1057,9 +1106,9 @@ fn block_height(block: &LayoutBlock, width_mm: f32) -> f32 {
                 .enumerate()
                 .map(|(index, caption)| {
                     let cell_width = cell_widths.get(index).copied().unwrap_or(width_mm);
-                    let chars = text_width_chars(cell_width, 7.0);
-                    let lines = wrap_text(caption, chars).len() as f32;
-                    lines * 7.0 * 0.52 + 1.5
+                    let lines =
+                        wrap_table_text(caption, cell_width, TABLE_HEADER_SIZE).len() as f32;
+                    lines * TABLE_HEADER_SIZE * 0.4 + 1.5
                 })
                 .fold(0.0, f32::max)
                 .max(5.0);
@@ -1067,9 +1116,9 @@ fn block_height(block: &LayoutBlock, width_mm: f32) -> f32 {
                 .iter()
                 .map(|row| {
                     if row.span_all {
-                        let chars = text_width_chars(width_mm, 8.0);
-                        let lines = wrap_text(&row.cells.join(" "), chars).len() as f32;
-                        lines * 8.0 * 0.52 + 1.5
+                        let lines = wrap_table_text(&row.cells.join(" "), width_mm, TABLE_BODY_SIZE)
+                            .len() as f32;
+                        lines * TABLE_BODY_SIZE * 0.4 + 1.5
                     } else {
                         row.cells
                             .iter()
@@ -1077,9 +1126,9 @@ fn block_height(block: &LayoutBlock, width_mm: f32) -> f32 {
                             .map(|(index, cell)| {
                                 let cell_width =
                                     cell_widths.get(index).copied().unwrap_or(width_mm);
-                                let chars = text_width_chars(cell_width, 8.0);
-                                let lines = wrap_text(cell, chars).len() as f32;
-                                lines * 8.0 * 0.52 + 1.5
+                                let lines =
+                                    wrap_table_text(cell, cell_width, TABLE_BODY_SIZE).len() as f32;
+                                lines * TABLE_BODY_SIZE * 0.4 + 1.5
                             })
                             .fold(0.0, f32::max)
                             .max(5.0)
@@ -1146,21 +1195,27 @@ fn make_letterhead_blocks(
 fn make_patient_fields_blocks(
     fields: &[FieldKind],
     values: &[(String, String)],
-    _width_mm: f32,
+    width_mm: f32,
 ) -> Vec<LayoutBlock> {
-    let mut blocks = Vec::new();
-    for field in fields {
-        let label = field_label(field);
-        let value = resolve(&format!("{{{{{}}}}}", field_variable(field)), values);
-        let line = format!("{label} {value}");
-        blocks.push(text_block_prefix(
-            vec![line],
-            8.5,
-            TextColor::Ink,
-            label.to_owned(),
-        ));
-    }
-    blocks
+    fields
+        .chunks(2)
+        .map(|pair| {
+            let line = pair
+                .iter()
+                .map(|field| {
+                    let value = resolve(&format!("{{{{{}}}}}", field_variable(field)), values);
+                    format!("{} {value}", field_label(field))
+                })
+                .collect::<Vec<_>>()
+                .join("    ");
+            text_block_prefix(
+                wrap_text(&line, text_width_chars(width_mm, 8.5)),
+                8.5,
+                TextColor::Ink,
+                field_label(&pair[0]).to_owned(),
+            )
+        })
+        .collect()
 }
 
 fn make_validity_block(
@@ -1475,14 +1530,14 @@ fn make_section_blocks(
                 TextColor::Ink,
                 "FIRMA:".to_owned(),
             ));
-            blocks.push(LayoutBlock::Spacer { height_mm: 12.0 });
+            blocks.push(LayoutBlock::Spacer { height_mm: 5.0 });
             blocks.push(text_block_prefix(
                 vec!["SELLO MÉDICO:".to_owned()],
                 8.5,
                 TextColor::Ink,
                 "SELLO MÉDICO:".to_owned(),
             ));
-            blocks.push(LayoutBlock::Spacer { height_mm: 18.0 });
+            blocks.push(LayoutBlock::Spacer { height_mm: 7.0 });
             blocks
         }
         Section::ReceptionBlock => {
@@ -1621,85 +1676,159 @@ pub fn paginate_document(
     }
 
     let usable_height = page_height - 2.0 * margin as f32;
-
+    let footer_blocks = make_signature_qr_blocks(values, meta);
     let mut pages: Vec<LayoutPage> = Vec::new();
     let mut panel_positions: Vec<usize> = vec![0; all_panel_blocks.len()];
+    let fixed_blocks: Vec<Vec<LayoutBlock>> = document
+        .panels
+        .iter()
+        .zip(panels_geometry.iter())
+        .map(|(panel, (_, width))| {
+            panel
+                .sections
+                .iter()
+                .take_while(|section| is_fixed_section(section))
+                .flat_map(|section| make_section_blocks(section, document, values, *width, meds))
+                .collect()
+        })
+        .collect();
 
     loop {
-        let mut current_panel_blocks: Vec<Vec<LayoutBlock>> = Vec::new();
+        let mut panels = Vec::new();
         let mut any_remaining = false;
-        for (panel_index, blocks) in all_panel_blocks.iter().enumerate() {
-            let pos = panel_positions[panel_index];
+        for (panel_index, blocks) in all_panel_blocks.iter_mut().enumerate() {
             let (_x, width) = panels_geometry[panel_index];
-            let mut page_blocks: Vec<LayoutBlock> = Vec::new();
-            let mut height = 0.0;
-            let has_letterhead = document.panels[panel_index]
+            let has_signature_qr = document.panels[panel_index]
                 .sections
-                .first()
-                .is_some_and(|section| matches!(section, Section::Letterhead));
-
-            if pos == 0 && has_letterhead {
-                for section in &document.panels[panel_index].sections {
-                    if is_fixed_section(section) {
-                        let fixed_blocks =
-                            make_section_blocks(section, document, values, width, meds);
-                        for block in fixed_blocks {
-                            let block_h = block_height(&block, width);
-                            if height + block_h > usable_height {
-                                break;
-                            }
-                            height += block_h;
-                            page_blocks.push(block);
+                .iter()
+                .any(|section| matches!(section, Section::SignatureQr));
+            let footer_height = if has_signature_qr {
+                let text_height = block_height(&footer_blocks[0], width);
+                text_height.max(if page_width > page_height { 20.0 } else { 27.0 })
+            } else {
+                0.0
+            };
+            let limit = usable_height - footer_height;
+            let mut page_blocks = if pages.is_empty() {
+                Vec::new()
+            } else {
+                fixed_blocks[panel_index].clone()
+            };
+            let mut height: f32 = page_blocks
+                .iter()
+                .map(|block| block_height(block, width))
+                .sum();
+            let mut index = panel_positions[panel_index];
+            let mut progressed = false;
+            while index < blocks.len() {
+                if let LayoutBlock::Table {
+                    header,
+                    rows,
+                    col_weights,
+                } = &blocks[index]
+                {
+                    let mut fragment = LayoutBlock::Table {
+                        header: header.clone(),
+                        rows: Vec::new(),
+                        col_weights: col_weights.clone(),
+                    };
+                    let mut count = 0;
+                    let mut remainder = None;
+                    for row in rows {
+                        if let LayoutBlock::Table { rows, .. } = &mut fragment {
+                            rows.push(row.clone());
                         }
-                    } else {
+                        if height + block_height(&fragment, width) > limit {
+                            if let LayoutBlock::Table { rows, .. } = &mut fragment {
+                                rows.pop();
+                            }
+                            break;
+                        }
+                        count += 1;
+                    }
+                    if count == 0 {
+                        if progressed {
+                            break;
+                        }
+                        let header_height = block_height(&fragment, width);
+                        let lines_per_page = ((limit - height - header_height - 1.5)
+                            / (TABLE_BODY_SIZE * 0.4))
+                            .floor()
+                            .max(1.0) as usize;
+                        let row = &rows[0];
+                        let cells = if row.span_all {
+                            vec![row.cells.join(" ")]
+                        } else {
+                            row.cells.clone()
+                        };
+                        let mut first_cells = Vec::with_capacity(cells.len());
+                        let mut remaining_cells = Vec::with_capacity(cells.len());
+                        for (cell_index, cell) in cells.iter().enumerate() {
+                            let cell_width = if row.span_all {
+                                width
+                            } else {
+                                col_weights.get(cell_index).copied().unwrap_or(1.0) * width
+                            };
+                            let lines = wrap_table_text(cell, cell_width, TABLE_BODY_SIZE);
+                            let split = lines.len().min(lines_per_page);
+                            first_cells.push(lines[..split].join("\n"));
+                            remaining_cells.push(lines[split..].join("\n"));
+                        }
+                        let mut first = row.clone();
+                        first.cells = first_cells;
+                        if let LayoutBlock::Table {
+                            rows: fragment_rows,
+                            ..
+                        } = &mut fragment
+                        {
+                            fragment_rows.push(first);
+                        }
+                        if remaining_cells.iter().any(|cell| !cell.is_empty()) {
+                            let mut rest = row.clone();
+                            rest.cells = remaining_cells;
+                            remainder = Some(rest);
+                        } else {
+                            count = 1;
+                        }
+                    }
+                    height += block_height(&fragment, width);
+                    page_blocks.push(fragment);
+                    progressed = true;
+                    if let LayoutBlock::Table { rows, .. } = &mut blocks[index] {
+                        rows.drain(..count);
+                        if let Some(rest) = remainder {
+                            rows[0] = rest;
+                        }
+                        if rows.is_empty() {
+                            index += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    let block_h = block_height(&blocks[index], width);
+                    if height + block_h > limit && progressed {
                         break;
                     }
+                    height += block_h;
+                    page_blocks.push(blocks[index].clone());
+                    index += 1;
+                    progressed = true;
                 }
             }
-
-            let mut index = pos;
-            while index < blocks.len() {
-                let block = &blocks[index];
-                let block_h = block_height(block, width);
-                if height + block_h > usable_height {
-                    break;
-                }
-                height += block_h;
-                page_blocks.push(block.clone());
-                index += 1;
-            }
-
-            if index < blocks.len() {
-                any_remaining = true;
-            }
-            current_panel_blocks.push(page_blocks);
             panel_positions[panel_index] = index;
+            any_remaining |= index < blocks.len();
+            panels.push(LayoutPanel {
+                x_mm: panels_geometry[panel_index].0,
+                width_mm: width,
+                has_letterhead: document.panels[panel_index]
+                    .sections
+                    .first()
+                    .is_some_and(|section| matches!(section, Section::Letterhead)),
+                blocks: page_blocks,
+            });
         }
-
-        if current_panel_blocks.iter().all(|blocks| blocks.is_empty()) && !any_remaining {
-            break;
-        }
-
-        if pages.is_empty() || current_panel_blocks.iter().any(|blocks| !blocks.is_empty()) {
-            let panels: Vec<LayoutPanel> = current_panel_blocks
-                .into_iter()
-                .enumerate()
-                .map(|(index, blocks)| {
-                    let has_letterhead = document.panels[index]
-                        .sections
-                        .first()
-                        .is_some_and(|section| matches!(section, Section::Letterhead));
-                    LayoutPanel {
-                        x_mm: panels_geometry[index].0,
-                        width_mm: panels_geometry[index].1,
-                        has_letterhead,
-                        blocks,
-                    }
-                })
-                .collect();
-            pages.push(LayoutPage { panels });
-        }
-
+        pages.push(LayoutPage { panels });
         if !any_remaining {
             break;
         }
@@ -1852,7 +1981,7 @@ pub fn A4Preview(
 fn render_layout_block(
     block: &LayoutBlock,
     layout: &DocumentLayout,
-    _panel: &LayoutPanel,
+    panel: &LayoutPanel,
     sources: &BTreeMap<String, String>,
     qr: Option<&String>,
     provisional: bool,
@@ -1879,7 +2008,7 @@ fn render_layout_block(
                         p {
                             class: "{bold_class}",
                             style: "font-size: {size_pt}pt; color: {color_hex};",
-                            if let Some(prefix) = bold_prefix {
+                            if let Some(prefix) = bold_prefix.as_ref().filter(|prefix| line.starts_with(prefix.as_str())) {
                                 span { class: "a4-text--bold", "{prefix}" }
                                 "{line.strip_prefix(prefix).unwrap_or(line)}"
                             } else {
@@ -1911,8 +2040,8 @@ fn render_layout_block(
                     }
                     thead {
                         tr {
-                            for caption in header.iter() {
-                                th { "{caption}" }
+                            for (index, caption) in header.iter().enumerate() {
+                                th { "{wrap_table_text(caption, panel.width_mm * col_weights.get(index).copied().unwrap_or(1.0), TABLE_HEADER_SIZE).join(\"\\n\")}" }
                             }
                         }
                     }
@@ -1922,20 +2051,20 @@ fn render_layout_block(
                                 tr {
                                     td { colspan: "{count}",
                                         if row.bold {
-                                            strong { "{row.cells.join(\" \")}" }
+                                            strong { "{wrap_table_text(&row.cells.join(\" \"), panel.width_mm, TABLE_BODY_SIZE).join(\"\\n\")}" }
                                         } else {
-                                            "{row.cells.join(\" \")}"
+                                            "{wrap_table_text(&row.cells.join(\" \"), panel.width_mm, TABLE_BODY_SIZE).join(\"\\n\")}"
                                         }
                                     }
                                 }
                             } else {
                                 tr {
-                                    for cell in row.cells.iter() {
+                                    for (index, cell) in row.cells.iter().enumerate() {
                                         td {
                                             if row.bold {
-                                                strong { "{cell}" }
+                                                strong { "{wrap_table_text(cell, panel.width_mm * col_weights.get(index).copied().unwrap_or(1.0), TABLE_BODY_SIZE).join(\"\\n\")}" }
                                             } else {
-                                                "{cell}"
+                                                "{wrap_table_text(cell, panel.width_mm * col_weights.get(index).copied().unwrap_or(1.0), TABLE_BODY_SIZE).join(\"\\n\")}"
                                             }
                                         }
                                     }

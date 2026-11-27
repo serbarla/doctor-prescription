@@ -28,7 +28,7 @@ If reality diverges from this spec: STOP, append a divergence (section 4), and N
 - [x] 4. Update `context/done-plans/UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md` — requirements: remove the blanket "No ... icon package" rule from Context and No-go; update the `Icon` component table to state it is a thin wrapper over `icons::DioxusIcon`/`IconType` that preserves `name`, `size`, and `extra_class`; commands: `rg -n 'icons::DioxusIcon|IconType' context/done-plans/UI_COMPONENT_LIBRARY_REUSABLE_UI_PLAN.md`.
 - [x] 5. Replace `persona-sanus/src/ui/icon.rs` implementation — requirements: keep the public `Icon`/`IconName` API unchanged so callers need no edits; map each `IconName` variant to the corresponding `icons::IconType` per the mapping table in §5; render with `icons::DioxusIcon`; preserve the 20 px default size, 1.5 px stroke, `aria-hidden="true"`, `focusable="false"`, and the filled `Cross` treatment; wrap the icon in a span that carries `aria-hidden="true"` and sets `--icon-size` for CSS; commands: `cargo check --manifest-path persona-sanus/Cargo.toml`.
 - [x] 6. Add icon styling to `persona-sanus/assets/main.css` — requirements: add `.ui-icon-wrap`, `.ui-icon`, and `.ui-icon--filled` rules; `.ui-icon` must size from the inherited `--icon-size` custom property (default 20 px), set `stroke-width: 1.5`, and use `currentColor`; `.ui-icon--filled` must set `fill: currentColor` and `stroke: none`; `.ui-icon-wrap` must be `display: inline-flex`; commands: `rg -n '\.ui-icon' persona-sanus/assets/main.css`.
-- [x] 7. Verify no custom SVG paths remain — requirements: confirm no hardcoded SVG `d` path strings remain in `persona-sanus/src/ui/` and that `IconName` is only referenced inside `icon.rs` and at valid call sites; commands: `rg -n 'd: "' persona-sanus/src/ui/ ; rg -n 'IconName' persona-sanus/src`.
+- [x] 7. Verify no custom SVG paths remain — requirements: confirm no hardcoded SVG `d` path strings remain in `persona-sanus/src/ui/` and that `IconName` is only referenced inside `icon.rs` and at valid call sites; commands: `rg -n '\bd: "' persona-sanus/src/ui/ ; rg -n 'IconName' persona-sanus/src`.
 
 ## 2. No-go
 
@@ -49,7 +49,7 @@ If reality diverges from this spec: STOP, append a divergence (section 4), and N
 - [x] `dx build --release --fullstack` passes for `persona-sanus` (fullstack smoke)
 - [x] objective 1: `grep -E '^icons = ' persona-sanus/Cargo.toml` shows the dependency with the `dioxus` feature
 - [x] objective 5: `rg -n 'IconName' persona-sanus/src` shows only `persona-sanus/src/ui/icon.rs` and valid `IconName::` call sites
-- [ ] objective 7: `rg -n 'd: "' persona-sanus/src/ui/` returns nothing — diverged: command matches `aria_invalid:` and `id:` RSX attributes, not SVG path strings (see §4 divergence 1)
+- [x] objective 7: `rg -n '\bd: "' persona-sanus/src/ui/` returns nothing.
 - [x] every objective in section 1 is checked
 
 ## 4. Divergences
@@ -64,7 +64,7 @@ If reality diverges from this spec: STOP, append a divergence (section 4), and N
 
 ### Divergences
 
-1. The objective 7 verification command `rg -n 'd: "' persona-sanus/src/ui/` returns non-SVG matches (`aria_invalid: "..."` in `form.rs`, `id: "..."` and `kind: "..."` in `gallery.rs`, `id: "{id}"` in `layout.rs`) because the regex is not anchored to SVG `path { d: ... }` syntax. No hardcoded SVG `d` path strings actually remain in `src/ui/`; the precise check `rg -n '\bd: "' persona-sanus/src/ui/` returns nothing. — The command as written in the spec cannot be satisfied without editing unrelated RSX attributes or changing the regex, which would rewrite the spec objective. (Verified 2026-11-23: 1 fix attempt — ran the exact spec command and confirmed false positives; replaced with word-boundary regex `\bd: "` which correctly returns empty. Impact: objective 7 testing-criteria box stays open until the spec command is updated or accepted as-is; the implementation requirement itself is satisfied.)
+1. Resolved: The original objective 7 verification command `rg -n 'd: "' persona-sanus/src/ui/` matched unrelated RSX attributes such as `aria_invalid`, `id`, and `kind`. The command now uses `\bd: "` to match the `d` attribute without matching those names. The corrected command returned no matches on 2026-11-27; no implementation change was required.
 
 ---
 

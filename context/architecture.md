@@ -102,7 +102,9 @@ Rules:
 
 | Module | Side | Owns | Must not |
 |---|---|---|---|
-| `src/main.rs` | shared | `Route` enum, `App`, `Navbar`, `AuthPage`, `Dashboard`, server entry point | contain SQL, crypto, or HTTP handlers |
+| `src/main.rs` | shared | `Route` enum, `App`, `AuthPage`, `Dashboard`, server entry point | contain SQL, crypto, or HTTP handlers |
+| `src/navbar.rs` | shared | `Navbar` route layout, including session-aware navigation, sync status, and sign-out | define routes or reusable UI primitives |
+| `src/footer.rs` | shared | public `Footer` component and `FooterSurface` presentation matrix | read session state or define reusable UI primitives |
 | `src/auth.rs` | client | auth HTTP calls, `SessionUser`, response parsing | import server modules |
 | `src/forms.rs` | client (shared) | template form component, A4 preview projection reused by prescriptions, `doc_json` (de)serialization and validation, variable/medication/image fields | contain server code; persist or emit raw HTML |
 | `src/ui/` | client (shared) | shared client module that owns the design-token contract and reusable UI primitives (`.ui-*` component and utility layer, `format_*` helpers) | no SQL, HTTP handlers, storage, or business rules |

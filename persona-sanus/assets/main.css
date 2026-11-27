@@ -214,15 +214,27 @@ select {
   gap: var(--spacing-24);
 }
 
+@font-face {
+  font-family: "Prescription Noto Sans";
+  src: url("/assets/fonts/NotoSans-Regular.ttf");
+}
+
+@font-face {
+  font-family: "Prescription Noto Sans";
+  src: url("/assets/fonts/NotoSans-Bold.ttf");
+  font-weight: 700;
+}
+
 .a4-page {
+  position: relative;
   width: 210mm;
   height: 297mm;
   box-sizing: border-box;
   background-color: var(--color-paper);
   color: var(--color-ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: "Prescription Noto Sans", sans-serif;
   font-size: 12pt;
-  line-height: 1.45;
+  line-height: 1.134;
   display: flex;
   flex-direction: column;
   box-shadow:var(--shadow-paper);
@@ -242,6 +254,7 @@ select {
 }
 
 .a4-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -253,7 +266,7 @@ select {
 }
 
 .a4-text p {
-  margin: 0 0 1mm;
+  margin: 0;
   white-space: pre-wrap;
 }
 
@@ -268,26 +281,30 @@ select {
 
 .a4-rule {
   border-top: 0.75pt solid currentColor;
-  margin: 1mm 0;
+  height: 2mm;
+  flex-shrink: 0;
 }
 
 .a4-table {
   border-collapse: collapse;
   width: 100%;
-  margin: 1mm 0 2mm;
+  table-layout: fixed;
+  margin: 0;
 }
 
 .a4-table th,
 .a4-table td {
   border: 0.4pt solid #111111;
-  padding: 0.8mm 1mm;
-  font-size: 8pt;
+  padding: 0.75mm 1mm;
+  font-size: 7pt;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   vertical-align: top;
 }
 
 .a4-table th {
   font-size: 6.5pt;
-  font-weight: 700;
+  font-weight: 400;
   text-align: center;
 }
 
@@ -308,8 +325,9 @@ select {
 }
 
 .a4-qr {
-  align-self: flex-end;
-  margin-top: auto;
+  position: absolute;
+  right: 0;
+  bottom: 2mm;
 }
 
 .a4-qr img {
@@ -330,6 +348,9 @@ select {
 }
 
 .a4-page-no {
+  position: absolute;
+  right: 5mm;
+  bottom: 0;
   text-align: right;
   font-size: 8.5pt;
   margin: 2mm 0 0;

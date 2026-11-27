@@ -1209,6 +1209,10 @@ input[type="file"]:focus-visible {
   color: var(--color-deep-teal);
 }
 
+#home-page .ui-trust > .ui-icon-wrap {
+  color: var(--color-deep-teal);
+}
+
 .ui-trust-platforms {
   display: inline-flex;
   align-items: center;
@@ -1260,6 +1264,12 @@ input[type="file"]:focus-visible {
   flex-direction: column;
   align-items: center;
   padding: var(--spacing-80) 0 var(--spacing-64);
+}
+
+#home-page > .ui-hero {
+  width: 100%;
+  max-width: var(--content-display);
+  padding: var(--spacing-80) var(--spacing-24);
 }
 
 .ui-display {
@@ -1643,6 +1653,10 @@ input[type="file"]:focus-visible {
 @media (max-width: 760px) {
   .ui-section-title {
     font-size: 34px;
+  }
+
+  #home-page .ui-section-title {
+    font-size: var(--text-heading-lg);
   }
 }
 

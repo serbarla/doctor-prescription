@@ -71,5 +71,5 @@ approver explicitly decides otherwise.
 
 <Numbered entries, or "None.">
 
-*Housekeeping: archive completed specs and track open divergences according to
+*Housekeeping: archive completed specs according to
 the project's conventions.*

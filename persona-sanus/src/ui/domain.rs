@@ -2,7 +2,6 @@ use dioxus::prelude::*;
 
 use super::{
     Badge, BadgeTone, Button, ButtonVariant, EmptyState, ErrorText, FileField, Icon, IconName,
-    TextField,
 };
 use crate::api;
 
@@ -258,10 +257,11 @@ pub fn VerificationResultCard(verification: api::VerificationResult) -> Element 
 #[component]
 pub fn VerificationCodeForm(
     #[props(default)] button_variant: ButtonVariant,
+    error_id: &'static str,
     on_submit: EventHandler<String>,
 ) -> Element {
     let mut value = use_signal(String::new);
-    let mut error = use_signal(String::new);
+    let mut invalid = use_signal(|| false);
     rsx! {
         form {
             class: "ui-code-form",
@@ -269,23 +269,31 @@ pub fn VerificationCodeForm(
                 event.prevent_default();
                 let code = value().trim().to_uppercase();
                 if code.is_empty() {
-                    error.set("Ingresa el código de verificación.".to_owned());
+                    invalid.set(true);
                     return;
                 }
-                error.set(String::new());
+                invalid.set(false);
                 on_submit.call(code);
             },
-            TextField {
-                label: "Código de verificación",
-                value: value(),
-                oninput: move |next| value.set(next),
-                placeholder: "PS-7K2F-9Q",
-                autocomplete: "off",
-                spellcheck: false,
+            label { class: "ui-field",
+                span { class: "ui-field-label", "Código de verificación" }
+                input {
+                    class: "ui-input",
+                    r#type: "text",
+                    placeholder: "PS-7K2F-9Q",
+                    value: value(),
+                    autocomplete: "off",
+                    spellcheck: false,
+                    aria_invalid: "{invalid()}",
+                    aria_describedby: invalid().then_some(error_id),
+                    oninput: move |event| value.set(event.value()),
+                }
             }
             Button { variant: button_variant, button_type: "submit", "Verificar" }
-            if !error().is_empty() {
-                ErrorText { text: error() }
+            if invalid() {
+                div { class: "ui-code-form-error", id: error_id,
+                    ErrorText { text: "Ingresa el código de verificación.".to_owned() }
+                }
             }
         }
     }

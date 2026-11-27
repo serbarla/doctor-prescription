@@ -519,8 +519,8 @@ pub fn DevUiGallery() -> Element {
                         {frame("Card unknown", rsx! { VerificationResultCard { verification: sample_verification("unknown") } })}
                     }
                     div { class: "ui-gallery-grid",
-                        {frame("Code form Primary", rsx! { VerificationCodeForm { button_variant: ButtonVariant::Primary, on_submit: move |_value: String| {} } })}
-                        {frame("Code form Secondary", rsx! { VerificationCodeForm { button_variant: ButtonVariant::Secondary, on_submit: move |_value: String| {} } })}
+                        {frame("Code form Primary", rsx! { VerificationCodeForm { button_variant: ButtonVariant::Primary, error_id: "gallery-primary-verification-code-error", on_submit: move |_value: String| {} } })}
+                        {frame("Code form Secondary", rsx! { VerificationCodeForm { button_variant: ButtonVariant::Secondary, error_id: "gallery-secondary-verification-code-error", on_submit: move |_value: String| {} } })}
                     }
                 }
                 section { id: "gallery-library", class: "ui-gallery-section",

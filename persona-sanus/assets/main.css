@@ -1836,7 +1836,7 @@ input[type="file"]:focus-visible {
   margin: 0;
 }
 
-.ui-code-form .ui-error {
+.ui-code-form-error {
   grid-column: 1 / -1;
 }
 

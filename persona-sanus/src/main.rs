@@ -1498,6 +1498,7 @@ fn Home() -> Element {
                     Card {
                         VerificationCodeForm {
                             button_variant: ButtonVariant::Secondary,
+                            error_id: "home-verification-code-error",
                             on_submit: move |code| {
                                 navigator.push(Route::Verify { code });
                             },
@@ -1568,6 +1569,7 @@ fn Verify(code: String) -> Element {
                 SectionCard { title: "Verificar otra receta".to_owned(), description: None,
                     div { class: "ui-stack",
                         VerificationCodeForm {
+                            error_id: "verify-reentry-code-error",
                             on_submit: move |value: String| {
                                 requested.set(value.clone());
                                 navigator.replace(Route::Verify { code: value });

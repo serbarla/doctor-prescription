@@ -100,8 +100,8 @@ pub fn VerificationTag(label: String) -> Element {
 pub fn A4Mock(kind: A4MockKind) -> Element {
     match kind {
         A4MockKind::Patient => rsx! {
-            div { class: "ui-a4-mock",
-                p { class: "ui-a4-kicker", "FICHA DEL PACIENTE" }
+            div { class: "ui-a4-mock", aria_hidden: "true",
+                span { class: "ui-a4-kicker", "FICHA DEL PACIENTE" }
                 p { class: "ui-a4-name", "María Fernanda Ruiz" }
                 div { class: "ui-a4-row",
                     span { "Cédula" }
@@ -118,8 +118,8 @@ pub fn A4Mock(kind: A4MockKind) -> Element {
             }
         },
         A4MockKind::Medication => rsx! {
-            div { class: "ui-a4-mock",
-                p { class: "ui-a4-kicker", "RECETA" }
+            div { class: "ui-a4-mock", aria_hidden: "true",
+                span { class: "ui-a4-kicker", "RECETA" }
                 div { class: "ui-a4-row",
                     span { "Diagnóstico" }
                     span { "Faringitis aguda" }
@@ -129,8 +129,8 @@ pub fn A4Mock(kind: A4MockKind) -> Element {
             }
         },
         A4MockKind::Verification => rsx! {
-            div { class: "ui-a4-mock",
-                p { class: "ui-a4-kicker", "VERIFICACIÓN" }
+            div { class: "ui-a4-mock", aria_hidden: "true",
+                span { class: "ui-a4-kicker", "VERIFICACIÓN" }
                 div { class: "ui-a4-qr",
                     for cell in "1111111100000110111011010101101110110000011111111".chars() {
                         span {

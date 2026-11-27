@@ -71,7 +71,7 @@ Role changes only the header action set and whether the delete region exists. It
 | Desktop API failure, matching cached row | The cached identity card renders read-only; the load-failure line remains above it; return link stays | Same labels and formats; no edit inputs; no silent success; an unreadable database or skipped row falls back to the failure surface |
 | Record not found (404) | The same load-failure surface and return link | `api::fetch_patient` returns only a `String`, so this page has no separate not-found panel to invent |
 | History loading, first open | History section shows `LoadingState` `Cargando recetas...`; identity card and delete states are independent | Root id, identity content, and role gates are unaffected |
-| History failure | History `ErrorText` `No se pudieron cargar las recetas.`; on desktop with a cache match the scoped cached rows render below it | The failure line never hides, even when the cache fills the list |
+| History network failure | History `ErrorText` `No se pudieron cargar las recetas.`; desktop may show identity-authorized cached rows below it | The failure line never hides; server refusals do not trigger prescription-cache fallback |
 | History empty, fetch succeeds with no rows | `EmptyState` `Sin recetas` with the not-yet description; no error line | Identity, delete, and navigation are unaffected |
 
 A cached row is a read-only fallback, not a successful live read: it never removes the failure message, never enables a local delete, and never grants a role. An existing patient with all optional values absent is still a loaded patient: the card paints each label with `—`, not an `EmptyState`.
@@ -87,7 +87,7 @@ A cached row is a read-only fallback, not a successful live read: it never remov
 | Deleting, `deleting` true | Confirm control busy `Eliminando...`; confirm and cancel disabled; trigger absent | One request at a time; the page does not remove the record locally |
 | Delete result | Success: no panel, `navigator.push(Route::Patients {})`, list remounts against the server. Failure: `ErrorText` with the frozen delete-failure line; confirmation stays open; controls re-enable | Success leaves the page; failure keeps the record and URL and allows retry; the raw transport string is never painted |
 
-History is a section on this page, not a general `/prescriptions` link: the load effect calls `api::fetch_prescriptions(&id, "", "")`, which the server scopes by `patientId` to this patient (and, for a Doctor, to the caller's own prescriptions). Each row opens `Route::PrescriptionDetail { id }`. No patient-filtered route parameter exists; the only patient identifier in the URL stays the opaque route id. Template status is not read or changed by this page.
+History is a section on this page, not a general `/prescriptions` link: the load effect calls `api::fetch_prescriptions(&id, "", "")`. The server applies the patient filter and prescription authorization: doctors see their own prescriptions and unassigned drafts; nursing sees clinic prescriptions; secretaries see issued prescriptions; administrators see clinic prescriptions read-only. Each row opens `Route::PrescriptionDetail { id }`. The only patient identifier in the URL is the opaque route id.
 
 ### 2.4 Web and desktop surfaces
 
@@ -177,7 +177,7 @@ Row meta reuses the `/prescriptions` labels (`prescription_status_label`, `DD-MM
 | Notas | `patient.notes` | Stored plain text with authored line breaks preserved (`white-space: pre-wrap`); `—` when absent; wide item |
 | Edit and read-only controls | `actor.role` + `Me::can_write_patients()` (`api.rs:61`) | Secondary `/patients/{id}/edit` link for Doctor, Nursing, Secretary; otherwise Neutral `Solo lectura` badge with no handler |
 | New prescription | `Me::can_create_prescriptions()` (`api.rs:72`) | Primary for Doctor, Nursing; absent for Secretary and Administrator |
-| History section | `api::fetch_prescriptions(&id, "", "")` (`api.rs:204`); server `list_prescriptions` scopes by `patientId` (`service.rs:3312`) | Rows for only this patient's prescriptions (a Doctor sees only own rows); on failure the desktop fallback filters the unfiltered `desktop_local::list_prescriptions` by `patientId` and the `history_message` error stays visible |
+| History section | `api::fetch_prescriptions(&id, "", "")`; authorized desktop cache fallback | Only rows permitted for the current identity and patient; the history error remains visible after a fallback |
 | Delete controls | `Me::can_write_patients()`, `confirm_delete()`, `deleting()`, `api::delete_patient` | Danger trigger, inline confirmation, and busy copy; absent for Administrator; no local mutation before `Ok(())` |
 | Load failure and session gate | `message` from `api::fetch_patient` error; `checked`, `user`, `actor` | Frozen failure line plus `Volver a pacientes`; otherwise loading, redirect, denial, or content per §2.1; raw error text is never painted |
 

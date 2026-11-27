@@ -112,6 +112,14 @@ Environment variables (all optional in development; the full table with scopes a
 
 Object storage (`ASSETS_*`) is required for image features (clinic library, template images, logo). The backup recipient (`BACKUP_AGE_RECIPIENT`) is required for backups: without it the daily backup job skips with an `audit_log` row.
 
+### Issued-document history and privacy
+
+Issued snapshots contain private clinical data: resolved patient, prescriber and clinic values, ordered medications, issue time and number, and pinned document, theme and asset identities. Treat server backups, desktop databases and queued sign operations as clinical records. Keep TLS, encrypted server volumes and desktop FileVault/BitLocker enabled. Snapshots are not public verification payloads; QR codes remain opaque and contain no patient data. Image bytes remain in private asset storage or the desktop asset cache, not in sign-operation payloads.
+
+Draft previews use current data. Issued reprints must use the frozen issuance inputs; voiding or superseding changes lifecycle status, not historical clinical content. Regeneration does not promise byte-identical PDFs or a digital signature. The doctor signs paper.
+
+Pre-snapshot issued records cannot be recovered faithfully from current patient, doctor, clinic or template values. Their record data and verification remain available, but faithful PDF regeneration is unavailable. Preserve any original paper or independently saved PDF through the clinic's authorized records process. Do not label a newly assembled document as the original. Pending legacy desktop work must remain stored for explicit resolution; do not delete the outbox, edit its clinical payload, or rebuild issuance inputs from today's cache.
+
 ## Run with Docker Compose
 
 From the repository root:

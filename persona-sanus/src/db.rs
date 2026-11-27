@@ -1744,6 +1744,7 @@ pub struct Prescription {
     pub created_at: String,
     pub updated_at: String,
     pub created_by: Option<String>,
+    pub issued_snapshot: Option<String>,
 }
 
 #[derive(Debug, Insertable)]
@@ -1909,9 +1910,11 @@ pub fn find_prescription_by_client_id(
 
 pub fn find_prescription_by_rx_number(
     connection: &mut SqliteConnection,
+    clinic_id: &str,
     rx_number: i32,
 ) -> QueryResult<Option<Prescription>> {
     prescriptions::table
+        .filter(prescriptions::clinic_id.eq(clinic_id))
         .filter(prescriptions::rx_number.eq(Some(rx_number)))
         .select(Prescription::as_select())
         .first(connection)
@@ -1922,6 +1925,7 @@ pub fn list_prescriptions(
     connection: &mut SqliteConnection,
     clinic_id: &str,
     doctor_id: Option<&str>,
+    issued_only: bool,
     patient_id: Option<&str>,
     status: Option<&str>,
     date: Option<&str>,
@@ -1931,7 +1935,14 @@ pub fn list_prescriptions(
         .filter(prescriptions::clinic_id.eq(clinic_id))
         .into_boxed();
     if let Some(doctor_id) = doctor_id {
-        statement = statement.filter(prescriptions::doctor_id.eq(Some(doctor_id)));
+        statement = statement.filter(
+            prescriptions::doctor_id.eq(Some(doctor_id)).or(
+                prescriptions::doctor_id.is_null().and(prescriptions::status.eq("draft")),
+            ),
+        );
+    }
+    if issued_only {
+        statement = statement.filter(prescriptions::status.eq_any(["signed", "voided", "superseded"]));
     }
     if let Some(patient_id) = patient_id {
         statement = statement.filter(prescriptions::patient_id.eq(patient_id));
@@ -2011,6 +2022,25 @@ pub fn mark_prescription_signed(
         prescriptions::rx_block_id.eq(Some(rx_block_id)),
         prescriptions::signed_at.eq(Some(signed_at)),
         prescriptions::updated_at.eq(signed_at),
+    ))
+    .execute(connection)
+}
+
+pub fn bind_issued_snapshot(
+    connection: &mut SqliteConnection,
+    id: &str,
+    snapshot: &str,
+    synced_at: Option<&str>,
+) -> QueryResult<usize> {
+    diesel::update(
+        prescriptions::table
+            .filter(prescriptions::id.eq(id))
+            .filter(prescriptions::issued_snapshot.is_null())
+            .filter(prescriptions::status.ne("draft")),
+    )
+    .set((
+        prescriptions::issued_snapshot.eq(snapshot),
+        prescriptions::synced_at.eq(synced_at),
     ))
     .execute(connection)
 }

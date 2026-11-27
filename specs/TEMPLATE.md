@@ -5,16 +5,14 @@
 - Project root: `<path>`. All paths and commands below are relative to it.
 - Owned files: `<paths/globs the executing worker may modify>`.
 - Gate: `<exact verification command that must exit 0, or "not applicable" with reason>`.
+- Desktop-verify: <yes|no>
 - User-interface verification: `<required|not applicable>` — <if required, surface, workflow, and evidence; otherwise, reason>.
 - Result carried forward: <one sentence describing the observable end state>.
 
-## 1. Problem and decision
+Set Desktop-verify to yes when desktop visual verification is required; record
+the workflow and evidence under User-interface verification.
 
-- Problem: <who is affected, when, and the cost>.
-- Decision: <chosen approach and why; if undecided, list viable options>.
-- Open questions: <question — owner>, or "None".
-
-## 2. Objectives and scope
+## 1. Objectives and scope
 
 *List the ordered changes and constraints. Check an objective only after its
 acceptance criteria are verified.*
@@ -27,6 +25,12 @@ acceptance criteria are verified.*
 - <forbidden action, file, package, or behavior>.
 - <applicable policy or constraint, with a source reference>.
 
+## 2. Problem and decision
+
+- Problem: <who is affected, when, and the cost>.
+- Decision: <chosen approach and why; if undecided, list viable options>.
+- Open questions: <question — owner>, or "None".
+
 ## 3. Acceptance and verification
 
 *Describe observable outcomes and relevant edge cases. For each, specify the
@@ -37,7 +41,7 @@ requires every applicable criterion and the gate to pass.*
   → <expected result>.
 - [ ] Gate: `<command>` passes from the project root, or <why not applicable>.
 - [ ] User-interface verification: <surface, workflow, and evidence>, or <why not applicable>.
-- [ ] Every objective in section 2 is checked.
+- [ ] Every objective in section 1 is checked.
 
 Choose the least costly verification that provides meaningful evidence: unit
 tests for isolated behavior, integration tests for boundaries, and end-to-end

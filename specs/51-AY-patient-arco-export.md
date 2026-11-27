@@ -1,0 +1,44 @@
+# Spec 51-AY — Patient-scoped ARCO export
+
+- Source: `context/PRD.md` FR-001–003, FR-010–014, §8–9; `context/database-design.md` §5–6; `context/screens/PatientDetail.md`; `context/runbook.md` §5; `persona-sanus/src/service.rs` patient read, prescription list and clinic export; `src/api_server.rs` clinic export and patient routes; `src/main.rs` `PatientDetail`.
+- Depends on: 50-AX.
+- Project root: `/Users/sergiobarba/projects/doctor-prescriptions`. All paths and commands below are relative to it.
+- Owned files: `specs/51-AY-patient-arco-export.md`, `persona-sanus/src/main.rs`, `persona-sanus/src/api.rs`, `persona-sanus/src/api_server.rs`, `persona-sanus/src/service.rs`, `persona-sanus/src/db.rs`, `persona-sanus/src/http.rs`, `context/runbook.md`
+- Gate: `cd persona-sanus && cargo test --no-default-features --features server patient_arco_export`
+- Desktop-verify: no
+- User-interface verification: required — use the web patient-detail screen with synthetic records and administrator/non-administrator sessions; inspect the explicit export action and resulting JSON as described in §3. Native desktop verification is not needed for the server-authoritative workflow.
+- Result carried forward: an administrator can explicitly request an audited, patient-scoped export of retained server clinical data without conflating it with the clinic-wide export; production use remains subject to local legal review.
+
+## 1. Objectives and scope
+
+- [ ] 1. Implement a distinct server-authoritative patient export — requirements: add `POST /api/patients/{id}/export`, authenticated via existing session/device checks, administrator-only as a conservative recommended authorization choice; enforce actor clinic membership and patient clinic ownership on the server, not only in UI. Apply the existing active-patient lookup (soft-deleted/not found and cross-clinic IDs return the same not-found behavior; no existence leak). Return a versioned UTF-8 JSON attachment with an opaque, non-PHI filename and `Cache-Control: no-store`; no PHI in URL, logs, headers or audit metadata. Use an opaque patient ID in the route, never a name or cédula. Retain existing request-origin/CSRF protections for authenticated mutations; do not weaken them. Do not reuse or modify the semantics of `/api/clinic/export`.
+- [ ] 2. Provide adequate and honest retained history — requirements: from a consistent database snapshot return the selected patient's identity and available clinical fields including medical record number, allergies, notes and timestamps, plus every retained prescription for that patient and clinic, not the existing 200-row list page or doctor-filtered list. Include drafts and signed, voided and superseded rows with status, dates, number, diagnosis, validity, instructions, other persisted clinical fields, doctor attribution, void reason, supersession links, ordered complete medication fields, and any persisted issued snapshot needed to interpret the historical clinical record. Preserve nulls and distinguish missing/legacy snapshot from present data; never invent data or claim byte-identical issued PDFs. Version and describe the JSON schema and explicit exclusions/limits in the runbook. Do not include unrelated patients, credentials, session tokens, raw audit entries, private object URLs or unrelated template/library assets. If a required referenced record cannot be scoped or read, fail closed instead of returning a misleading partial export. Declare that only currently retained server data is included: not already trimmed/deleted data or pending desktop-only changes.
+- [ ] 3. Make success auditable and user-visible — requirements: write a `patient_export` audit event with actor, patient opaque ID, timestamp and non-PHI counts in the same transaction as the consistent read, and return no export bytes if audit insertion/transaction fails. An event records authorized server release, not proof the file was saved or delivered to the patient. Add an accessible, explicit administrator-only patient-detail export control with loading/error handling and a privacy/retention warning; disable offline and explain connection/sync is required, rather than exporting an incomplete local cache. Non-administrators cannot export even by direct request. The existing clinic-wide export remains separate and unchanged.
+- [ ] 4. Add focused deterministic `patient_arco_export` behavioral regression tests and document operations in `context/runbook.md` — requirements: use isolated server/database fixtures and the actual route/service, verify response body, authorization, tenant isolation, complete histories beyond 200 rows, soft-deletion, audit atomicity and no-PHI metadata/headers. Document how authorized clinic staff verify the requester's identity and authority outside the application, reconcile pending desktop data, securely transfer the file and deal with unavailable/trimmed data; the app must not imply it has verified a requester's identity or automatically fulfilled a legal request. Explicitly flag local counsel review as a preproduction prerequisite covering identity/authority, scope and delivery, and existing retention/deletion policy.
+
+### Out of scope / no-go
+
+- No change to retention, trim jobs, soft/hard deletion, rectification or opposition behavior, audit retention, clinic export, or legal policy. Do not restore trimmed records, add patient self-service, or claim this format fulfills all legal obligations.
+- No database migration is expected: export existing data. Do not add data sources, external transmission, offline bulk export, or durable server-side export files. Stop for owner approval if an unowned change becomes necessary.
+
+## 2. Problem and decision
+
+- Problem: PRD §9 calls for an audited patient rights flow, but the current administrator clinic export returns all clinic patients and only a subset of prescription fields (`service.rs:2209–2255`). The patient page's history uses a capped prescription listing; neither is an appropriate patient-scoped history export.
+- Decision: recommend an explicit server-side administrator-only JSON export with audit-before-release and full retained patient history. Administrator-only and exact JSON shape are implementation recommendations, not established legal or product decisions; existing patient read permissions are broader. This is an operational tool for staff, not a determination of a person's rights or authority. Counsel review before production is expressly required by PRD §9, not assumed to be complete.
+- Open questions: Local counsel and product owner must approve the production workflow, scope and retention/deletion implications before production; their review does not authorize changing retention in this spec.
+
+## 3. Acceptance and verification
+
+- [ ] `cd persona-sanus && cargo test --no-default-features --features server patient_arco_export` → an administrator receives a versioned JSON attachment for one selected patient, including all clinically relevant persisted fields and ordered items across draft, signed, voided and superseded versions; >200 records are included, nullable fields remain null, legacy snapshot absence is explicit, and no other patient's or clinic's data appears.
+- [ ] Same gate → unauthenticated, revoked/expired session, non-administrator and cross-clinic requests fail without patient data; missing and soft-deleted IDs are indistinguishable from cross-clinic IDs. Existing clinic export remains administrator-only and unchanged.
+- [ ] Same gate → each successful response has exactly one correctly attributed `patient_export` event; simulated audit write failure returns no attachment and commits no success event. Headers, audit metadata and logs contain no PHI, file has `no-store`, and no durable server export file is written.
+- [ ] Web workflow: with synthetic patients in two clinics, sign in as administrator, open one patient and explicitly export; inspect warning and downloaded JSON against known records. Repeat as a non-administrator and with the server unreachable: no action or no export, respectively, and an actionable message where appropriate. Confirm clinic export remains distinct. Record roles, observations and any missing evidence without real PHI.
+- [ ] Gate passes; user-interface verification is complete; every objective in §1 is checked. Record counsel sign-off before production separately; never represent this spec's technical completion as legal approval.
+
+## 4. Execution and divergences
+
+Read applicable project instructions and dependency before execution. If scope, ownership or a dependency differs, record evidence, impact, attempts and owner below, leave affected boxes unchecked and request a scope decision from the project owner; open divergences block completion. Archive only under project conventions.
+
+### Divergences
+
+None.

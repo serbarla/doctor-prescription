@@ -1,0 +1,2 @@
+DROP TRIGGER prescriptions_issued_snapshot_immutable;
+ALTER TABLE prescriptions DROP COLUMN issued_snapshot;

@@ -220,6 +220,7 @@ diesel::table! {
         created_at -> Text,
         updated_at -> Text,
         created_by -> Nullable<Text>,
+        issued_snapshot -> Nullable<Text>,
     }
 }
 

@@ -6,6 +6,10 @@ mod api_server;
 mod auth;
 #[cfg(feature = "desktop")]
 mod desktop_local;
+#[cfg(all(test, feature = "desktop"))]
+mod prescription_cache_authorization_tests;
+#[cfg(all(test, feature = "server"))]
+mod prescription_authorization_tests;
 mod device;
 
 #[cfg(feature = "server")]
@@ -192,6 +196,15 @@ fn refresh_local_profile(user: &SessionUser, profile: Option<&Me>) {
     let _ = desktop_local::refresh_local_session(&user_value, profile_value.as_ref());
 }
 #[cfg(feature = "desktop")]
+async fn open_cache_for_network_error(error: &http::RequestError) -> Result<diesel::sqlite::SqliteConnection, String> {
+    if matches!(error, http::RequestError::Network(_)) {
+        desktop_local::open_local_db()
+    } else {
+        Err(error.to_string())
+    }
+}
+
+#[cfg(feature = "desktop")]
 fn clear_persisted_session() {
     http::set_session_token(None);
     desktop_local::clear_local_session();
@@ -241,12 +254,18 @@ fn populate_local_cache(profile: &Me) {
         .map(|clinic| clinic.id.clone())
         .unwrap_or_default();
     let actor_id = profile.profile.id.clone();
+    let expected_profile = serde_json::to_value(profile).ok();
     spawn(async move {
         drain_outbox().await;
         let mut conn = match desktop_local::open_local_db() {
             Ok(conn) => conn,
             Err(_) => return,
         };
+        let session_token = desktop_local::get_meta(&mut conn, "session_token").ok().flatten();
+        let session_profile = desktop_local::get_meta(&mut conn, "session_profile").ok().flatten();
+        if session_token.is_none() || session_profile.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()) != expected_profile {
+            return;
+        }
         let mut synced = false;
         let settings = api::fetch_clinic_settings().await.ok();
         if let Ok(me) = api::fetch_me().await {
@@ -331,7 +350,15 @@ fn populate_local_cache(profile: &Me) {
             }
         }
         if let Ok(prescriptions) = api::fetch_prescriptions("", "", "").await {
+            if desktop_local::get_meta(&mut conn, "session_token").ok().flatten() != session_token
+                || desktop_local::get_meta(&mut conn, "session_profile").ok().flatten() != session_profile {
+                return;
+            }
             for prescription in prescriptions {
+                if desktop_local::get_meta(&mut conn, "session_token").ok().flatten() != session_token
+                    || desktop_local::get_meta(&mut conn, "session_profile").ok().flatten() != session_profile {
+                    return;
+                }
                 let mut value = serde_json::json!({
                     "id": prescription.id,
                     "patient_id": prescription.patient_id,
@@ -360,12 +387,17 @@ fn populate_local_cache(profile: &Me) {
                 if prescription.status != "draft" {
                     value["synced_at"] = serde_json::json!("1970-01-01T00:00:00Z");
                 }
-                let pending =
-                    desktop_local::has_pending_outbox(&mut conn, &prescription.id).unwrap_or(false);
-                if !pending {
-                    let _ = desktop_local::clear_prescription_items(&mut conn, &prescription.id);
-                    let _ = desktop_local::cache_prescription(&mut conn, &value);
-                    if let Ok(detail) = api::fetch_prescription(&prescription.id).await {
+                if let Ok(detail) = api::fetch_prescription(&prescription.id).await {
+                    if desktop_local::get_meta(&mut conn, "session_token").ok().flatten() != session_token
+                        || desktop_local::get_meta(&mut conn, "session_profile").ok().flatten() != session_profile {
+                        return;
+                    }
+                    value["issued_snapshot"] = serde_json::to_value(&detail.issued_snapshot).unwrap_or(Value::Null);
+                    value["verification"] = serde_json::to_value(&detail.verification).unwrap_or(Value::Null);
+                    if !desktop_local::has_pending_outbox(&mut conn, &prescription.id).unwrap_or(true)
+                        && desktop_local::cache_prescription(&mut conn, &value).is_ok()
+                        && desktop_local::clear_prescription_items(&mut conn, &prescription.id).is_ok()
+                    {
                         for item in &detail.items {
                             let item_value = serde_json::json!({
                                 "id": item.id,
@@ -537,78 +569,101 @@ async fn replay_outbox_row(operation: &str, payload: &serde_json::Value) -> Resu
             .await?;
             Ok(())
         }
-        "create_prescription" => {
-            api::create_prescription(
-                &payload_text(payload, "patientId"),
-                &payload_text(payload, "templateVersionId"),
-                &payload_text(payload, "clientId"),
-                &payload_text(payload, "diagnosis"),
-                &payload_text(payload, "validity"),
-                &payload_text(payload, "recetarioType"),
-                &payload_number(payload, "validityDays").to_string(),
-                &payload_text(payload, "warningSigns"),
-                &payload_text(payload, "instructions"),
-            )
-            .await?;
-            Ok(())
-        }
-        "update_prescription" => {
-            api::update_prescription(
-                &payload_text(payload, "prescriptionId"),
-                &payload_text(payload, "diagnosis"),
-                &payload_text(payload, "validity"),
-                &payload_text(payload, "recetarioType"),
-                &payload_number(payload, "validityDays").to_string(),
-                &payload_text(payload, "warningSigns"),
-                &payload_text(payload, "instructions"),
-            )
-            .await?;
-            Ok(())
-        }
-        "upsert_prescription_item" => {
-            let form = api::PrescriptionItemForm {
-                id: Some(payload_text(payload, "itemId")),
-                med_name: payload_text(payload, "medName"),
-                dose: payload_text(payload, "dose"),
-                route: payload_text(payload, "route"),
-                frequency: payload_text(payload, "frequency"),
-                duration: payload_text(payload, "duration"),
-                quantity: payload_text(payload, "quantity"),
-                quantity_number: payload_text(payload, "quantityNumber"),
-                notes: payload_text(payload, "notes"),
-            };
-            api::upsert_prescription_item(&payload_text(payload, "prescriptionId"), &form).await?;
-            Ok(())
-        }
-        "sign_prescription" => {
-            api::reconcile_sign_prescription(
-                &payload_text(payload, "prescriptionId"),
-                payload_number(payload, "rxNumber"),
-                &payload_text(payload, "rxBlockId"),
-            )
-            .await?;
-            Ok(())
-        }
-        "void_prescription" => {
-            api::void_prescription(
-                &payload_text(payload, "prescriptionId"),
-                &payload_text(payload, "voidReason"),
-            )
-            .await?;
-            Ok(())
-        }
-        "supersede_prescription" => {
-            api::reconcile_supersede_prescription(
-                &payload_text(payload, "prescriptionId"),
-                &payload_text(payload, "clientId"),
-                &payload_text(payload, "newPrescriptionId"),
-                payload_number(payload, "rxNumber"),
-                &payload_text(payload, "rxBlockId"),
-            )
-            .await?;
-            Ok(())
-        }
         _ => Err(format!("Operación desconocida: {operation}")),
+    }
+}
+
+#[cfg(feature = "desktop")]
+async fn replay_prescription_outbox(operation: &str, payload: &Value) -> Result<(), http::RequestError> {
+    let id = payload_text(payload, "prescriptionId");
+    let path = format!("/api/prescriptions/{id}");
+    if matches!(operation, "sign_prescription" | "supersede_prescription")
+        && payload.get("issuedSnapshot").filter(|value| !value.is_null()).is_none()
+    {
+        return Err(http::RequestError::Response("La emisión pendiente no tiene una instantánea histórica fiable. Conserva el ejemplar impreso y resuelve esta operación sin reconstruirla con datos actuales.".to_owned()));
+    }
+    let fields = || serde_json::json!({
+        "diagnosis": payload_text(payload, "diagnosis"),
+        "validity": payload_text(payload, "validity"),
+        "recetarioType": payload_text(payload, "recetarioType"),
+        "validityDays": payload_number(payload, "validityDays").to_string().parse::<i32>().ok(),
+        "warningSigns": payload_text(payload, "warningSigns"),
+        "instructions": payload_text(payload, "instructions")
+    });
+    let value = match operation {
+        "create_prescription" => {
+            let mut body = fields();
+            body["patientId"] = payload_text(payload, "patientId").into();
+            body["templateVersionId"] = payload_text(payload, "templateVersionId").into();
+            body["clientId"] = payload_text(payload, "clientId").into();
+            http::post_json_typed("/api/prescriptions", body).await?
+        }
+        "update_prescription" => http::put_json_typed(&path, fields()).await?,
+        "upsert_prescription_item" => {
+            let body = serde_json::json!({
+                "itemId": payload_text(payload, "itemId"),
+                "medName": payload_text(payload, "medName"),
+                "dose": payload_text(payload, "dose"),
+                "route": payload_text(payload, "route"),
+                "frequency": payload_text(payload, "frequency"),
+                "duration": payload_text(payload, "duration"),
+                "quantity": payload_text(payload, "quantity"),
+                "quantityNumber": payload_text(payload, "quantityNumber").trim().parse::<i32>().ok(),
+                "notes": payload_text(payload, "notes")
+            });
+            let value = http::post_json_typed(&format!("{path}/items"), body).await?;
+            serde_json::from_value::<api::PrescriptionItem>(value)
+                .map_err(|_| http::RequestError::Response("No se pudo leer el medicamento.".to_owned()))?;
+            return Ok(());
+        }
+        "sign_prescription" => http::post_json_typed(&format!("{path}/sign"), serde_json::json!({
+            "acknowledgeWarnings": true,
+            "rxNumber": payload_number(payload, "rxNumber"),
+            "rxBlockId": payload_text(payload, "rxBlockId"),
+            "issuedSnapshot": payload.get("issuedSnapshot"),
+            "signedAt": payload.get("signedAt")
+        })).await?,
+        "void_prescription" => http::post_json_typed(&format!("{path}/void"), serde_json::json!({
+            "voidReason": payload_text(payload, "voidReason")
+        })).await?,
+        "supersede_prescription" => http::post_json_typed(&format!("{path}/supersede"), serde_json::json!({
+            "clientId": payload_text(payload, "clientId"),
+            "newPrescriptionId": payload_text(payload, "newPrescriptionId"),
+            "acknowledgeWarnings": true,
+            "rxNumber": payload_number(payload, "rxNumber"),
+            "rxBlockId": payload_text(payload, "rxBlockId"),
+            "issuedSnapshot": payload.get("issuedSnapshot"),
+            "signedAt": payload.get("signedAt")
+        })).await?,
+        _ => return Err(http::RequestError::Response(format!("Operación desconocida: {operation}"))),
+    };
+    if matches!(operation, "sign_prescription" | "supersede_prescription") {
+        let mut conn = desktop_local::open_local_db().map_err(http::RequestError::Response)?;
+        desktop_local::apply_issued_snapshot_reconciliation(&mut conn, payload, &value)
+            .map_err(http::RequestError::Response)?;
+    }
+    serde_json::from_value::<api::Prescription>(value)
+        .map_err(|_| http::RequestError::Response("No se pudo leer la receta.".to_owned()))?;
+    Ok(())
+}
+
+#[cfg(feature = "desktop")]
+fn finish_prescription_replay(
+    conn: &mut diesel::sqlite::SqliteConnection,
+    id: &str,
+    attempts: i64,
+    result: Result<(), http::RequestError>,
+) -> bool {
+    match result {
+        Ok(()) => { let _ = desktop_local::mark_outbox_synced(conn, id); false }
+        Err(http::RequestError::Network(error)) => {
+            let _ = desktop_local::mark_outbox_retry(conn, id, attempts, &error);
+            true
+        }
+        Err(http::RequestError::Response(error)) => {
+            let _ = desktop_local::mark_outbox_failed(conn, id, &error);
+            false
+        }
     }
 }
 
@@ -639,6 +694,28 @@ async fn drain_outbox() {
             .and_then(serde_json::Value::as_str)
             .and_then(|text| serde_json::from_str(text).ok())
             .unwrap_or(serde_json::Value::Null);
+        if operation.contains("prescription") {
+            let profile = desktop_local::get_meta(&mut conn, "session_profile").ok().flatten()
+                .and_then(|value| serde_json::from_str::<Value>(&value).ok());
+            let actor = profile.as_ref().and_then(|value| value.pointer("/profile/id")).and_then(Value::as_str);
+            if actor.is_none() || actor != payload.get("createdBy").and_then(Value::as_str) {
+                let _ = desktop_local::mark_outbox_failed(&mut conn, &id, "La operación pertenece a otra identidad.");
+                continue;
+            }
+        }
+        if operation == "create_prescription" {
+            if let Err(error) = desktop_local::authorize_create_replay(&mut conn, &payload) {
+                let _ = desktop_local::mark_outbox_failed(&mut conn, &id, &error);
+                continue;
+            }
+        }
+        if operation.contains("prescription") {
+            let result = replay_prescription_outbox(&operation, &payload).await;
+            if finish_prescription_replay(&mut conn, &id, attempts, result) {
+                return;
+            }
+            continue;
+        }
         match replay_outbox_row(&operation, &payload).await {
             Ok(()) => {
                 let _ = desktop_local::mark_outbox_synced(&mut conn, &id);
@@ -764,51 +841,24 @@ fn sign_prescription_offline(
     profile: &Me,
 ) -> Result<api::Prescription, String> {
     let mut conn = desktop_local::open_local_db()?;
-    let value = serde_json::json!({
-        "id": prescription.id,
-        "patient_id": prescription.patient_id,
-        "doctor_id": prescription.doctor_id,
-        "clinic_id": prescription.clinic_id,
-        "template_version_id": prescription.template_version_id,
-        "status": prescription.status,
-        "rx_number": prescription.rx_number,
-        "rx_block_id": prescription.rx_block_id,
-        "diagnosis": prescription.diagnosis,
-        "validity": prescription.validity,
-        "instructions": prescription.instructions,
-        "signed_at": prescription.signed_at,
-        "synced_at": Value::Null,
-        "voided_at": prescription.voided_at,
-        "void_reason": prescription.void_reason,
-        "client_id": prescription.client_id,
-        "supersedes_id": prescription.supersedes_id,
-        "created_at": prescription.created_at,
-        "updated_at": prescription.updated_at,
-        "created_by": prescription.created_by,
-    });
-    desktop_local::cache_prescription(&mut conn, &value)?;
     let doctor_id = profile
         .doctor
         .as_ref()
         .map(|doctor| doctor.id.clone())
-        .or_else(|| prescription.doctor_id.clone())
         .ok_or_else(|| "El perfil no tiene ficha de médico.".to_owned())?;
     let actor_id = profile.profile.id.clone();
     let device_id = crate::device::device_id();
-    let result = desktop_local::offline_sign(
+    desktop_local::offline_sign(
         &mut conn,
         &prescription.id,
         &device_id,
         &doctor_id,
         &actor_id,
     )?;
-    let mut signed = prescription.clone();
-    signed.status = "signed".to_owned();
-    signed.rx_number = Some(result.rx_number as i32);
-    signed.rx_block_id = Some(result.rx_block_id);
-    signed.doctor_id = Some(doctor_id);
-    signed.signed_at = Some(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
-    Ok(signed)
+    let mut found = desktop_local::get_prescription(&mut conn, &prescription.id)?
+        .ok_or("Receta no encontrada en la caché local.")?;
+    found["items"] = serde_json::json!(desktop_local::local_prescription_items(&mut conn, &prescription.id)?);
+    serde_json::from_value(found).map_err(|_| "No se pudo leer la receta firmada.".to_owned())
 }
 
 #[cfg(feature = "desktop")]
@@ -823,32 +873,6 @@ fn update_prescription_offline(
     instructions: &str,
 ) -> Result<api::Prescription, String> {
     let mut conn = desktop_local::open_local_db()?;
-    let value = serde_json::json!({
-        "id": prescription.id,
-        "patient_id": prescription.patient_id,
-        "doctor_id": prescription.doctor_id,
-        "clinic_id": prescription.clinic_id,
-        "template_version_id": prescription.template_version_id,
-        "status": prescription.status,
-        "rx_number": prescription.rx_number,
-        "rx_block_id": prescription.rx_block_id,
-        "diagnosis": prescription.diagnosis,
-        "validity": prescription.validity,
-        "recetario_type": prescription.recetario_type,
-        "validity_days": prescription.validity_days,
-        "warning_signs": prescription.warning_signs,
-        "instructions": prescription.instructions,
-        "signed_at": prescription.signed_at,
-        "synced_at": Value::Null,
-        "voided_at": prescription.voided_at,
-        "void_reason": prescription.void_reason,
-        "client_id": prescription.client_id,
-        "supersedes_id": prescription.supersedes_id,
-        "created_at": prescription.created_at,
-        "updated_at": prescription.updated_at,
-        "created_by": prescription.created_by,
-    });
-    desktop_local::cache_prescription(&mut conn, &value)?;
     desktop_local::update_local_prescription(
         &mut conn,
         &prescription.id,
@@ -912,32 +936,6 @@ fn upsert_prescription_item_offline(
     form: &api::PrescriptionItemForm,
 ) -> Result<(), String> {
     let mut conn = desktop_local::open_local_db()?;
-    let value = serde_json::json!({
-        "id": prescription.id,
-        "patient_id": prescription.patient_id,
-        "doctor_id": prescription.doctor_id,
-        "clinic_id": prescription.clinic_id,
-        "template_version_id": prescription.template_version_id,
-        "status": prescription.status,
-        "rx_number": prescription.rx_number,
-        "rx_block_id": prescription.rx_block_id,
-        "diagnosis": prescription.diagnosis,
-        "validity": prescription.validity,
-        "recetario_type": prescription.recetario_type,
-        "validity_days": prescription.validity_days,
-        "warning_signs": prescription.warning_signs,
-        "instructions": prescription.instructions,
-        "signed_at": prescription.signed_at,
-        "synced_at": Value::Null,
-        "voided_at": prescription.voided_at,
-        "void_reason": prescription.void_reason,
-        "client_id": prescription.client_id,
-        "supersedes_id": prescription.supersedes_id,
-        "created_at": prescription.created_at,
-        "updated_at": prescription.updated_at,
-        "created_by": prescription.created_by,
-    });
-    desktop_local::cache_prescription(&mut conn, &value)?;
     let quantity_number = form.quantity_number.trim().parse::<i32>().ok();
     desktop_local::upsert_local_prescription_item(
         &mut conn,
@@ -1149,29 +1147,6 @@ fn void_prescription_offline(
     reason: &str,
 ) -> Result<api::Prescription, String> {
     let mut conn = desktop_local::open_local_db()?;
-    let value = serde_json::json!({
-        "id": prescription.id,
-        "patient_id": prescription.patient_id,
-        "doctor_id": prescription.doctor_id,
-        "clinic_id": prescription.clinic_id,
-        "template_version_id": prescription.template_version_id,
-        "status": prescription.status,
-        "rx_number": prescription.rx_number,
-        "rx_block_id": prescription.rx_block_id,
-        "diagnosis": prescription.diagnosis,
-        "validity": prescription.validity,
-        "instructions": prescription.instructions,
-        "signed_at": prescription.signed_at,
-        "synced_at": Value::Null,
-        "voided_at": prescription.voided_at,
-        "void_reason": prescription.void_reason,
-        "client_id": prescription.client_id,
-        "supersedes_id": prescription.supersedes_id,
-        "created_at": prescription.created_at,
-        "updated_at": prescription.updated_at,
-        "created_by": prescription.created_by,
-    });
-    desktop_local::cache_prescription(&mut conn, &value)?;
     desktop_local::offline_void(&mut conn, &prescription.id, reason, &profile.profile.id)?;
     let mut voided = prescription.clone();
     voided.status = "voided".to_owned();
@@ -1208,34 +1183,10 @@ fn supersede_prescription_offline(
     profile: &Me,
 ) -> Result<api::Prescription, String> {
     let mut conn = desktop_local::open_local_db()?;
-    let value = serde_json::json!({
-        "id": prescription.id,
-        "patient_id": prescription.patient_id,
-        "doctor_id": prescription.doctor_id,
-        "clinic_id": prescription.clinic_id,
-        "template_version_id": prescription.template_version_id,
-        "status": prescription.status,
-        "rx_number": prescription.rx_number,
-        "rx_block_id": prescription.rx_block_id,
-        "diagnosis": prescription.diagnosis,
-        "validity": prescription.validity,
-        "instructions": prescription.instructions,
-        "signed_at": prescription.signed_at,
-        "synced_at": Value::Null,
-        "voided_at": prescription.voided_at,
-        "void_reason": prescription.void_reason,
-        "client_id": prescription.client_id,
-        "supersedes_id": prescription.supersedes_id,
-        "created_at": prescription.created_at,
-        "updated_at": prescription.updated_at,
-        "created_by": prescription.created_by,
-    });
-    desktop_local::cache_prescription(&mut conn, &value)?;
     let doctor_id = profile
         .doctor
         .as_ref()
         .map(|doctor| doctor.id.clone())
-        .or_else(|| prescription.doctor_id.clone())
         .ok_or_else(|| "El perfil no tiene ficha de médico.".to_owned())?;
     let actor_id = profile.profile.id.clone();
     let device_id = crate::device::device_id();
@@ -1246,17 +1197,10 @@ fn supersede_prescription_offline(
         &doctor_id,
         &actor_id,
     )?;
-    let mut corrected = prescription.clone();
-    corrected.id = result.id;
-    corrected.status = "signed".to_owned();
-    corrected.rx_number = Some(result.rx_number as i32);
-    corrected.rx_block_id = Some(result.rx_block_id);
-    corrected.doctor_id = Some(doctor_id);
-    corrected.client_id = corrected.id.clone();
-    corrected.supersedes_id = Some(prescription.id.clone());
-    corrected.signed_at =
-        Some(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
-    Ok(corrected)
+    let mut found = desktop_local::get_prescription(&mut conn, &result.id)?
+        .ok_or("Receta no encontrada en la caché local.")?;
+    found["items"] = serde_json::json!(desktop_local::local_prescription_items(&mut conn, &result.id)?);
+    serde_json::from_value(found).map_err(|_| "No se pudo leer la corrección firmada.".to_owned())
 }
 
 async fn supersede_prescription_dispatch(
@@ -1304,11 +1248,11 @@ fn App() -> Element {
                     Some(found) => {
                         let _ = api::register_current_device().await;
                         let live_profile = api::fetch_me().await.ok();
+                        #[cfg(feature = "desktop")]
+                        refresh_local_profile(&found, live_profile.as_ref());
                         if let Some(live_profile) = &live_profile {
                             populate_local_cache(live_profile);
                         }
-                        #[cfg(feature = "desktop")]
-                        refresh_local_profile(&found, live_profile.as_ref());
                         (Some(found), live_profile)
                     }
                     None => {
@@ -1955,10 +1899,10 @@ fn Dashboard() -> Element {
                     rx_message.set(String::new());
                 }
                 Err(error) => {
-                    rx_message.set(if error.is_empty() {
+                    rx_message.set(if error.message().is_empty() {
                         "No se pudieron cargar las recetas.".to_owned()
                     } else {
-                        error
+                        error.to_string()
                     });
                 }
             }
@@ -4047,9 +3991,9 @@ fn PatientDetail(id: String) -> Element {
                     history.set(found);
                     history_message.set(String::new());
                 }
-                Err(_error) => {
+                Err(error) => {
                     #[cfg(feature = "desktop")]
-                    if let Ok(mut conn) = desktop_local::open_local_db() {
+                    if let Ok(mut conn) = open_cache_for_network_error(&error).await {
                         if let Ok(found) = desktop_local::list_prescriptions(&mut conn, "") {
                             let mut mapped = Vec::new();
                             for value in found {
@@ -5641,20 +5585,37 @@ fn Prescriptions(status: Option<String>) -> Element {
                         rows.set(mapped);
                         let mut errors = Vec::new();
                         if let Ok(all) = desktop_local::outbox_rows(&mut conn) {
+                            let actor = desktop_local::get_meta(&mut conn, "session_profile").ok().flatten()
+                                .and_then(|value| serde_json::from_str::<Value>(&value).ok())
+                                .and_then(|value| value.pointer("/profile/id").and_then(Value::as_str).map(str::to_owned));
                             for value in all {
                                 if value.get("status").and_then(serde_json::Value::as_str)
                                     == Some("failed")
                                 {
-                                    let detail = value
-                                        .get("lastError")
-                                        .and_then(serde_json::Value::as_str)
-                                        .unwrap_or_default()
-                                        .to_owned();
                                     let operation = value
                                         .get("operation")
-                                        .and_then(serde_json::Value::as_str)
+                                        .and_then(Value::as_str)
                                         .unwrap_or_default()
                                         .to_owned();
+                                    let mut detail = value
+                                        .get("lastError")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or_default()
+                                        .to_owned();
+                                    if operation.contains("prescription") {
+                                        let payload = value.get("payloadJson").and_then(Value::as_str)
+                                            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                                            .unwrap_or(Value::Null);
+                                        if actor.as_deref().is_none() || actor.as_deref() != payload.get("createdBy").and_then(Value::as_str) {
+                                            continue;
+                                        }
+                                        let prescription_id = payload.get("prescriptionId").and_then(Value::as_str)
+                                            .or_else(|| value.get("entityId").and_then(Value::as_str))
+                                            .unwrap_or_default();
+                                        if desktop_local::get_prescription(&mut conn, prescription_id).ok().flatten().is_none() {
+                                            detail = "La operación de receta no pudo sincronizarse.".to_owned();
+                                        }
+                                    }
                                     errors.push((operation, detail));
                                 }
                             }
@@ -5672,13 +5633,13 @@ fn Prescriptions(status: Option<String>) -> Element {
                     message.set(String::new());
                 }
                 Err(error) => {
-                    message.set(if error.is_empty() {
+                    message.set(if error.message().is_empty() {
                         "No se pudieron cargar las recetas.".to_owned()
                     } else {
-                        error.clone()
+                        error.to_string()
                     });
                     #[cfg(feature = "desktop")]
-                    if let Ok(mut conn) = desktop_local::open_local_db() {
+                    if let Ok(mut conn) = open_cache_for_network_error(&error).await {
                         if let Ok(found) = desktop_local::list_prescriptions(&mut conn, "") {
                             let mut mapped = Vec::new();
                             for value in found {
@@ -6400,7 +6361,7 @@ fn reload_prescription(
             }
             Err(error) => {
                 #[cfg(feature = "desktop")]
-                if let Ok(mut conn) = desktop_local::open_local_db() {
+                if let Ok(mut conn) = open_cache_for_network_error(&error).await {
                     if let Ok(found) = desktop_local::list_prescriptions(&mut conn, "") {
                         for value in found {
                             if value.get("id").and_then(Value::as_str) != Some(id.as_str()) {
@@ -6469,7 +6430,7 @@ fn reload_prescription(
                     }
                 }
                 if prescription().is_none() {
-                    message.set(error);
+                    message.set(error.to_string());
                 }
             }
         }
@@ -6661,57 +6622,18 @@ fn offline_preview_variables(
     .collect()
 }
 
-#[component]
-fn PrescriptionPreview(id: String) -> Element {
-    let user = use_context::<Signal<Option<SessionUser>>>();
-    let actor = use_context::<Signal<Option<Me>>>();
-    let checked = use_context::<Signal<bool>>();
-    let mut sync = use_context::<Signal<SyncStatus>>();
-    let navigator = use_navigator();
-    let mut preview = use_signal(|| None::<api::PrescriptionPreview>);
-    let mut prescription = use_signal(|| None::<api::Prescription>);
-    let mut message = use_signal(String::new);
-    let mut signing = use_signal(|| false);
-    let mut needs_ack = use_signal(|| false);
-    let mut hint_text = use_signal(String::new);
-    let prescription_id = id.clone();
-
-    use_effect(move || {
-        if !checked() {
-            return;
-        }
-        if user().is_none() {
-            navigator.replace(Route::AuthPage {});
-            return;
-        }
-        let Some(current_profile) = actor() else {
-            return;
-        };
-        if !current_profile.can_read_prescriptions() {
-            return;
-        }
-        let load_id = prescription_id.clone();
-        spawn(async move {
-            if let Ok(found) = api::fetch_prescription(&load_id).await {
-                prescription.set(Some(found));
-            } else {
-                #[cfg(feature = "desktop")]
-                if let Ok(mut conn) = desktop_local::open_local_db() {
-                    if let Ok(Some(found)) = desktop_local::get_prescription(&mut conn, &load_id) {
-                        if let Ok(parsed) = serde_json::from_value(found) {
-                            prescription.set(Some(parsed));
-                        }
-                    }
-                }
-            }
-            match api::fetch_prescription_preview(&load_id).await {
-                Ok(found) => preview.set(Some(found)),
-                Err(error) => {
-                    #[cfg(feature = "desktop")]
-                    if let Ok(mut conn) = desktop_local::open_local_db() {
-                        if let Ok(Some(found)) =
-                            desktop_local::get_prescription(&mut conn, &load_id)
-                        {
+#[cfg(feature = "desktop")]
+fn build_local_preview(
+    mut conn: &mut diesel::sqlite::SqliteConnection,
+    load_id: &str,
+    current_profile: &Me,
+) -> Result<Option<api::PrescriptionPreview>, String> {
+    let Some(found) = desktop_local::get_prescription(&mut conn, load_id)? else {
+        return Ok(None);
+    };
+    if found.get("status").and_then(Value::as_str) != Some("draft") {
+        return desktop_local::issued_snapshot_preview(conn, &found).map(Some);
+    }
                             let status = found
                                 .get("status")
                                 .and_then(Value::as_str)
@@ -6824,7 +6746,7 @@ fn PrescriptionPreview(id: String) -> Element {
                                 &medications,
                             );
                             let local_preview = api::PrescriptionPreview {
-                                id: load_id.clone(),
+                                id: load_id.to_owned(),
                                 status,
                                 rx_number,
                                 verification_code: None,
@@ -6837,15 +6759,75 @@ fn PrescriptionPreview(id: String) -> Element {
                                 qr_data_url: None,
                                 image_sources: Vec::new(),
                             };
-                            preview.set(Some(local_preview));
-                            message.set(String::new());
+    Ok(Some(local_preview))
+}
+
+#[component]
+fn PrescriptionPreview(id: String) -> Element {
+    let user = use_context::<Signal<Option<SessionUser>>>();
+    let actor = use_context::<Signal<Option<Me>>>();
+    let checked = use_context::<Signal<bool>>();
+    let mut sync = use_context::<Signal<SyncStatus>>();
+    let navigator = use_navigator();
+    let mut preview = use_signal(|| None::<api::PrescriptionPreview>);
+    let mut prescription = use_signal(|| None::<api::Prescription>);
+    let mut message = use_signal(String::new);
+    let mut signing = use_signal(|| false);
+    let mut needs_ack = use_signal(|| false);
+    let mut hint_text = use_signal(String::new);
+    let prescription_id = id.clone();
+
+    use_effect(move || {
+        if !checked() {
+            return;
+        }
+        if user().is_none() {
+            navigator.replace(Route::AuthPage {});
+            return;
+        }
+        let Some(current_profile) = actor() else {
+            return;
+        };
+        if !current_profile.can_read_prescriptions() {
+            return;
+        }
+        let load_id = prescription_id.clone();
+        spawn(async move {
+            match api::fetch_prescription(&load_id).await {
+                Ok(found) => prescription.set(Some(found)),
+                Err(error) => {
+                #[cfg(feature = "desktop")]
+                if let Ok(mut conn) = open_cache_for_network_error(&error).await {
+                    if let Ok(Some(found)) = desktop_local::get_prescription(&mut conn, &load_id) {
+                        if let Ok(parsed) = serde_json::from_value(found) {
+                            prescription.set(Some(parsed));
+                        }
+                    }
+                }
+                }
+            }
+            match api::fetch_prescription_preview(&load_id).await {
+                Ok(found) => preview.set(Some(found)),
+                Err(error) => {
+                    #[cfg(feature = "desktop")]
+                    if let Ok(mut conn) = open_cache_for_network_error(&error).await {
+                        match build_local_preview(&mut conn, &load_id, &current_profile) {
+                            Ok(Some(local_preview)) => {
+                                preview.set(Some(local_preview));
+                                message.set(String::new());
+                            }
+                            Err(local_error) => {
+                                message.set(local_error);
+                                return;
+                            }
+                            Ok(None) => {}
                         }
                     }
                     if preview().is_none() {
-                        message.set(if error.is_empty() {
+                        message.set(if error.message().is_empty() {
                             "No se pudo cargar la vista previa.".to_owned()
                         } else {
-                            error
+                            error.to_string()
                         });
                     }
                 }
@@ -7049,7 +7031,7 @@ fn PrescriptionPreview(id: String) -> Element {
                             rel: Some("noopener noreferrer".to_owned()),
                             "Imprimir"
                         }
-                        if current.provisional {
+                        if cfg!(feature = "desktop") || current.provisional {
                             Button {
                                 variant: ButtonVariant::Secondary,
                                 onclick: move |_| {
@@ -7060,13 +7042,10 @@ fn PrescriptionPreview(id: String) -> Element {
                                     let inputs_issued = pdf_issued.clone();
                                     let inputs_margin = pdf_margin;
                                     let inputs_title = format!("Receta-{preview_id}.pdf");
+                                    let local_pdf_id = preview_id.clone();
                                     spawn(async move {
                                         #[cfg(any(feature = "server", feature = "desktop"))]
                                         {
-                                            #[cfg(feature = "desktop")]
-                                            let cached_assets =
-                                                desktop_local::cached_doc_assets(&inputs_doc);
-                                            #[cfg(not(feature = "desktop"))]
                                             let cached_assets: Vec<(String, Vec<u8>)> = Vec::new();
                                             let input = pdf::PdfInput {
                                                 doc_json: inputs_doc,
@@ -7079,7 +7058,13 @@ fn PrescriptionPreview(id: String) -> Element {
                                                 mode: pdf::RenderMode::Provisional,
                                                 title: inputs_title,
                                             };
-                                            match pdf::render(&input) {
+                                            #[cfg(feature = "desktop")]
+                                            let rendered = desktop_local::open_local_db().and_then(|mut conn| {
+                                                desktop_local::render_prescription_pdf(&mut conn, &local_pdf_id, &input)
+                                            });
+                                            #[cfg(not(feature = "desktop"))]
+                                            let rendered = pdf::render(&input);
+                                            match rendered {
                                                 Ok(bytes) => {
                                                     #[cfg(feature = "desktop")]
                                                     {
@@ -7087,7 +7072,7 @@ fn PrescriptionPreview(id: String) -> Element {
                                                             .join(&input.title);
                                                         match std::fs::write(&path, &bytes) {
                                                             Ok(()) => hint_text.set(format!(
-                                                                "PDF provisional guardado en {}.",
+                                                                "PDF guardado en {}.",
                                                                 path.display()
                                                             )),
                                                             Err(error) => message.set(format!(
@@ -7106,7 +7091,7 @@ fn PrescriptionPreview(id: String) -> Element {
                                         }
                                     });
                                 },
-                                "PDF provisional (local)"
+                                "PDF local"
                             }
                         }
                         {
@@ -7243,7 +7228,7 @@ fn PrescriptionDetail(id: String) -> Element {
                 }
                 Err(error) => {
                     #[cfg(feature = "desktop")]
-                    if let Ok(mut conn) = desktop_local::open_local_db() {
+                    if let Ok(mut conn) = open_cache_for_network_error(&error).await {
                         if let Ok(found) = desktop_local::list_prescriptions(&mut conn, "") {
                             for value in found {
                                 if value.get("id").and_then(Value::as_str) != Some(load_id.as_str())
@@ -7336,7 +7321,7 @@ fn PrescriptionDetail(id: String) -> Element {
                         }
                     }
                     if prescription().is_none() {
-                        message.set(error);
+                        message.set(error.to_string());
                     }
                 }
             }

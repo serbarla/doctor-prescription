@@ -88,6 +88,26 @@ fn error_message(value: &Value, status: reqwest::StatusCode) -> String {
     format!("La solicitud falló ({status})")
 }
 
+#[derive(Debug, Clone)]
+pub enum RequestError {
+    Network(String),
+    Response(String),
+}
+
+impl RequestError {
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Network(message) | Self::Response(message) => message,
+        }
+    }
+}
+
+impl std::fmt::Display for RequestError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn capture_session_cookie(response: &reqwest::Response) {
     for value in response
@@ -107,24 +127,32 @@ fn capture_session_cookie(response: &reqwest::Response) {
     }
 }
 
-async fn send(builder: reqwest::RequestBuilder) -> Result<Value, String> {
+pub(crate) async fn send_typed(builder: reqwest::RequestBuilder) -> Result<Value, RequestError> {
     let response = builder
         .send()
         .await
-        .map_err(|error| format!("No se pudo contactar con el servidor: {error}"))?;
+        .map_err(|error| RequestError::Network(format!("No se pudo contactar con el servidor: {error}")))?;
     #[cfg(not(target_arch = "wasm32"))]
     capture_session_cookie(&response);
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|error| format!("No se pudo leer la respuesta del servidor: {error}"))?;
+        .map_err(|error| RequestError::Response(format!("No se pudo leer la respuesta del servidor: {error}")))?;
     let value: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     if status.is_success() {
         Ok(value)
     } else {
-        Err(error_message(&value, status))
+        Err(RequestError::Response(error_message(&value, status)))
     }
+}
+
+async fn send(builder: reqwest::RequestBuilder) -> Result<Value, String> {
+    send_typed(builder).await.map_err(|error| error.to_string())
+}
+
+pub async fn get_json_typed(path: &str) -> Result<Value, RequestError> {
+    send_typed(with_credentials(client().get(url(path)))).await
 }
 
 pub async fn get_json(path: &str) -> Result<Value, String> {
@@ -161,6 +189,16 @@ pub async fn sse_response(path: &str) -> Result<reqwest::Response, String> {
 
 pub async fn post_json(path: &str, body: Value) -> Result<Value, String> {
     send(with_credentials(client().post(url(path)).json(&body))).await
+}
+
+#[cfg(feature = "desktop")]
+pub async fn post_json_typed(path: &str, body: Value) -> Result<Value, RequestError> {
+    send_typed(with_credentials(client().post(url(path)).json(&body))).await
+}
+
+#[cfg(feature = "desktop")]
+pub async fn put_json_typed(path: &str, body: Value) -> Result<Value, RequestError> {
+    send_typed(with_credentials(client().put(url(path)).json(&body))).await
 }
 
 pub async fn put_json(path: &str, body: Value) -> Result<Value, String> {

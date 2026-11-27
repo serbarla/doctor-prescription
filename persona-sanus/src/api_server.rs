@@ -250,6 +250,8 @@ pub struct PrescriptionSignRequest {
     rx_number: Option<i32>,
     #[serde(default, alias = "rx_block_id")]
     rx_block_id: Option<String>,
+    #[serde(default)]
+    issued_snapshot: Option<crate::api::IssuedSnapshot>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -278,6 +280,8 @@ pub struct PrescriptionSupersedeRequest {
     rx_block_id: Option<String>,
     #[serde(default, alias = "new_prescription_id")]
     new_prescription_id: Option<String>,
+    #[serde(default)]
+    issued_snapshot: Option<crate::api::IssuedSnapshot>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -341,6 +345,10 @@ fn patient_json(patient: &db::Patient) -> Value {
 }
 
 fn prescription_json(prescription: &db::Prescription, patient_name: &str) -> Value {
+    let issued_snapshot = prescription.issued_snapshot.as_deref()
+        .and_then(|value| serde_json::from_str::<crate::api::IssuedSnapshot>(value).ok())
+        .filter(|snapshot| snapshot.validate_structure().is_ok());
+    let availability = if prescription.status == "draft" { "draft" } else if issued_snapshot.is_some() { "available" } else { "unavailable" };
     json!({
         "id": prescription.id,
         "patientId": prescription.patient_id,
@@ -365,6 +373,8 @@ fn prescription_json(prescription: &db::Prescription, patient_name: &str) -> Val
         "createdAt": prescription.created_at,
         "updatedAt": prescription.updated_at,
         "createdBy": prescription.created_by,
+        "issuedSnapshot": issued_snapshot,
+        "historyAvailability": availability,
     })
 }
 
@@ -916,6 +926,7 @@ pub async fn sign_prescription(
             acknowledge_warnings: request.acknowledge_warnings,
             rx_number: request.rx_number,
             rx_block_id: request.rx_block_id,
+            issued_snapshot: request.issued_snapshot,
         },
     )
     .await?;
@@ -953,6 +964,7 @@ pub async fn supersede_prescription(
             rx_number: request.rx_number,
             rx_block_id: request.rx_block_id,
             new_prescription_id: request.new_prescription_id,
+            issued_snapshot: request.issued_snapshot,
         },
     )
     .await?;

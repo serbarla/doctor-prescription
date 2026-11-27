@@ -7,7 +7,7 @@
 | Route | `/prescriptions/:id` — authenticated shell; opaque `id` only, no query params; signed out redirects to `/login` (`Route::AuthPage {}`). Read: Doctor (own), Nursing (draft), Secretary (read/reprint), Administrator (read-only). The signed transition supersedes into a new row and navigates to its `/prescriptions/:id`; A4 preview is `/prescriptions/:id/preview`; back is `/prescriptions` |
 | Layout | Inside `#[layout(Navbar)]` (`main.rs:51`; never closed, so `:92` wears the shell bar — see `Header.md`). `PageShell id="prescriptions-page"` renders `div.ui-page > div.ui-container.ui-stack`; Paper with hairline separators throughout. No band or full-bleed exception; Cream only in the RX strip, empty state, and void panel |
 | Locale | `es-EC` on every string; `receta`, `cédula`; dates `DD-MM-AAAA`; 24-hour clock |
-| Status | ✅ Spec complete (sections 1–7). Route status: ✅ — sitemap §1.2: “Forms and inputs only over the A4 template (plain-text inputs/textareas; no rich text — D-21), online and offline. `draft`: editable. `signed`: locked, read-only with *Download PDF*, *Print*, *Share*, *Void* (reason required), *Supersede* (new version referencing previous). Per-medication *Explain with LLM* (FR-012, external — §3 below).” Shipped: auth-gated detail, block strip, draft and item forms, sign/acknowledge, supersede/void, read grid, external LLM link, desktop cache and mutation fallbacks, step 15 primitive adoption, and the `allocating` signal (`allocating()` passed to `RxBlockIndicator`). PDF, print, and share stay on the preview route. Remaining delta (§4.2 shipped divergence): the detail read is not owner-scoped server-side; owned by the service layer, not this screen |
+| Status | ✅ Route implemented: role-scoped detail, draft editing, signing, and authorized transitions. PDF, print, and share stay on the preview route. |
 
 ## 1. Purpose
 
@@ -49,9 +49,9 @@ Regions 3–7 are conditional. Region 2 renders only when the block signal holds
 |---|---|---|---|
 | No session or no profile | `Redirigiendo...`, then `/login`; no clinical content | same | same |
 | Doctor, owner | Fields and items editable; Secondary `Guardar borrador`; Primary `Firmar receta`; no transition | Read-only `DetailGrid`; Secondary `Reemplazar (corrección)` and Danger `Anular` | Read-only; no transition |
-| Doctor, non-owner | Fields and items editable; Secondary `Guardar borrador`; no sign | Read-only; preview only; no transition | Read-only; preview only |
+| Doctor, non-owner | No access to another doctor's assigned draft; unassigned drafts are editable and signable | No access | No access |
 | Nursing | Fields and items editable; `Guardar borrador` is the only Primary; no sign | Read-only; preview only; cannot sign | Read-only; preview only |
-| Secretary | Read-only; A4 preview for reprint; no save/sign/transition | same | same |
+| Secretary | No access | Read-only; A4 preview for reprint | Read-only; A4 preview for reprint |
 | Administrator | Read-only clinic history; no save/sign/transition | same | same |
 
 Role is `clinic_members.role` from the authenticated server session (PRD D-03). The page reads the `Me` context and never decides authorization itself: a capability gate can only omit a control, and the server rejects an out-of-scope request.
@@ -72,7 +72,7 @@ Role is `clinic_members.role` from the authenticated server session (PRD D-03). 
 |---|---|---|
 | Web | A load error is final; no local cache. Item writes, reorder, and delete require the server | Copy, role gates, status vocabulary, one-primary rule |
 | Desktop, online | Server path; a successful block allocation is also cached (`cache_rx_block`, `set_meta("active_rx_block")`) | Controls and state meaning |
-| Desktop, offline load | `fetch_prescription` failure reads the matching local row and `local_prescription_items`; no hit keeps the error surface | Route id, header composition, no-PHI rules |
+| Desktop, offline load | A network failure may read the matching identity-authorized local row and items; a server refusal cannot trigger the fallback | Route id, header composition, no-PHI rules |
 | Desktop, offline draft save | `update_prescription` failure uses `update_prescription_offline`; cached row updated, outbox queued | State stays `draft`; no server-copy claim |
 | Desktop, offline item save | `upsert_prescription_item` failure uses its offline branch; cached row re-read locally | Item id/position are the cache’s |
 | Desktop, offline reorder/delete | No local fallback and no outbox operation: the API error is shown and the local order/row stays | Controls remain visible; failure is never silent |
@@ -213,7 +213,7 @@ The draft is not auto-saved. The save action writes the three text fields; each 
 - No signature or stamp image, upload, or signature pad exists here; the doctor signs printed paper (D-06).
 - A void requires a non-empty trimmed reason. The reason travels in the request body, never the URL; the server records the audit trail. This page calls no audit endpoint and invents no `superseded_by`.
 - Nursing cannot sign or publish; Secretary cannot edit; the Administrator never signs or edits clinical content and reads history read-only (sitemap §2–§3; PRD §3, D-18).
-- A non-owner doctor can edit a draft in the shipped role gate (`can_edit = draft && can_create_prescriptions()`) and the shipped service allows the same; only signing and signed transitions require `doctor_id` to match. This is broader than the sitemap's “Doctor (own)” phrasing and is recorded as a shipped divergence in §7. A doctor never sees sign/transition on a draft that is not theirs.
+- Doctors cannot read or edit another doctor's assigned prescription. An unassigned nursing draft is available to clinic doctors for review and signing.
 - PHI stays out of URLs: only the opaque id in the path. The preview target reuses that id; the LLM tab gets `med_name` only, only on an explicit click, and the app never fetches an LLM itself (FR-012).
 - Desktop cache does not hide loss. A cache hit replaces only a failed load; mutation errors remain `ErrorText`; pending/failed counts stay in the shell; an offline-signed PDF is provisional with no active QR or final number until sync (FR-040–FR-043).
 - No billing/price/trial/plan/`sync_locked` copy (D-04); no rich text or `contenteditable` (D-21); no new endpoint, table, column, role, permission, or field.
@@ -225,7 +225,7 @@ The draft is not auto-saved. The save action writes the three text fields; each 
 |---|---|
 | Session check / signed out / no role | `Cargando...` until `checked`; then `Redirigiendo...` and `/login` for no user or no profile; no clinical paint |
 | Load in flight / error / cache hit | `Cargando...`; error → `ErrorText` + `Volver a recetas`; desktop error → matching cached row and items replace the error, while the shell still shows offline or pending |
-| Draft, editable | Edit card, item rows, Secondary add; save labelled; the owner doctor also gets Primary sign, a non-owner doctor gets no sign and no transition row |
+| Draft, editable | Edit card, item rows, Secondary add; the assigned doctor or a doctor reviewing an unassigned draft can sign |
 | Draft, nursing | Same edit surface; save is the only Primary; no sign and no transition row |
 | Signed | Static `DetailGrid`, code and state when present; owner doctor gets replace and void; all others get neither |
 | Superseded / voided | Static read; `Reemplazada` / `Anulada`; no transition; voided also shows the reason |
@@ -326,7 +326,7 @@ Shipped state (present tense):
 - Medicamentos: `SectionCard` `Medicamentos` with `EmptyState` `Sin medicamentos.`; per item a card + `FormGrid` (`Medicamento`, `Dosis`, `Vía`, `Frecuencia`, `Duración`, `Cantidad`, `Notas`) and `ActionRow` (Secondary save/up/down, Danger delete, boundary-disabled), plus Secondary `Agregar medicamento`; `LlmExplainLink` renders only when `llm_explain_url` returns a URL, with the §3.4 disclaimer.
 - Void confirmation: inline `ConfirmPanel` (`persona-sanus/src/ui/feedback.rs:122-155`) with message `La receta quedará anulada.`, confirm `Confirmar anulación`, cancel `Cancelar`, and `busy` bound to the trimmed-empty reason or `voiding` (`main.rs:7561`) — the required-reason rule is disabled-confirm, never a silent dead control. Success yields `Anulada` with the reason; failure keeps the panel and renders `message`.
 
-Recorded as intended: §2 row 52 (`Doctor, non-owner | Fields and items editable`) makes draft editing by non-owner doctors the specified behavior; the sitemap's "Doctor (own)" constrains signing and signed transitions, which stay owner-gated. The detail read stays clinic-wide (`service::get_prescription`), matching that matrix.
+Prescription access follows the role, identity, clinic, and lifecycle policy in `context/architecture.md` §6.
 - Verify, from the repo root:
   - `python3 .blocks/markdown-table-check.py --path context/screens/done/PrescriptionDetail.md --strict`
   - `cd persona-sanus && cargo check`

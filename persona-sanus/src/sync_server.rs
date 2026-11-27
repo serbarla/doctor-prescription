@@ -23,9 +23,9 @@ pub struct SyncQuery {
 fn sync_event_json(event: &db::SyncEvent) -> serde_json::Value {
     json!({
         "cursor": event.cursor,
-        "action": event.action,
-        "entity": event.entity,
-        "entityId": event.entity_id,
+        "action": "change",
+        "entity": "sync",
+        "entityId": "",
         "at": event.at,
     })
 }

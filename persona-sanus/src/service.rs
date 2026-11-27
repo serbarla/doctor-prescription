@@ -2292,6 +2292,7 @@ pub struct PrescriptionSignInput {
     pub acknowledge_warnings: bool,
     pub rx_number: Option<i32>,
     pub rx_block_id: Option<String>,
+    pub issued_snapshot: Option<crate::api::IssuedSnapshot>,
 }
 
 pub struct PrescriptionSupersedeInput {
@@ -2303,6 +2304,7 @@ pub struct PrescriptionSupersedeInput {
     pub rx_number: Option<i32>,
     pub rx_block_id: Option<String>,
     pub new_prescription_id: Option<String>,
+    pub issued_snapshot: Option<crate::api::IssuedSnapshot>,
 }
 
 pub struct PrescriptionDetail {
@@ -2368,8 +2370,30 @@ fn validate_quantity_number(value: Option<i32>) -> Result<Option<i32>, AuthError
     }
 }
 
-fn prescription_edit_allowed(role: Option<Role>, prescription: &db::Prescription) -> bool {
-    prescription.status == "draft" && matches!(role, Some(Role::Doctor | Role::Nursing))
+fn prescription_read_allowed(role: Option<Role>, doctor_id: Option<&str>, prescription: &db::Prescription) -> bool {
+    match role {
+        Some(Role::Doctor) => doctor_id.is_some_and(|id| {
+            prescription.doctor_id.as_deref() == Some(id)
+                || (prescription.doctor_id.is_none() && prescription.status == "draft")
+        }),
+        Some(Role::Nursing | Role::Administrator) => true,
+        Some(Role::Secretary) => matches!(prescription.status.as_str(), "signed" | "voided" | "superseded"),
+        None => false,
+    }
+}
+
+fn require_prescription_read(role: Option<Role>, doctor_id: Option<&str>, prescription: &db::Prescription) -> Result<(), AuthError> {
+    if prescription_read_allowed(role, doctor_id, prescription) {
+        Ok(())
+    } else {
+        Err(AuthError::NotFound("Receta no encontrada.".to_owned()))
+    }
+}
+
+fn prescription_edit_allowed(role: Option<Role>, doctor_id: Option<&str>, prescription: &db::Prescription) -> bool {
+    prescription.status == "draft"
+        && matches!(role, Some(Role::Doctor | Role::Nursing))
+        && prescription_read_allowed(role, doctor_id, prescription)
 }
 
 fn prescription_sign_allowed(
@@ -2573,7 +2597,7 @@ fn reconcile_block_number(
 ) -> Result<db::RxBlock, AuthError> {
     let block = db::find_rx_block_by_id(connection, block_id)?
         .ok_or_else(|| AuthError::NotFound("Bloque no encontrado.".to_owned()))?;
-    if block.device_id != device_id || block.clinic_id != clinic_id {
+    if block.device_id != device_id || block.clinic_id != clinic_id || block.status == "revoked" {
         return Err(AuthError::BadRequest(
             "El bloque de números no pertenece a este dispositivo.".to_owned(),
         ));
@@ -2583,7 +2607,7 @@ fn reconcile_block_number(
             "El número está fuera del bloque asignado.".to_owned(),
         ));
     }
-    if db::find_prescription_by_rx_number(connection, number)?.is_some() {
+    if db::find_prescription_by_rx_number(connection, clinic_id, number)?.is_some() {
         return Err(AuthError::Conflict(
             "El número ya está asignado a otra receta.".to_owned(),
         ));
@@ -2732,6 +2756,10 @@ pub async fn create_prescription(
     let warning_signs = clean_rx_text(input.warning_signs, 2000);
     let instructions = clean_rx_text(input.instructions, 8000);
     let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
+    if role == Role::Doctor && doctor_id.is_none() {
+        return Err(AuthError::Forbidden("El perfil no tiene ficha de médico.".to_owned()));
+    }
+    let doctor_id = if role == Role::Doctor { doctor_id } else { None };
     let actor_id = actor.profile.id.clone();
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
@@ -2739,6 +2767,7 @@ pub async fn create_prescription(
             if let Some(existing) =
                 db::find_prescription_by_client_id(connection, &clinic_id, &client_id)?
             {
+                require_prescription_read(Some(role), doctor_id.as_deref(), &existing)?;
                 return Ok(existing);
             }
             let patient = db::find_patient_by_id(connection, &clinic_id, &patient_id)?
@@ -2839,6 +2868,7 @@ pub async fn update_prescription(
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
     let role = actor.role();
+    let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     let diagnosis = clean_rx_text(input.diagnosis, 2000);
     let validity = clean_rx_text(input.validity, 200);
     let recetario_type = validate_recetario_type(input.recetario_type)?;
@@ -2851,7 +2881,8 @@ pub async fn update_prescription(
             let prescription =
                 db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                     .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
-            if !prescription_edit_allowed(role, &prescription) {
+            require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
+            if !prescription_edit_allowed(role, doctor_id.as_deref(), &prescription) {
                 return Err(AuthError::Forbidden(
                     "La receta no se puede editar.".to_owned(),
                 ));
@@ -2893,6 +2924,7 @@ pub async fn upsert_prescription_item(
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
     let role = actor.role();
+    let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     let med_name = input.med_name.trim().to_owned();
     if med_name.is_empty() {
         return Err(AuthError::BadRequest(
@@ -2921,7 +2953,8 @@ pub async fn upsert_prescription_item(
             let prescription =
                 db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                     .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
-            if !prescription_edit_allowed(role, &prescription) {
+            require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
+            if !prescription_edit_allowed(role, doctor_id.as_deref(), &prescription) {
                 return Err(AuthError::Forbidden(
                     "La receta no se puede editar.".to_owned(),
                 ));
@@ -3026,13 +3059,15 @@ pub async fn delete_prescription_item(
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
     let role = actor.role();
+    let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             let prescription =
                 db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                     .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
-            if !prescription_edit_allowed(role, &prescription) {
+            require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
+            if !prescription_edit_allowed(role, doctor_id.as_deref(), &prescription) {
                 return Err(AuthError::Forbidden(
                     "La receta no se puede editar.".to_owned(),
                 ));
@@ -3061,13 +3096,15 @@ pub async fn reorder_prescription_items(
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
     let role = actor.role();
+    let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             let prescription =
                 db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                     .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
-            if !prescription_edit_allowed(role, &prescription) {
+            require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
+            if !prescription_edit_allowed(role, doctor_id.as_deref(), &prescription) {
                 return Err(AuthError::Forbidden(
                     "La receta no se puede editar.".to_owned(),
                 ));
@@ -3126,10 +3163,13 @@ pub async fn get_prescription(
         .ok_or_else(|| AuthError::Forbidden("Se necesita un rol en la clínica.".to_owned()))?;
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
+    let role = actor.role();
+    let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     auth_server::with_conn(pool, move |connection| {
         let prescription =
             db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                 .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
+        require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
         let items = db::list_prescription_items(connection, &prescription.id)?;
         let verification =
             db::find_verification_code_by_prescription(connection, &prescription.id)?;
@@ -3187,15 +3227,12 @@ pub struct PrescriptionDocument {
     pub warning_signs: Option<String>,
     pub instructions: Option<String>,
     pub issued_at: String,
+    pub issued_snapshot: Option<crate::api::IssuedSnapshot>,
 }
 
 impl PrescriptionDocument {
     pub fn file_date(&self) -> String {
         display_date(&self.issued_at)
-    }
-
-    pub fn issued_display(&self) -> String {
-        display_datetime(&self.issued_at)
     }
 
     pub fn patient_age(&self) -> Option<i32> {
@@ -3221,6 +3258,9 @@ impl PrescriptionDocument {
     }
 
     pub fn variables(&self) -> Vec<(String, String)> {
+        if let Some(snapshot) = &self.issued_snapshot {
+            return snapshot.variables.clone();
+        }
         let mut values = vec![
             ("patient.name".to_owned(), self.patient_name.clone()),
             (
@@ -3349,6 +3389,9 @@ impl PrescriptionDocument {
     }
 
     pub fn medications(&self) -> Vec<crate::forms::MedicationBlock> {
+        if let Some(snapshot) = &self.issued_snapshot {
+            return snapshot.medications.clone();
+        }
         self.items
             .iter()
             .map(|item| crate::forms::MedicationBlock {
@@ -3376,17 +3419,6 @@ fn display_date(value: &str) -> String {
                 .with_timezone(&ecuador_offset())
                 .date_naive()
                 .format("%d-%m-%Y")
-                .to_string()
-        })
-        .unwrap_or_else(|_| value.to_owned())
-}
-
-fn display_datetime(value: &str) -> String {
-    chrono::DateTime::parse_from_rfc3339(value)
-        .map(|moment| {
-            moment
-                .with_timezone(&ecuador_offset())
-                .format("%d-%m-%Y %H:%M")
                 .to_string()
         })
         .unwrap_or_else(|_| value.to_owned())
@@ -3555,15 +3587,38 @@ pub async fn prescription_document(
     let clinic_id = actor.clinic_id()?.to_owned();
     let actor_id = actor.profile.id.clone();
     let actor_name = actor.profile.display_name.clone();
+    let role = actor.role();
+    let doctor_id = actor.doctor.as_ref().map(|doctor| doctor.id.clone());
     auth_server::with_conn(pool, move |connection| {
         let prescription =
             db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                 .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
+        require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
         if prescription.status == "draft" && !allow_draft {
             return Err(AuthError::Unprocessable(
                 "La receta todavía no está firmada.".to_owned(),
             ));
         }
+        let document = if prescription.status == "draft" {
+            live_document_locked(connection, prescription, clinic_id, actor_name)?
+        } else {
+            let snapshot = read_issued_snapshot(&prescription)?;
+            frozen_document(&prescription, snapshot,
+                db::find_verification_code_by_prescription(connection, &prescription.id)?.map(|code| code.code))
+        };
+        record_audit(connection, Some(&actor_id), "sensitive_read", "prescription",
+            &document.prescription_id, Some(json!({ "scope": "pdf" })), &auth_server::now())?;
+        Ok(document)
+    })
+    .await
+}
+
+fn live_document_locked(
+    connection: &mut SqliteConnection,
+    prescription: db::Prescription,
+    clinic_id: String,
+    actor_name: String,
+) -> Result<PrescriptionDocument, AuthError> {
         let version_id = prescription.template_version_id.clone().ok_or_else(|| {
             AuthError::Unprocessable("La receta no tiene una versión fijada.".to_owned())
         })?;
@@ -3590,15 +3645,6 @@ pub async fn prescription_document(
             .signed_at
             .clone()
             .unwrap_or_else(|| prescription.created_at.clone());
-        record_audit(
-            connection,
-            Some(&actor_id),
-            "sensitive_read",
-            "prescription",
-            &prescription.id,
-            Some(json!({ "scope": "pdf" })),
-            &auth_server::now(),
-        )?;
         let doctor_name = doctor_profile
             .map(|profile| profile.display_name)
             .unwrap_or(actor_name);
@@ -3635,9 +3681,218 @@ pub async fn prescription_document(
             warning_signs: prescription.warning_signs,
             instructions: prescription.instructions,
             issued_at,
+            issued_snapshot: None,
         })
-    })
-    .await
+}
+
+fn read_issued_snapshot(prescription: &db::Prescription) -> Result<crate::api::IssuedSnapshot, AuthError> {
+    let raw = prescription.issued_snapshot.as_deref().ok_or_else(|| AuthError::Unprocessable(
+        "El documento original no está disponible: esta receta se emitió sin historial conservado. Consulte el ejemplar original; los datos de la receta y su verificación siguen disponibles.".to_owned()))?;
+    let snapshot: crate::api::IssuedSnapshot = serde_json::from_str(raw).map_err(|_| AuthError::Unprocessable(
+        "El historial del documento no se puede leer. Contacte al administrador y conserve el ejemplar original.".to_owned()))?;
+    snapshot.validate_structure().map_err(AuthError::Unprocessable)?;
+    if snapshot.prescription_id != prescription.id || snapshot.clinic_id != prescription.clinic_id
+        || snapshot.patient_id != prescription.patient_id || snapshot.client_id != prescription.client_id
+        || Some(snapshot.doctor_id.as_str()) != prescription.doctor_id.as_deref()
+        || Some(snapshot.rx_number) != prescription.rx_number
+        || Some(snapshot.rx_block_id.as_str()) != prescription.rx_block_id.as_deref()
+        || Some(snapshot.issued_at.as_str()) != prescription.signed_at.as_deref()
+    {
+        return Err(AuthError::Unprocessable("El documento conservado no corresponde a esta receta. Contacte al administrador.".to_owned()));
+    }
+    Ok(snapshot)
+}
+
+fn frozen_document(
+    prescription: &db::Prescription,
+    snapshot: crate::api::IssuedSnapshot,
+    verification_code: Option<String>,
+) -> PrescriptionDocument {
+    let value = |key: &str| snapshot.variables.iter().find(|(name, _)| name == key).map(|(_, value)| value.clone());
+    PrescriptionDocument {
+        prescription_id: prescription.id.clone(),
+        clinic_id: prescription.clinic_id.clone(),
+        status: prescription.status.clone(),
+        rx_number: Some(snapshot.rx_number),
+        verification_code,
+        doc_json: snapshot.doc_json.clone(),
+        margin_mm: crate::forms::template_theme_margin(snapshot.theme.as_deref()),
+        asset_ids: snapshot.assets.iter().map(|asset| asset.id.clone()).collect(),
+        items: Vec::new(),
+        patient_name: value("patient.name").unwrap_or_default(),
+        patient_national_id: value("patient.national_id"),
+        patient_birth_date: snapshot.patient_birth_date.clone(),
+        patient_hcl: value("patient.hcl"),
+        patient_allergies: value("patient.allergies"),
+        patient_sex: value("patient.sex"),
+        doctor_name: value("doctor.name").unwrap_or_default(),
+        doctor_specialty: value("doctor.specialty"),
+        doctor_national_id: value("doctor.national_id"),
+        doctor_license_no: value("doctor.license_no"),
+        doctor_phone: None,
+        doctor_email: None,
+        clinic_name: value("clinic.name").unwrap_or_default(),
+        clinic_address: value("clinic.address"),
+        clinic_phone: value("clinic.phone"),
+        diagnosis: value("prescription.diagnosis"),
+        recetario_type: prescription.recetario_type.clone(),
+        validity_days: prescription.validity_days,
+        warning_signs: value("prescription.warning_signs"),
+        instructions: value("prescription.instructions"),
+        issued_at: snapshot.issued_at.clone(),
+        issued_snapshot: Some(snapshot),
+    }
+}
+
+fn snapshot_assets_locked(
+    connection: &mut SqliteConnection,
+    clinic_id: &str,
+    version_id: &str,
+) -> Result<Vec<crate::api::IssuedSnapshotAsset>, AuthError> {
+    let mut ids = db::list_template_version_asset_ids(connection, version_id)?;
+    ids.sort();
+    ids.into_iter().map(|id| {
+        let asset = db::find_asset_by_id(connection, &id)?
+            .filter(|asset| asset.clinic_id == clinic_id && asset.status == "ready" && asset.deleted_at.is_none())
+            .ok_or_else(|| AuthError::Unprocessable("Falta una imagen fijada de la receta; vuelva a descargarla antes de firmar.".to_owned()))?;
+        Ok(crate::api::IssuedSnapshotAsset { id, sha256: asset.sha256 })
+    }).collect()
+}
+
+fn capture_issued_snapshot(
+    connection: &mut SqliteConnection,
+    prescription: &db::Prescription,
+    actor_id: &str,
+    device_id: &str,
+) -> Result<crate::api::IssuedSnapshot, AuthError> {
+    let version_id = prescription.template_version_id.as_deref().ok_or_else(|| AuthError::Unprocessable("La receta no tiene plantilla.".to_owned()))?;
+    let version = template_version_for_prescription(connection, &prescription.clinic_id, version_id)?;
+    let actor_name = db::find_profile_by_id(connection, actor_id)?.ok_or(AuthError::Internal)?.display_name;
+    let document = live_document_locked(connection, prescription.clone(), prescription.clinic_id.clone(), actor_name)?;
+    let snapshot = crate::api::IssuedSnapshot {
+        version: 1,
+        prescription_id: prescription.id.clone(),
+        client_id: prescription.client_id.clone(),
+        clinic_id: prescription.clinic_id.clone(),
+        patient_id: prescription.patient_id.clone(),
+        patient_birth_date: document.patient_birth_date.clone(),
+        doctor_id: prescription.doctor_id.clone().ok_or(AuthError::Internal)?,
+        actor_id: actor_id.to_owned(),
+        device_id: device_id.to_owned(),
+        template_version_id: version_id.to_owned(),
+        rx_block_id: prescription.rx_block_id.clone().ok_or(AuthError::Internal)?,
+        rx_number: prescription.rx_number.ok_or(AuthError::Internal)?,
+        issued_at: prescription.signed_at.clone().ok_or(AuthError::Internal)?,
+        doc_sha256: auth_server::hash_token(&version.doc_json),
+        theme_sha256: auth_server::hash_token(version.theme.as_deref().unwrap_or("")),
+        doc_json: version.doc_json,
+        theme: version.theme,
+        assets: snapshot_assets_locked(connection, &prescription.clinic_id, version_id)?,
+        variables: document.variables(),
+        medications: document.medications(),
+    };
+    snapshot.validate_structure().map_err(AuthError::Unprocessable)?;
+    Ok(snapshot)
+}
+
+fn validate_issued_snapshot(
+    connection: &mut SqliteConnection,
+    prescription: &db::Prescription,
+    snapshot: &crate::api::IssuedSnapshot,
+    actor_id: &str,
+    doctor_id: &str,
+    device_id: &str,
+    number: i32,
+    block_id: &str,
+) -> Result<(), AuthError> {
+    let invalid = || AuthError::Conflict("El documento emitido no coincide con la receta o sus datos fijados. Conserve la operación pendiente y contacte al administrador.".to_owned());
+    snapshot.validate_structure().map_err(|_| invalid())?;
+    if snapshot.prescription_id != prescription.id || snapshot.client_id != prescription.client_id
+        || snapshot.clinic_id != prescription.clinic_id || snapshot.patient_id != prescription.patient_id
+        || snapshot.actor_id != actor_id || snapshot.doctor_id != doctor_id || snapshot.device_id != device_id
+        || Some(snapshot.template_version_id.as_str()) != prescription.template_version_id.as_deref()
+        || snapshot.rx_number != number || snapshot.rx_block_id != block_id
+    { return Err(invalid()); }
+    let device = db::find_device_by_id(connection, device_id)?.ok_or_else(invalid)?;
+    if device.profile_id != actor_id || device.revoked_at.is_some() { return Err(invalid()); }
+    let version = template_version_for_prescription(connection, &prescription.clinic_id, &snapshot.template_version_id)?;
+    if snapshot.doc_json != version.doc_json || snapshot.theme != version.theme
+        || snapshot.assets != snapshot_assets_locked(connection, &prescription.clinic_id, &version.id)?
+    { return Err(invalid()); }
+    let value = |key: &str| snapshot.variables.iter().find(|(name, _)| name == key).map(|(_, value)| value.as_str()).unwrap_or("");
+    let clinical = [
+        ("prescription.recetario_type", prescription.recetario_type.to_uppercase()),
+        ("prescription.validity", prescription.validity_days.map(|days| format!("{days} DIA{}", if days == 1 { "" } else { "S" })).unwrap_or_else(|| "—".to_owned())),
+        ("prescription.diagnosis", prescription.diagnosis.clone().unwrap_or_else(|| "—".to_owned())),
+        ("prescription.warning_signs", prescription.warning_signs.clone().unwrap_or_else(|| "—".to_owned())),
+        ("prescription.instructions", prescription.instructions.clone().unwrap_or_else(|| "—".to_owned())),
+    ];
+    if clinical.iter().any(|(key, expected)| value(key) != expected) { return Err(invalid()); }
+    let items = db::list_prescription_items(connection, &prescription.id)?;
+    let medications: Vec<_> = items.iter().map(|item| crate::forms::MedicationBlock {
+        name: item.med_name.clone(), dose: item.dose.clone().unwrap_or_default(),
+        route: item.route.clone().unwrap_or_default(), frequency: item.frequency.clone().unwrap_or_default(),
+        duration: item.duration.clone().unwrap_or_default(), quantity: item.quantity.clone().unwrap_or_default(),
+        quantity_number: item.quantity_number, notes: item.notes.clone().unwrap_or_default(),
+    }).collect();
+    let names = if items.is_empty() { "—".to_owned() } else { items.iter().map(|item| item.med_name.as_str()).collect::<Vec<_>>().join(", ") };
+    if snapshot.medications != medications || value("medications[]") != names { return Err(invalid()); }
+    Ok(())
+}
+
+fn persist_issued_snapshot(
+    connection: &mut SqliteConnection,
+    prescription: &db::Prescription,
+    supplied: Option<&crate::api::IssuedSnapshot>,
+    actor_id: &str,
+    device_id: &str,
+    at: &str,
+) -> Result<(), AuthError> {
+    let captured;
+    let snapshot = match supplied {
+        Some(snapshot) => snapshot,
+        None => {
+            captured = capture_issued_snapshot(connection, prescription, actor_id, device_id)?;
+            &captured
+        }
+    };
+    let raw = serde_json::to_string(snapshot).map_err(|_| AuthError::Internal)?;
+    if db::bind_issued_snapshot(connection, &prescription.id, &raw, supplied.map(|_| at))? != 1 {
+        return Err(AuthError::Conflict("El documento emitido ya fue fijado.".to_owned()));
+    }
+    Ok(())
+}
+
+fn require_snapshot_replay(
+    prescription: &db::Prescription,
+    supplied: Option<&crate::api::IssuedSnapshot>,
+    number: Option<i32>,
+    block_id: Option<&str>,
+    actor_id: &str,
+    device_id: &str,
+) -> Result<(), AuthError> {
+    if let Some(snapshot) = supplied {
+        let original = read_issued_snapshot(prescription)?;
+        if original != *snapshot || original.actor_id != actor_id || original.device_id != device_id
+            || number != Some(original.rx_number) || block_id != Some(original.rx_block_id.as_str())
+        {
+            return Err(AuthError::Conflict("La repetición no coincide con el documento emitido; conserve la operación pendiente.".to_owned()));
+        }
+    } else if number.is_some() || block_id.is_some() {
+        return Err(AuthError::Conflict("Falta el documento original emitido sin conexión; no se reconstruirá con datos actuales.".to_owned()));
+    }
+    Ok(())
+}
+
+fn require_snapshot_sign_mode(
+    number: Option<i32>,
+    block_id: Option<&str>,
+    snapshot: Option<&crate::api::IssuedSnapshot>,
+) -> Result<(), AuthError> {
+    match (number, block_id, snapshot) {
+        (None, None, None) | (Some(_), Some(_), Some(_)) => Ok(()),
+        _ => Err(AuthError::Conflict("La firma sin conexión requiere el número, bloque y documento original completo; conserve la operación pendiente.".to_owned())),
+    }
 }
 
 pub async fn list_prescriptions(
@@ -3679,6 +3934,7 @@ pub async fn list_prescriptions(
             connection,
             &clinic_id,
             doctor_filter.as_deref(),
+            role == Role::Secretary,
             patient_id.as_deref(),
             status.as_deref(),
             date.as_deref(),
@@ -3701,11 +3957,7 @@ pub async fn list_prescriptions(
             "sensitive_read",
             "prescription",
             "list",
-            Some(json!({
-                "patient_id": patient_id,
-                "status": status,
-                "date": date,
-            })),
+            Some(json!({ "scope": "list" })),
             &auth_server::now(),
         )?;
         Ok(result)
@@ -3736,12 +3988,14 @@ pub async fn sign_prescription(
     let device_id = actor.device_id.clone().ok_or_else(|| {
         AuthError::BadRequest("Registra este dispositivo antes de firmar.".to_owned())
     })?;
+    require_snapshot_sign_mode(input.rx_number, input.rx_block_id.as_deref(), input.issued_snapshot.as_ref())?;
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
             let prescription =
                 db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                     .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
+            require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
             let doctor_id = doctor_id.as_deref().ok_or_else(|| {
                 AuthError::Forbidden("El perfil no tiene ficha de médico.".to_owned())
             })?;
@@ -3755,6 +4009,8 @@ pub async fn sign_prescription(
                 }
             }
             if prescription.status != "draft" {
+                require_snapshot_replay(&prescription, input.issued_snapshot.as_ref(), input.rx_number,
+                    input.rx_block_id.as_deref(), &actor_id, &device_id)?;
                 if prescription.doctor_id.as_deref() != Some(doctor_id) {
                     return Err(AuthError::Forbidden(
                         "Solo el médico autor puede firmar esta receta.".to_owned(),
@@ -3795,6 +4051,11 @@ pub async fn sign_prescription(
                     connection, &actor_id, &clinic_id, &device_id, block_size, &at,
                 )?,
             };
+            if let Some(snapshot) = &input.issued_snapshot {
+                validate_issued_snapshot(connection, &prescription, snapshot, &actor_id, doctor_id,
+                    &device_id, number, &block.id)?;
+            }
+            let issued_at = input.issued_snapshot.as_ref().map(|snapshot| snapshot.issued_at.as_str()).unwrap_or(&at);
             db::mark_prescription_signed(
                 connection,
                 &clinic_id,
@@ -3802,7 +4063,7 @@ pub async fn sign_prescription(
                 doctor_id,
                 number,
                 &block.id,
-                &at,
+                issued_at,
             )?;
             let (code, code_hash) = new_verification_code();
             let code_id = Uuid::now_v7().to_string();
@@ -3819,6 +4080,9 @@ pub async fn sign_prescription(
                     created_by: Some(&actor_id),
                 },
             )?;
+            let signed = db::find_prescription_by_id(connection, &clinic_id, &prescription.id)?
+                .ok_or(AuthError::Internal)?;
+            persist_issued_snapshot(connection, &signed, input.issued_snapshot.as_ref(), &actor_id, &device_id, &at)?;
             record_audit(
                 connection,
                 Some(&actor_id),
@@ -3877,6 +4141,10 @@ pub async fn void_prescription(
             let prescription =
                 db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
                     .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
+            require_prescription_read(role, doctor_id.as_deref(), &prescription)?;
+            if role != Some(Role::Doctor) || doctor_id.as_deref() != prescription.doctor_id.as_deref() || doctor_id.is_none() {
+                return Err(AuthError::NotFound("Receta no encontrada.".to_owned()));
+            }
             if prescription.status == "voided" {
                 let items = db::list_prescription_items(connection, &prescription.id)?;
                 let verification =
@@ -3940,6 +4208,7 @@ pub async fn supersede_prescription(
     let device_id = actor.device_id.clone().ok_or_else(|| {
         AuthError::BadRequest("Registra este dispositivo antes de corregir.".to_owned())
     })?;
+    require_snapshot_sign_mode(input.rx_number, input.rx_block_id.as_deref(), input.issued_snapshot.as_ref())?;
     let client_id = input
         .client_id
         .map(|value| value.trim().to_owned())
@@ -3951,13 +4220,29 @@ pub async fn supersede_prescription(
     auth_server::with_conn(pool, move |connection| {
         let at = auth_server::now();
         db::immediate_transaction(connection, |connection| {
+            let original =
+                db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
+                    .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
+            require_prescription_read(role, doctor_id.as_deref(), &original)?;
+            if role != Some(Role::Doctor) || doctor_id.is_none() || doctor_id.as_deref() != original.doctor_id.as_deref() {
+                return Err(AuthError::NotFound("Receta no encontrada.".to_owned()));
+            }
             if let Some(existing) =
                 db::find_prescription_by_client_id(connection, &clinic_id, &client_id)?
             {
+                require_prescription_read(role, doctor_id.as_deref(), &existing)?;
+                if role != Some(Role::Doctor) || doctor_id.as_deref() != existing.doctor_id.as_deref() || doctor_id.is_none() {
+                    return Err(AuthError::NotFound("Receta no encontrada.".to_owned()));
+                }
                 if existing.supersedes_id.as_deref() != Some(prescription_id.as_str()) {
                     return Err(AuthError::Conflict(
                         "El identificador de cliente ya está en uso.".to_owned(),
                     ));
+                }
+                require_snapshot_replay(&existing, input.issued_snapshot.as_ref(), input.rx_number,
+                    input.rx_block_id.as_deref(), &actor_id, &device_id)?;
+                if input.new_prescription_id.as_deref().is_some_and(|id| id != existing.id) {
+                    return Err(AuthError::Conflict("La corrección ya reconciliada no coincide.".to_owned()));
                 }
                 let items = db::list_prescription_items(connection, &existing.id)?;
                 let verification =
@@ -3973,9 +4258,6 @@ pub async fn supersede_prescription(
                     patient_name,
                 });
             }
-            let original =
-                db::find_prescription_by_id(connection, &clinic_id, &prescription_id)?
-                    .ok_or_else(|| AuthError::NotFound("Receta no encontrada.".to_owned()))?;
             prescription_transition_allowed(role, doctor_id.as_deref(), &original)?;
             let warnings = prescription_warnings(connection, &original)?;
             if !warnings.is_empty() && !input.acknowledge_warnings {
@@ -4002,6 +4284,7 @@ pub async fn supersede_prescription(
                 .clone()
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| Uuid::now_v7().to_string());
+            let issued_at = input.issued_snapshot.as_ref().map(|snapshot| snapshot.issued_at.as_str()).unwrap_or(&at);
             db::insert_prescription(
                 connection,
                 &db::NewPrescription {
@@ -4025,7 +4308,7 @@ pub async fn supersede_prescription(
                     instructions: instructions_override
                         .as_deref()
                         .or(original.instructions.as_deref()),
-                    signed_at: Some(&at),
+                    signed_at: Some(issued_at),
                     synced_at: None,
                     voided_at: None,
                     void_reason: None,
@@ -4058,6 +4341,12 @@ pub async fn supersede_prescription(
                     },
                 )?;
             }
+            let created = db::find_prescription_by_id(connection, &clinic_id, &new_id)?.ok_or(AuthError::Internal)?;
+            if let Some(snapshot) = &input.issued_snapshot {
+                validate_issued_snapshot(connection, &created, snapshot, &actor_id,
+                    doctor_id.as_deref().ok_or(AuthError::Internal)?, &device_id, number, &block.id)?;
+            }
+            persist_issued_snapshot(connection, &created, input.issued_snapshot.as_ref(), &actor_id, &device_id, &at)?;
             let (code, code_hash) = new_verification_code();
             let code_id = Uuid::now_v7().to_string();
             db::insert_verification_code(
@@ -4104,4 +4393,368 @@ pub async fn supersede_prescription(
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod issued_snapshot_tests {
+    use super::*;
+    use diesel::connection::SimpleConnection;
+    use diesel::r2d2::{ConnectionManager, Pool};
+    use diesel_migrations::MigrationHarness;
+
+    struct Fixture { pool: DbPool, path: std::path::PathBuf }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); }
+    }
+
+    fn fixture() -> Fixture {
+        let path = std::env::temp_dir().join(format!("persona-issued-snapshot-{}.sqlite", Uuid::now_v7()));
+        let pool = Pool::builder().max_size(1).build(ConnectionManager::<SqliteConnection>::new(path.to_string_lossy().into_owned())).unwrap();
+        {
+            let mut connection = pool.get().unwrap();
+            connection.batch_execute("PRAGMA foreign_keys=ON;").unwrap();
+            connection.run_pending_migrations(db::MIGRATIONS).unwrap();
+            connection.batch_execute("
+                INSERT INTO users(id,email,password_hash,display_name,created_at,updated_at) VALUES
+                    ('actor','actor@example.invalid','unused','Issued doctor','2026','2026'),
+                    ('other','other@example.invalid','unused','Other doctor','2026','2026'),
+                    ('foreign','foreign@example.invalid','unused','Foreign doctor','2026','2026');
+                INSERT INTO profiles(id,auth_user_id,display_name,created_at,updated_at) SELECT id,id,display_name,'2026','2026' FROM users;
+                INSERT INTO clinics(id,name,address,phone,server_retention_until,created_at,updated_at) VALUES
+                    ('clinic','Issued clinic','Issued address','111','2099','2026','2026'),
+                    ('foreign-clinic','Foreign clinic',NULL,NULL,'2099','2026','2026');
+                INSERT INTO clinic_members(clinic_id,profile_id,role,created_at,updated_at) VALUES
+                    ('clinic','actor','doctor','2026','2026'),('clinic','other','doctor','2026','2026'),
+                    ('foreign-clinic','foreign','doctor','2026','2026');
+                INSERT INTO doctors(id,profile_id,specialty,license_no,national_id,phone,email,created_at,updated_at) VALUES
+                    ('doctor','actor','Issued specialty','Issued license','Issued professional id','222','issued@example.invalid','2026','2026'),
+                    ('other-doctor','other',NULL,NULL,NULL,NULL,NULL,'2026','2026'),
+                    ('foreign-doctor','foreign',NULL,NULL,NULL,NULL,NULL,'2026','2026');
+                INSERT INTO devices(id,profile_id,platform,created_at,updated_at) VALUES ('device','actor','macos','2026','2026');
+                INSERT INTO patients(id,clinic_id,full_name,national_id,birth_date,sex,medical_record_no,allergies,created_at,updated_at)
+                    VALUES ('patient','clinic','Issued patient','Issued identity','2000-11-27','female','Issued HCL','Issued allergy','2026','2026');
+                INSERT INTO templates(id,owner_type,owner_id,name,status,created_at,updated_at)
+                    VALUES ('template','clinic','clinic','Issued template','published','2026','2026');
+                INSERT INTO assets(id,clinic_id,object_key,owner_type,owner_id,kind,content_type,size_bytes,sha256,status,created_at,updated_at)
+                    VALUES ('asset','clinic','clinic/asset','clinic','clinic','logo','image/png',1,'0000000000000000000000000000000000000000000000000000000000000000','ready','2026','2026');
+            ").unwrap();
+            let mut document = crate::forms::parse_document(&crate::forms::default_document_json()).unwrap();
+            document.letterhead.logo_asset_id = Some("asset".to_owned());
+            document.letterhead.doctor_details = "{{doctor.name}} · {{doctor.specialty}}".to_owned();
+            document.letterhead.clinic_details = "{{clinic.name}} · {{clinic.address}}".to_owned();
+            diesel::sql_query("INSERT INTO template_versions(id,template_id,version_no,doc_json,variables_spec,theme,status,created_at,updated_at) VALUES ('version','template',1,?,'{}','{\"margin_mm\":21}','published','2026','2026')")
+                .bind::<diesel::sql_types::Text,_>(serde_json::to_string(&document).unwrap()).execute(&mut *connection).unwrap();
+            connection.batch_execute("
+                INSERT INTO template_version_assets(template_version_id,asset_id) VALUES ('version','asset');
+                INSERT INTO prescriptions(id,patient_id,doctor_id,clinic_id,template_version_id,status,diagnosis,validity,recetario_type,validity_days,warning_signs,instructions,client_id,created_at,updated_at,created_by)
+                    VALUES ('rx','patient','doctor','clinic','version','draft','Issued diagnosis','Issued validity','ambulatorio',3,'Issued warning','Issued instructions','client','2026-11-26T04:59:00Z','2026','actor');
+                INSERT INTO prescription_items(id,prescription_id,position,med_name,dose,route,frequency,duration,quantity,quantity_number,notes,created_at,updated_at)
+                    VALUES ('item','rx',1,'Issued medication','Issued dose','Issued route','Issued frequency','Issued duration','Issued quantity',7,'Issued notes','2026','2026'),
+                           ('item-two','rx',2,'Second medication','Second dose','Second route','Second frequency','Second duration','Second quantity',2,'Second notes','2026','2026');
+            ").unwrap();
+        }
+        Fixture { pool, path }
+    }
+
+    fn actor(pool: &DbPool, id: &str) -> ActorContext {
+        let mut connection = pool.get().unwrap();
+        let member = db::find_membership_by_profile(&mut connection, id).unwrap().unwrap();
+        ActorContext {
+            user: db::find_user_by_id(&mut connection, id).unwrap().unwrap(),
+            session_id: "session".to_owned(), device_id: Some("device".to_owned()),
+            profile: db::find_profile_by_id(&mut connection, id).unwrap().unwrap(),
+            clinic: db::find_clinic_by_id(&mut connection, &member.clinic_id).unwrap(),
+            doctor: db::find_doctor_by_profile_id(&mut connection, id).unwrap(), member: Some(member),
+        }
+    }
+
+    fn online_input() -> PrescriptionSignInput {
+        PrescriptionSignInput { acknowledge_warnings: true, rx_number: None, rx_block_id: None, issued_snapshot: None }
+    }
+
+    fn offline_input(snapshot: &crate::api::IssuedSnapshot) -> PrescriptionSignInput {
+        PrescriptionSignInput { acknowledge_warnings: true, rx_number: Some(snapshot.rx_number),
+            rx_block_id: Some(snapshot.rx_block_id.clone()), issued_snapshot: Some(snapshot.clone()) }
+    }
+
+    fn mutate_live(pool: &DbPool) {
+        pool.get().unwrap().batch_execute("
+            UPDATE patients SET full_name='Changed patient',national_id='Changed identity',birth_date='1990-01-01',sex='other',medical_record_no='Changed HCL',allergies='Changed allergy';
+            UPDATE profiles SET display_name='Changed doctor' WHERE id='actor';
+            UPDATE doctors SET specialty='Changed specialty',license_no='Changed license',national_id='Changed professional id',phone='333',email='changed@example.invalid' WHERE id='doctor';
+            UPDATE clinics SET name='Changed clinic',address='Changed address',phone='444' WHERE id='clinic';
+        ").unwrap();
+    }
+
+    #[tokio::test]
+    async fn issued_snapshot_online_freezes_render_and_lifecycle() {
+        let fixture = fixture();
+        let pool = &fixture.pool;
+        let author = actor(pool, "actor");
+        let first = sign_prescription(pool, &author, "rx".to_owned(), online_input()).await.unwrap();
+        let snapshot = read_issued_snapshot(&first.prescription).unwrap();
+        let before = prescription_document(pool, &author, "rx".to_owned(), false).await.unwrap();
+        assert_eq!(before.variables(), snapshot.variables);
+        assert_eq!(before.medications(), snapshot.medications);
+        assert_eq!(before.margin_mm, 21);
+        assert_eq!(snapshot.assets[0].id, "asset");
+        mutate_live(pool);
+        pool.get().unwrap().batch_execute("UPDATE template_versions SET doc_json='{}',theme='{\"margin_mm\":40}'; UPDATE prescription_items SET med_name='Changed medication',dose='Changed dose'; UPDATE assets SET sha256='changed'; UPDATE prescriptions SET diagnosis='Changed diagnosis',warning_signs='Changed warning',instructions='Changed instructions';").unwrap();
+        let after = prescription_document(pool, &author, "rx".to_owned(), false).await.unwrap();
+        assert_eq!(after.variables(), before.variables());
+        assert_eq!(after.medications(), before.medications());
+        assert_eq!(after.doc_json, before.doc_json);
+        assert_eq!(after.margin_mm, before.margin_mm);
+        assert_eq!(after.issued_snapshot, before.issued_snapshot);
+        let replay = sign_prescription(pool, &author, "rx".to_owned(), online_input()).await.unwrap();
+        assert_eq!(replay.prescription.issued_snapshot, first.prescription.issued_snapshot);
+        assert_eq!(replay.verification.as_ref().unwrap().code, first.verification.as_ref().unwrap().code);
+        assert!(get_prescription(pool, &actor(pool, "other"), "rx".to_owned()).await.is_err());
+        assert!(prescription_document(pool, &actor(pool, "foreign"), "rx".to_owned(), true).await.is_err());
+        let verification = verify_code(pool, &first.verification.as_ref().unwrap().code).await.unwrap();
+        let public = json!({ "status": verification.status, "doctorName": verification.doctor_name, "issuedAt": verification.issued_at, "rxNumber": verification.rx_number });
+        assert!(!public.to_string().contains("Issued patient"));
+        assert!(!public.to_string().contains("Issued diagnosis"));
+        assert!(public.get("issuedSnapshot").is_none());
+        let voided = void_prescription(pool, &author, "rx".to_owned(), "Test cancellation".to_owned()).await.unwrap();
+        assert_eq!(voided.prescription.issued_snapshot, first.prescription.issued_snapshot);
+        assert_eq!(prescription_document(pool, &author, "rx".to_owned(), true).await.unwrap().variables(), before.variables());
+    }
+
+    #[tokio::test]
+    async fn issued_snapshot_failure_rolls_back_status_number_code_and_audit() {
+        let fixture = fixture();
+        let pool = &fixture.pool;
+        pool.get().unwrap().batch_execute("CREATE TRIGGER fail_issued_snapshot BEFORE UPDATE OF issued_snapshot ON prescriptions BEGIN SELECT RAISE(ABORT,'snapshot failure'); END;").unwrap();
+        assert!(sign_prescription(pool, &actor(pool, "actor"), "rx".to_owned(), online_input()).await.is_err());
+        {
+            let mut connection = pool.get().unwrap();
+            let saved = db::find_prescription_by_id(&mut connection, "clinic", "rx").unwrap().unwrap();
+            assert_eq!(saved.status, "draft");
+            assert!(saved.rx_number.is_none() && saved.signed_at.is_none() && saved.issued_snapshot.is_none());
+            assert!(db::find_rx_counter(&mut connection, "clinic").unwrap().is_none());
+            assert!(db::find_active_rx_block(&mut connection, "device").unwrap().is_none());
+            assert!(db::find_verification_code_by_prescription(&mut connection, "rx").unwrap().is_none());
+            assert_eq!(crate::schema::audit_log::table.count().get_result::<i64>(&mut *connection).unwrap(), 0);
+            connection.batch_execute("DROP TRIGGER fail_issued_snapshot; UPDATE assets SET status='pending';").unwrap();
+        }
+        assert!(sign_prescription(pool, &actor(pool, "actor"), "rx".to_owned(), online_input()).await.is_err());
+        let mut connection = pool.get().unwrap();
+        assert!(db::find_rx_counter(&mut connection, "clinic").unwrap().is_none());
+        assert_eq!(db::find_prescription_by_id(&mut connection, "clinic", "rx").unwrap().unwrap().status, "draft");
+    }
+
+    #[tokio::test]
+    async fn issued_snapshot_offline_reconciliation_is_validated_and_idempotent() {
+        let fixture = fixture();
+        let pool = &fixture.pool;
+        let author = actor(pool, "actor");
+        let block = allocate_rx_block(pool, &author).await.unwrap();
+        let snapshot = {
+            let mut connection = pool.get().unwrap();
+            let mut local = db::find_prescription_by_id(&mut connection, "clinic", "rx").unwrap().unwrap();
+            local.status = "signed".to_owned();
+            local.rx_number = Some(block.start_number);
+            local.rx_block_id = Some(block.id.clone());
+            local.signed_at = Some("2026-11-27T04:59:00Z".to_owned());
+            capture_issued_snapshot(&mut connection, &local, "actor", "device").unwrap()
+        };
+        assert_eq!(snapshot.variables.iter().find(|(key, _)| key == "patient.age").unwrap().1, "25 años");
+        assert_eq!(snapshot.variables.iter().find(|(key, _)| key == "prescription.date").unwrap().1, "26-11-2026");
+        for field in ["actor", "clinic", "patient", "doctor", "device", "client", "prescription", "template", "block", "document", "theme", "asset", "clinical", "medication", "timestamp"] {
+            let mut altered = snapshot.clone();
+            match field {
+                "actor" => altered.actor_id = "other".to_owned(),
+                "clinic" => altered.clinic_id = "foreign-clinic".to_owned(),
+                "patient" => altered.patient_id = "missing".to_owned(),
+                "doctor" => altered.doctor_id = "other-doctor".to_owned(),
+                "device" => altered.device_id = "missing".to_owned(),
+                "client" => altered.client_id = "other".to_owned(),
+                "prescription" => altered.prescription_id = "other".to_owned(),
+                "template" => altered.template_version_id = "other".to_owned(),
+                "block" => altered.rx_block_id = "other".to_owned(),
+                "document" => altered.doc_sha256 = "other".to_owned(),
+                "theme" => altered.theme_sha256 = "other".to_owned(),
+                "asset" => altered.assets[0].sha256 = "1".repeat(64),
+                "clinical" => altered.variables.iter_mut().find(|(key, _)| key == "prescription.diagnosis").unwrap().1 = "Altered".to_owned(),
+                "medication" => altered.medications[0].dose = "Altered".to_owned(),
+                "timestamp" => altered.issued_at = "2026-11-28T04:59:00Z".to_owned(),
+                _ => unreachable!(),
+            }
+            assert!(sign_prescription(pool, &author, "rx".to_owned(), offline_input(&altered)).await.is_err(), "{field}");
+            let mut connection = pool.get().unwrap();
+            assert_eq!(db::find_rx_block_by_id(&mut connection, &block.id).unwrap().unwrap().consumed, 0);
+            assert_eq!(db::find_prescription_by_id(&mut connection, "clinic", "rx").unwrap().unwrap().status, "draft");
+        }
+        mutate_live(pool);
+        let first = sign_prescription(pool, &author, "rx".to_owned(), offline_input(&snapshot)).await.unwrap();
+        assert_eq!(first.prescription.signed_at.as_deref(), Some(snapshot.issued_at.as_str()));
+        assert_ne!(first.prescription.synced_at, first.prescription.signed_at);
+        assert_eq!(read_issued_snapshot(&first.prescription).unwrap(), snapshot);
+        let provisional = frozen_document(&first.prescription, snapshot.clone(), None);
+        let final_document = prescription_document(pool, &author, "rx".to_owned(), false).await.unwrap();
+        assert_eq!(provisional.variables(), final_document.variables());
+        assert_eq!(provisional.medications(), final_document.medications());
+        assert!(provisional.verification_code.is_none() && final_document.verification_code.is_some());
+        let replay = sign_prescription(pool, &author, "rx".to_owned(), offline_input(&snapshot)).await.unwrap();
+        assert_eq!(replay.prescription.issued_snapshot, first.prescription.issued_snapshot);
+        assert_eq!(replay.prescription.synced_at, first.prescription.synced_at);
+        assert_eq!(replay.verification.unwrap().code, first.verification.unwrap().code);
+        let mut altered = snapshot.clone();
+        altered.variables[0].1 = "Altered patient".to_owned();
+        assert!(sign_prescription(pool, &author, "rx".to_owned(), offline_input(&altered)).await.is_err());
+        let mut connection = pool.get().unwrap();
+        assert_eq!(crate::schema::verification_codes::table.count().get_result::<i64>(&mut *connection).unwrap(), 1);
+        assert_eq!(db::find_rx_block_by_id(&mut connection, &block.id).unwrap().unwrap().consumed, 1);
+        assert!(diesel::sql_query("UPDATE prescriptions SET issued_snapshot='{}' WHERE id='rx'").execute(&mut *connection).is_err());
+    }
+
+    #[tokio::test]
+    async fn issued_snapshot_supersede_and_legacy_migration_are_honest() {
+        let fixture = fixture();
+        let pool = &fixture.pool;
+        let author = actor(pool, "actor");
+        let first = sign_prescription(pool, &author, "rx".to_owned(), online_input()).await.unwrap();
+        let replacement = supersede_prescription(pool, &author, "rx".to_owned(), PrescriptionSupersedeInput {
+            client_id: Some("replacement-client".to_owned()), diagnosis: Some("Corrected diagnosis".to_owned()),
+            validity: None, instructions: None, acknowledge_warnings: true, rx_number: None,
+            rx_block_id: None, new_prescription_id: Some("replacement".to_owned()), issued_snapshot: None,
+        }).await.unwrap();
+        assert!(replacement.prescription.issued_snapshot.is_some());
+        assert_ne!(replacement.prescription.issued_snapshot, first.prescription.issued_snapshot);
+        let original = get_prescription(pool, &author, "rx".to_owned()).await.unwrap();
+        assert_eq!(original.prescription.status, "superseded");
+        assert_eq!(original.prescription.issued_snapshot, first.prescription.issued_snapshot);
+        {
+            let mut connection = pool.get().unwrap();
+            connection.revert_last_migration(db::MIGRATIONS).unwrap();
+            connection.batch_execute("
+                INSERT INTO prescriptions(id,patient_id,doctor_id,clinic_id,template_version_id,status,client_id,created_at,updated_at) VALUES
+                    ('legacy-signed','patient','doctor','clinic','version','signed','legacy-signed','2026','2026'),
+                    ('legacy-voided','patient','doctor','clinic','version','voided','legacy-voided','2026','2026'),
+                    ('pending-draft','patient','doctor','clinic','version','draft','pending-draft','2026','2026');
+            ").unwrap();
+            connection.run_pending_migrations(db::MIGRATIONS).unwrap();
+        }
+        for id in ["rx", "replacement", "legacy-signed", "legacy-voided"] {
+            let detail = get_prescription(pool, &author, id.to_owned()).await.unwrap();
+            assert!(detail.prescription.issued_snapshot.is_none());
+            assert!(matches!(prescription_document(pool, &author, id.to_owned(), true).await, Err(AuthError::Unprocessable(_))));
+        }
+        let pending = get_prescription(pool, &author, "pending-draft".to_owned()).await.unwrap();
+        assert!(pending.prescription.synced_at.is_none());
+        assert_eq!(pending.prescription.status, "draft");
+        assert!(prescription_document(pool, &author, "pending-draft".to_owned(), true).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn issued_snapshot_offline_supersede_preserves_issue_and_exact_replay() {
+        let fixture = fixture();
+        let pool = &fixture.pool;
+        let author = actor(pool, "actor");
+        let original = sign_prescription(pool, &author, "rx".to_owned(), online_input()).await.unwrap();
+        let snapshot = {
+            let mut connection = pool.get().unwrap();
+            let block = db::find_active_rx_block(&mut connection, "device").unwrap().unwrap();
+            let mut issued = original.prescription.clone();
+            issued.rx_number = Some(block.start_number + block.consumed);
+            issued.signed_at = Some("2026-11-27T04:59:00Z".to_owned());
+            let mut snapshot = capture_issued_snapshot(&mut connection, &issued, "actor", "device").unwrap();
+            snapshot.prescription_id = "offline-replacement".to_owned();
+            snapshot.client_id = "offline-replacement-client".to_owned();
+            snapshot
+        };
+        let input = |snapshot: crate::api::IssuedSnapshot| PrescriptionSupersedeInput {
+            client_id: Some(snapshot.client_id.clone()), new_prescription_id: Some(snapshot.prescription_id.clone()),
+            diagnosis: None, validity: None, instructions: None, acknowledge_warnings: true,
+            rx_number: Some(snapshot.rx_number), rx_block_id: Some(snapshot.rx_block_id.clone()), issued_snapshot: Some(snapshot),
+        };
+        mutate_live(pool);
+        let replacement = supersede_prescription(pool, &author, "rx".to_owned(), input(snapshot.clone())).await.unwrap();
+        assert_eq!(read_issued_snapshot(&replacement.prescription).unwrap(), snapshot);
+        assert_eq!(replacement.prescription.signed_at.as_deref(), Some(snapshot.issued_at.as_str()));
+        assert_ne!(replacement.prescription.synced_at, replacement.prescription.signed_at);
+        let replay = supersede_prescription(pool, &author, "rx".to_owned(), input(snapshot.clone())).await.unwrap();
+        assert_eq!(replay.prescription.issued_snapshot, replacement.prescription.issued_snapshot);
+        assert_eq!(replay.verification.unwrap().code, replacement.verification.unwrap().code);
+        let mut altered = snapshot.clone();
+        altered.variables[0].1 = "Altered patient".to_owned();
+        assert!(supersede_prescription(pool, &author, "rx".to_owned(), input(altered)).await.is_err());
+        let original_after = get_prescription(pool, &author, "rx".to_owned()).await.unwrap();
+        assert_eq!(original_after.prescription.issued_snapshot, original.prescription.issued_snapshot);
+        let mut reordered = snapshot;
+        reordered.medications.swap(0, 1);
+        assert!(supersede_prescription(pool, &author, "rx".to_owned(), input(reordered)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn issued_snapshot_private_delivery_and_preview_pdf_use_frozen_inputs() {
+        use axum::extract::{Path, State};
+        async fn body(response: axum::response::Response) -> Vec<u8> {
+            axum::body::to_bytes(response.into_body(), 2_000_000).await.unwrap().to_vec()
+        }
+        let headers = |id: &str| {
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(axum::http::header::COOKIE, format!("persona_session={id}").parse().unwrap());
+            headers
+        };
+        let fixture = fixture();
+        let pool = &fixture.pool;
+        {
+            let mut connection = pool.get().unwrap();
+            let version = db::find_template_version_by_id(&mut connection, "version").unwrap().unwrap();
+            let mut document = crate::forms::parse_document(&version.doc_json).unwrap();
+            document.letterhead.logo_asset_id = None;
+            diesel::sql_query("UPDATE template_versions SET doc_json=? WHERE id='version'")
+                .bind::<diesel::sql_types::Text,_>(serde_json::to_string(&document).unwrap())
+                .execute(&mut *connection).unwrap();
+            connection.batch_execute("
+                DELETE FROM template_version_assets WHERE template_version_id='version';
+                INSERT INTO users(id,email,password_hash,display_name,created_at,updated_at)
+                    VALUES ('secretary','secretary@example.invalid','unused','Secretary','2026','2026');
+                INSERT INTO profiles(id,auth_user_id,display_name,created_at,updated_at)
+                    VALUES ('secretary','secretary','Secretary','2026','2026');
+                INSERT INTO clinic_members(clinic_id,profile_id,role,created_at,updated_at)
+                    VALUES ('clinic','secretary','secretary','2026','2026');
+            ").unwrap();
+            for id in ["actor", "other", "foreign", "secretary"] {
+                diesel::sql_query("INSERT INTO sessions(id,user_id,token_hash,expires_at,created_at,mfa_pending) VALUES (?,?,?,'2099-01-01T00:00:00Z','2026',0)")
+                    .bind::<diesel::sql_types::Text,_>(id)
+                    .bind::<diesel::sql_types::Text,_>(id)
+                    .bind::<diesel::sql_types::Text,_>(auth_server::hash_token(id))
+                    .execute(&mut *connection).unwrap();
+            }
+        }
+        sign_prescription(pool, &actor(pool, "actor"), "rx".to_owned(), online_input()).await.unwrap();
+        let app = auth_server::AppState { pool: pool.clone(), cookie_secure: false, assets: None };
+        let response = crate::api_server::get_prescription(State(app.clone()), headers("actor"), Path("rx".to_owned())).await.unwrap();
+        let detail: serde_json::Value = serde_json::from_slice(&body(response).await).unwrap();
+        assert_eq!(detail["issuedSnapshot"]["version"], 1);
+        assert_eq!(detail["historyAvailability"], "available");
+        for who in ["other", "foreign"] {
+            assert!(crate::api_server::get_prescription(State(app.clone()), headers(who), Path("rx".to_owned())).await.is_err());
+            assert!(crate::pdf_server::prescription_preview(State(app.clone()), headers(who), Path("rx".to_owned())).await.is_err());
+        }
+        let response = crate::pdf_server::prescription_preview(State(app.clone()), headers("actor"), Path("rx".to_owned())).await.unwrap();
+        let before: serde_json::Value = serde_json::from_slice(&body(response).await).unwrap();
+        mutate_live(pool);
+        pool.get().unwrap().batch_execute("UPDATE template_versions SET doc_json='{}',theme='{\"margin_mm\":40}' WHERE id='version'; UPDATE prescriptions SET diagnosis='Changed diagnosis' WHERE id='rx'; UPDATE prescription_items SET med_name='Changed medication';").unwrap();
+        let response = crate::pdf_server::prescription_preview(State(app.clone()), headers("secretary"), Path("rx".to_owned())).await.unwrap();
+        let after: serde_json::Value = serde_json::from_slice(&body(response).await).unwrap();
+        for key in ["variables", "medications", "docJson", "marginMm", "issuedAt", "imageSources"] {
+            assert_eq!(before[key], after[key], "{key}");
+        }
+        let response = crate::pdf_server::prescription_pdf(State(app.clone()), headers("secretary"), Path("rx".to_owned())).await.unwrap();
+        assert_eq!(response.headers().get(axum::http::header::CONTENT_TYPE).unwrap(), "application/pdf");
+        assert!(body(response).await.starts_with(b"%PDF-"));
+        let code = detail["verification"]["code"].as_str().unwrap().to_owned();
+        let response = crate::verify_server::verify(State(app), Path(code)).await.unwrap();
+        let public: serde_json::Value = serde_json::from_slice(&body(response).await).unwrap();
+        assert!(public.get("issuedSnapshot").is_none());
+        assert!(public.get("patientName").is_none());
+        assert!(!public.to_string().contains("Issued diagnosis"));
+        assert!(!public.to_string().contains("Issued patient"));
+        assert!(!public.to_string().contains("Changed patient"));
+    }
 }

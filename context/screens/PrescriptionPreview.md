@@ -42,9 +42,7 @@ The table above is the whole page. There is no toolbar, sidebar, metadata grid, 
 
 ### 2.1 Role state
 
-All four clinic roles (`administrator`, `doctor`, `nursing`, `secretary`) reach the screen only through `Me::can_read_prescriptions()`; a session without a role gets the denied notice and no canvas or action row. Doctor is the only signing role, and only while the payload status is `draft`. Nursing, secretary, and administrator see the document, subtitle, and back action, plus download, print, local-provisional, and share controls on a non-draft payload, but never the sign primary, the acknowledgment secondary, or its busy state. Roles change the action row and only the action row; header copy, sheet geometry, QR presence, provisional notice, and error surfaces are identical.
-
-The client gate is `profile.can_sign_prescriptions()` plus `current.status == "draft"`. It is not an ownership check: the preview payload has no owner field, so a doctor who is not the author still sees the sign control. The server's `prescription_sign_allowed` requires a draft and an absent or matching `doctor_id`; a refusal is rendered as the API message in the message region, and the screen never optimistically flips to signed.
+The server authorizes every preview by clinic, role, status, and doctor identity. Doctors can view their own prescriptions and unassigned drafts; nursing can view clinic prescriptions; secretaries can view issued prescriptions; administrators can view clinic prescriptions read-only. Only a doctor may sign an accessible draft.
 
 
 ### 2.2 Prescription status state
@@ -59,7 +57,7 @@ The client gate is `profile.can_sign_prescriptions()` plus `current.status == "d
 
 Web/wasm renders download, print, and share. Share opens the browser sheet with a static title and the absolute download URL; it contains no PHI and no local file. A cancelled, rejected, or unsupported share produces no message and no navigation.
 
-Desktop renders the download and print links, and the local provisional render when the payload is provisional. There is no share control. The desktop loads `fetch_prescription` and `fetch_prescription_preview`; if the preview fails it opens the local database, rebuilds the payload from the cached prescription, cached template version, and local medication items, and marks it provisional. It does not invoke the renderer to print: the print control is the same URL anchor as on web. The local provisional control calls `pdf::render` in-process and reports the resulting byte length; it does not write or download a file. Desktop sign uses `sign_prescription_dispatch` with the cached prescription and profile as fallback: with the server reachable it posts; offline it consumes the next device-block number and returns a signed row. Both surfaces show the sheet at the same millimeter size, with horizontal scrolling under the fixed width.
+Desktop renders download and print links and a local provisional action for provisional documents. On a network failure, the desktop reconstructs the preview only from a cached prescription authorized for the current identity, its cached template, and its medication items. Server refusals do not trigger cache fallback. The local provisional action checks authorization again before rendering and saving the PDF. Signing uses the server when reachable and the local number block offline.
 
 ### 2.4 Denied, loading, empty, and error state
 
@@ -227,10 +225,10 @@ The QR and logo alternatives are §3.5. The canonical back action label is §3.2
 | Actor unresolved (`actor == None`) | Shell root only, label `Redirigiendo...`; no navigation and no fetch result drawn |
 | No role or read permission | `Notice` Error, `Acceso denegado` plus `No tienes permiso para ver esta receta.`; no canvas, no actions |
 | Preview fetch in flight | Root plus `LoadingState` with `Cargando vista previa...`; no actions and no empty sheet |
-| Draft, doctor (author or not) | Status, subtitle, canvas, primary sign action, header back. Identity cannot distinguish ownership, so the control is identical; the server authorizes or refuses |
+| Draft, doctor | An assigned owner or a doctor reviewing an unassigned draft sees the canvas and sign action; another doctor's assigned draft is denied |
 | Draft, doctor, sign busy | Sign control disabled, label `Firmando...`, `aria-busy`; no second dispatch from it; canvas stays; failure replaces the busy state |
 | Draft, doctor, warning conflict | Sign error message plus acknowledgment secondary control; sign primary stays enabled; acknowledgment re-dispatches with acknowledgment true |
-| Draft, nursing, secretary, administrator | Read-only canvas, header back, provisional notice when the payload has no code; no sign, download, print, local, or share control |
+| Draft, nursing or administrator | Read-only canvas, header back, provisional notice when the payload has no code; no sign, download, print, local, or share control |
 | Signed, any role | Canvas with code and QR when the server carries them; download primary, print secondary; desktop local only when provisional; wasm share |
 | Superseded or voided | Same geometry and download/print as signed; status and subtitle show the terminal state; no sign |
 | Unknown status | `Desconocida` label; treated as non-draft; download and print; no sign |

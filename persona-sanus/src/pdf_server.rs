@@ -41,7 +41,7 @@ pub async fn prescription_pdf(
         assets: pinned,
         margin_mm: document.margin_mm,
         rx_number: document.rx_number,
-        issued_at: Some(document.issued_display()),
+        issued_at: Some(document.issued_at.clone()),
         mode: RenderMode::Final { code, verify_url },
         title: title.clone(),
     };
@@ -97,7 +97,7 @@ pub async fn prescription_preview(
         "status": document.status,
         "rxNumber": document.rx_number,
         "verificationCode": document.verification_code,
-        "issuedAt": document.issued_display(),
+        "issuedAt": document.issued_at,
         "provisional": provisional,
         "docJson": document.doc_json,
         "marginMm": document.margin_mm,
@@ -113,14 +113,21 @@ async fn pinned_assets(
     state: &AppState,
     document: &PrescriptionDocument,
 ) -> Result<Vec<(String, Vec<u8>)>, AuthError> {
+    use sha2::{Digest, Sha256};
     let mut pinned = Vec::new();
-    if let Some(storage) = state.assets.as_ref() {
-        for asset_id in &document.asset_ids {
-            let key = assets::object_key(&document.clinic_id, asset_id);
-            if let Some(bytes) = storage.get_object(&key).await? {
-                pinned.push((asset_id.clone(), bytes));
+    for asset_id in &document.asset_ids {
+        let storage = state.assets.as_ref().ok_or_else(|| AuthError::Unprocessable(
+            "No se pueden cargar las imágenes originales de la receta. Intente nuevamente.".to_owned()))?;
+        let key = assets::object_key(&document.clinic_id, asset_id);
+        let bytes = storage.get_object(&key).await?.ok_or_else(|| AuthError::Unprocessable(
+            "Falta una imagen original de la receta. Contacte al administrador.".to_owned()))?;
+        if let Some(snapshot) = &document.issued_snapshot {
+            let expected = snapshot.assets.iter().find(|asset| &asset.id == asset_id).ok_or(AuthError::Internal)?;
+            if format!("{:x}", Sha256::digest(&bytes)) != expected.sha256 {
+                return Err(AuthError::Unprocessable("Una imagen no coincide con el documento emitido. Contacte al administrador.".to_owned()));
             }
         }
+        pinned.push((asset_id.clone(), bytes));
     }
     Ok(pinned)
 }

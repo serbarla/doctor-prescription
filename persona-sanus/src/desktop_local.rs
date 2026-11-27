@@ -118,6 +118,8 @@ CREATE TABLE IF NOT EXISTS prescriptions (
   warning_signs TEXT,
   instructions TEXT,
   signed_at TEXT,
+  issued_snapshot_json TEXT,
+  verification_json TEXT,
   synced_at TEXT,
   voided_at TEXT,
   void_reason TEXT,
@@ -184,6 +186,12 @@ CREATE TABLE IF NOT EXISTS asset_cache (
   fetched_at TEXT NOT NULL
 );
 ";
+
+#[cfg(test)]
+pub(crate) fn initialize_test_db(conn: &mut SqliteConnection) {
+    use diesel::connection::SimpleConnection;
+    conn.batch_execute(SCHEMA).unwrap();
+}
 
 #[derive(Debug, Clone, QueryableByName)]
 struct JsonRow {
@@ -305,6 +313,24 @@ fn migrate_outbox(conn: &mut SqliteConnection) -> Result<(), String> {
     )
 }
 
+fn migrate_issued_snapshot(conn: &mut SqliteConnection) -> Result<(), String> {
+    immediate(conn, |conn| {
+        for column in ["issued_snapshot_json", "verification_json"] {
+            let present = diesel::sql_query(format!(
+                "SELECT COUNT(*) AS value FROM pragma_table_info('prescriptions') WHERE name = '{column}'"
+            ))
+            .load::<IntRow>(conn)
+            .map_err(|error| error.to_string())?
+            .iter()
+            .any(|row| row.value > 0);
+            if !present {
+                exec(conn, &format!("ALTER TABLE prescriptions ADD COLUMN {column} TEXT"))?;
+            }
+        }
+        Ok(())
+    })
+}
+
 pub fn open_local_db() -> Result<SqliteConnection, String> {
     let dir = app_data_dir();
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -334,7 +360,8 @@ pub fn open_local_db() -> Result<SqliteConnection, String> {
     if outbox_needs_migration(&mut conn)? {
         migrate_outbox(&mut conn)?;
     }
-    exec(&mut conn, "PRAGMA user_version=1")?;
+    migrate_issued_snapshot(&mut conn)?;
+    exec(&mut conn, "PRAGMA user_version=2")?;
     Ok(conn)
 }
 
@@ -449,6 +476,8 @@ pub fn refresh_local_session(user: &Value, profile: Option<&Value>) -> Result<()
     set_meta(&mut conn, "session_user", &user.to_string())?;
     if let Some(profile) = profile {
         set_meta(&mut conn, "session_profile", &profile.to_string())?;
+    } else {
+        delete_meta(&mut conn, "session_profile")?;
     }
     Ok(())
 }
@@ -586,6 +615,41 @@ pub fn cache_template_version(conn: &mut SqliteConnection, version: &Value) -> R
 }
 
 pub fn cache_prescription(conn: &mut SqliteConnection, prescription: &Value) -> Result<(), String> {
+    let identity = local_identity(conn)?.ok_or_else(|| "Sesión local no disponible.".to_owned())?;
+    let row = json!({"clinicId": prescription.get("clinic_id"), "doctorId": prescription.get("doctor_id"), "status": prescription.get("status")});
+    if !permitted(&identity, &row, "read") {
+        return Err("Receta no encontrada en la caché local.".to_owned());
+    }
+    let id = prescription.get("id").and_then(Value::as_str).ok_or("Receta inválida.")?;
+    if has_pending_outbox(conn, id)? {
+        return Err("La receta tiene cambios locales pendientes.".to_owned());
+    }
+    let mut prescription = prescription.clone();
+    let existing = diesel::sql_query("SELECT issued_snapshot_json AS value FROM prescriptions WHERE id = ?")
+        .bind::<Text, _>(id).load::<OptRow>(conn)
+        .map_err(|error| error.to_string())?
+        .into_iter().next().and_then(|row| row.value);
+    let incoming = prescription.get("issued_snapshot").filter(|value| !value.is_null()).cloned();
+    let parsed = incoming.as_ref().map(|snapshot| serde_json::from_value::<crate::api::IssuedSnapshot>(snapshot.clone()))
+        .transpose().map_err(|_| "La instantánea de emisión es inválida.".to_owned())?;
+    if let Some(snapshot) = &parsed {
+        snapshot.validate_structure()?;
+        if snapshot.prescription_id != id
+            || snapshot.clinic_id != prescription.get("clinic_id").and_then(Value::as_str).unwrap_or_default()
+            || snapshot.patient_id != prescription.get("patient_id").and_then(Value::as_str).unwrap_or_default()
+        {
+            return Err("La instantánea no corresponde a la receta.".to_owned());
+        }
+    }
+    if let Some(existing) = existing {
+        let original: crate::api::IssuedSnapshot = serde_json::from_str(&existing)
+            .map_err(|_| "La instantánea de emisión es inválida.".to_owned())?;
+        if parsed.as_ref() != Some(&original) {
+            return Err("La instantánea emitida no coincide; conserva la receta pendiente para resolver el conflicto.".to_owned());
+        }
+    }
+    prescription["issued_snapshot_json"] = incoming.unwrap_or(Value::Null);
+    prescription["verification_json"] = prescription.get("verification").cloned().unwrap_or(Value::Null);
     upsert_json(
         conn,
         "prescriptions",
@@ -605,6 +669,8 @@ pub fn cache_prescription(conn: &mut SqliteConnection, prescription: &Value) -> 
             "warning_signs",
             "instructions",
             "signed_at",
+            "issued_snapshot_json",
+            "verification_json",
             "synced_at",
             "voided_at",
             "void_reason",
@@ -614,8 +680,10 @@ pub fn cache_prescription(conn: &mut SqliteConnection, prescription: &Value) -> 
             "updated_at",
             "created_by",
         ],
-        prescription,
-    )
+        &prescription,
+    )?;
+    let scope = local_scope(conn)?.ok_or("Sesión local no disponible.")?;
+    set_meta(conn, &format!("prescription_scope:{id}"), &scope)
 }
 
 pub fn cache_asset_meta(conn: &mut SqliteConnection, asset: &Value) -> Result<(), String> {
@@ -728,10 +796,12 @@ pub fn rx_block_clinic_id(conn: &mut SqliteConnection, id: &str) -> Result<Optio
 }
 
 pub fn has_pending_outbox(conn: &mut SqliteConnection, entity_id: &str) -> Result<bool, String> {
-    let rows = diesel::sql_query(&format!(
-        "SELECT COUNT(*) AS value FROM outbox WHERE entity_id = '{}' AND status = 'pending'",
-        entity_id.replace('\'', "''")
-    ))
+    let rows = diesel::sql_query(
+        "SELECT COUNT(*) AS value FROM outbox WHERE status IN ('pending', 'failed') AND \
+         (entity_id = ? OR json_extract(payload_json, '$.prescriptionId') = ?)"
+    )
+    .bind::<Text, _>(entity_id)
+    .bind::<Text, _>(entity_id)
     .load::<IntRow>(conn)
     .map_err(|error| error.to_string())?;
     Ok(rows.iter().any(|row| row.value > 0))
@@ -787,19 +857,105 @@ pub fn list_template_versions(
     )
 }
 
+fn local_identity(conn: &mut SqliteConnection) -> Result<Option<Value>, String> {
+    if get_meta(conn, "session_token")?.filter(|s| !s.is_empty()).is_none()
+        || get_meta(conn, "session_user")?.and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .and_then(|u| u.get("id").and_then(Value::as_str).map(str::to_owned))
+            .filter(|s| !s.is_empty()).is_none()
+    {
+        return Ok(None);
+    }
+    let expires = get_meta(conn, "session_expires_at")?.unwrap_or_default();
+    if expires.is_empty() || DateTime::parse_from_rfc3339(&expires)
+        .map(|v| v.timestamp() <= Utc::now().timestamp()).unwrap_or(true)
+    {
+        return Ok(None);
+    }
+    Ok(get_meta(conn, "session_profile")?.and_then(|s| serde_json::from_str(&s).ok()))
+}
+
+fn local_scope(conn: &mut SqliteConnection) -> Result<Option<String>, String> {
+    let Some(identity) = local_identity(conn)? else { return Ok(None); };
+    let Some(user) = get_meta(conn, "session_user")?.and_then(|s| serde_json::from_str::<Value>(&s).ok()) else { return Ok(None); };
+    Ok(Some(json!([user.get("id"), identity.pointer("/profile/id"), identity.pointer("/clinic/id"), identity.get("role"), identity.pointer("/doctor/id")]).to_string()))
+}
+
+pub(crate) fn authorize_create_replay(conn: &mut SqliteConnection, payload: &Value) -> Result<(), String> {
+    let identity = local_identity(conn)?.ok_or("Sesión local no disponible.")?;
+    let actor = payload.get("createdBy").and_then(Value::as_str);
+    let doctor = payload.get("doctorId").and_then(Value::as_str);
+    let clinic = payload.get("clinicId").and_then(Value::as_str);
+    let recorded_scope = payload.get("clientId").and_then(Value::as_str)
+        .map(|id| get_meta(conn, &format!("prescription_scope:{id}")))
+        .transpose()?.flatten();
+    if recorded_scope.is_some() && recorded_scope != local_scope(conn)? {
+        return Err("La operación pertenece a otra identidad o función.".to_owned());
+    }
+    let valid = actor.is_some()
+        && actor == identity.pointer("/profile/id").and_then(Value::as_str)
+        && clinic.is_some()
+        && clinic == identity.pointer("/clinic/id").and_then(Value::as_str)
+        && match identity.get("role").and_then(Value::as_str) {
+            Some("doctor") => doctor.is_some() && doctor == identity.pointer("/doctor/id").and_then(Value::as_str),
+            Some("nursing") => doctor.is_none(),
+            _ => false,
+        };
+    if valid { Ok(()) } else { Err("La operación pertenece a otra identidad o función.".to_owned()) }
+}
+
+fn permitted(identity: &Value, row: &Value, action: &str) -> bool {
+    let field = |v: &Value, name: &str| v.get(name).and_then(Value::as_str).unwrap_or_default().to_owned();
+    let clinic = identity.pointer("/clinic/id").and_then(Value::as_str).unwrap_or_default();
+    let actor = identity.pointer("/profile/id").and_then(Value::as_str).unwrap_or_default();
+    let role = identity.get("role").and_then(Value::as_str).unwrap_or_default();
+    let doctor = identity.pointer("/doctor/id").and_then(Value::as_str).unwrap_or_default();
+    let status = field(row, "status");
+    let owner = row.get("doctorId").and_then(Value::as_str);
+    if clinic.is_empty() || actor.is_empty() || field(row, "clinicId") != clinic {
+        return false;
+    }
+    let read = match role {
+        "doctor" => !doctor.is_empty() && (owner == Some(doctor) || (owner.is_none() && status == "draft")),
+        "nursing" | "administrator" => true,
+        "secretary" => matches!(status.as_str(), "signed" | "voided" | "superseded"),
+        _ => false,
+    };
+    read && match action {
+        "read" => true,
+        "edit" => status == "draft" && matches!(role, "doctor" | "nursing"),
+        "sign" => status == "draft" && role == "doctor",
+        "transition" => status == "signed" && role == "doctor",
+        _ => false,
+    }
+}
+
+fn authorize_action(conn: &mut SqliteConnection, row: &Value, action: &str, actor_id: &str, doctor_id: Option<&str>) -> Result<(), String> {
+    let identity = local_identity(conn)?.ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
+    if identity.pointer("/profile/id").and_then(Value::as_str) != Some(actor_id)
+        || doctor_id.is_some_and(|id| identity.pointer("/doctor/id").and_then(Value::as_str) != Some(id))
+        || !permitted(&identity, row, action)
+    {
+        return Err("Receta no encontrada en la caché local.".to_owned());
+    }
+    Ok(())
+}
+
 pub fn list_prescriptions(conn: &mut SqliteConnection, status: &str) -> Result<Vec<Value>, String> {
     let filter = if status.is_empty() {
         String::new()
     } else if status == "pending_sync" {
-        " WHERE status <> 'draft' AND id IN (SELECT entity_id FROM outbox WHERE entity_type = 'prescription' AND status = 'pending')"
+        " WHERE EXISTS (SELECT 1 FROM outbox WHERE status = 'pending' AND \
+         (entity_id = prescriptions.id OR json_extract(payload_json, '$.prescriptionId') = prescriptions.id))"
             .to_owned()
     } else if status == "failed" {
-        " WHERE status <> 'draft' AND id IN (SELECT entity_id FROM outbox WHERE entity_type = 'prescription' AND status = 'failed')"
+        " WHERE EXISTS (SELECT 1 FROM outbox WHERE status = 'failed' AND \
+         (entity_id = prescriptions.id OR json_extract(payload_json, '$.prescriptionId') = prescriptions.id))"
             .to_owned()
     } else {
         format!(" WHERE status = '{}'", status.replace('\'', "''"))
     };
-    json_rows(
+    let Some(identity) = local_identity(conn)? else { return Ok(Vec::new()); };
+    let rows = json_rows(
         conn,
         &format!(
             "SELECT json_object('id', id, 'patientId', patient_id, 'patientName', \
@@ -807,12 +963,23 @@ pub fn list_prescriptions(conn: &mut SqliteConnection, status: &str) -> Result<V
              'doctorId', doctor_id, 'clinicId', clinic_id, 'templateVersionId', template_version_id, \
              'status', status, 'rxNumber', rx_number, 'rxBlockId', rx_block_id, \
              'diagnosis', diagnosis, 'validity', validity, 'recetarioType', recetario_type, 'validityDays', validity_days, 'warningSigns', warning_signs, 'instructions', instructions, \
-             'signedAt', signed_at, 'syncedAt', synced_at, 'voidedAt', voided_at, 'voidReason', void_reason, \
+             'signedAt', signed_at, 'issuedSnapshot', json(issued_snapshot_json), 'verification', json(verification_json), 'syncedAt', synced_at, 'voidedAt', voided_at, 'voidReason', void_reason, \
              'clientId', client_id, 'supersedesId', supersedes_id, 'createdAt', created_at, \
              'updatedAt', updated_at, 'createdBy', created_by, 'items', json_array()) AS row_json \
              FROM prescriptions{filter} ORDER BY created_at DESC"
         ),
-    )
+    )?;
+    let Some(scope) = local_scope(conn)? else { return Ok(Vec::new()); };
+    let mut allowed = Vec::new();
+    for row in rows {
+        let id = row.get("id").and_then(Value::as_str).unwrap_or_default();
+        if permitted(&identity, &row, "read")
+            && get_meta(conn, &format!("prescription_scope:{id}"))?.as_deref() == Some(scope.as_str())
+        {
+            allowed.push(row);
+        }
+    }
+    Ok(allowed)
 }
 
 pub fn get_prescription(conn: &mut SqliteConnection, id: &str) -> Result<Option<Value>, String> {
@@ -820,6 +987,136 @@ pub fn get_prescription(conn: &mut SqliteConnection, id: &str) -> Result<Option<
     Ok(rows
         .into_iter()
         .find(|row| row.get("id").and_then(Value::as_str) == Some(id)))
+}
+
+pub fn render_prescription_pdf(conn: &mut SqliteConnection, id: &str, input: &crate::pdf::PdfInput) -> Result<Vec<u8>, String> {
+    let found = get_prescription(conn, id)?
+        .ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
+    if found.get("status").and_then(Value::as_str) == Some("draft") {
+        return Err("Firma la receta antes de generar el PDF.".to_owned());
+    }
+    let frozen = issued_snapshot_pdf_input(conn, &found, &input.title)?;
+    crate::pdf::render(&frozen)
+}
+
+const HISTORY_UNAVAILABLE: &str = "El documento original no está disponible: esta receta se emitió antes del registro de instantáneas. Consulta el ejemplar impreso o solicita una nueva receta; los datos y la verificación siguen disponibles.";
+
+fn issued_snapshot_from_row(found: &Value) -> Result<crate::api::IssuedSnapshot, String> {
+    let snapshot = found.get("issuedSnapshot").filter(|value| !value.is_null())
+        .ok_or_else(|| HISTORY_UNAVAILABLE.to_owned())?;
+    let snapshot: crate::api::IssuedSnapshot = serde_json::from_value(snapshot.clone())
+        .map_err(|_| "La instantánea de emisión es inválida.".to_owned())?;
+    snapshot.validate_structure()?;
+    Ok(snapshot)
+}
+
+fn issued_snapshot_assets(conn: &mut SqliteConnection, snapshot: &crate::api::IssuedSnapshot) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut assets = Vec::with_capacity(snapshot.assets.len());
+    for asset in &snapshot.assets {
+        let path = diesel::sql_query("SELECT local_path AS value FROM asset_cache WHERE asset_id = ? AND sha256 = ?")
+            .bind::<Text, _>(&asset.id).bind::<Text, _>(&asset.sha256)
+            .load::<TextRow>(conn).map_err(|error| error.to_string())?
+            .into_iter().next().map(|row| row.value)
+            .ok_or("Falta una imagen fijada. Conéctate para descargarla antes de emitir o reimprimir.")?;
+        let bytes = std::fs::read(path).map_err(|_| "Falta una imagen fijada. Conéctate para descargarla antes de emitir o reimprimir.")?;
+        if hex::encode(Sha256::digest(&bytes)) != asset.sha256 {
+            return Err("La imagen fijada no coincide con la emisión. Descárgala de nuevo.".to_owned());
+        }
+        assets.push((asset.id.clone(), bytes));
+    }
+    Ok(assets)
+}
+
+fn issued_snapshot_pdf_input(conn: &mut SqliteConnection, found: &Value, title: &str) -> Result<crate::pdf::PdfInput, String> {
+    let snapshot = issued_snapshot_from_row(found)?;
+    let code = found.pointer("/verification/code").and_then(Value::as_str);
+    let mode = match code {
+        Some(code) => crate::pdf::RenderMode::Final {
+            code: code.to_owned(),
+            verify_url: format!("{}/verify/{code}", crate::http::api_base()),
+        },
+        None => crate::pdf::RenderMode::Provisional,
+    };
+    Ok(crate::pdf::PdfInput {
+        assets: issued_snapshot_assets(conn, &snapshot)?,
+        margin_mm: crate::forms::template_theme_margin(snapshot.theme.as_deref()),
+        doc_json: snapshot.doc_json,
+        values: snapshot.variables,
+        medications: snapshot.medications,
+        rx_number: Some(snapshot.rx_number),
+        issued_at: Some(snapshot.issued_at),
+        mode,
+        title: title.to_owned(),
+    })
+}
+
+pub(crate) fn issued_snapshot_preview(conn: &mut SqliteConnection, found: &Value) -> Result<crate::api::PrescriptionPreview, String> {
+    use base64::Engine;
+    let snapshot = issued_snapshot_from_row(found)?;
+    let input = issued_snapshot_pdf_input(conn, found, "Receta")?;
+    let data_url = |kind: &str, bytes: &[u8]| format!("data:{kind};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes));
+    let (verification_code, qr_data_url) = match &input.mode {
+        crate::pdf::RenderMode::Final { code, verify_url } => (Some(code.clone()), crate::pdf::qr_png(verify_url).map(|png| data_url("image/png", &png))),
+        crate::pdf::RenderMode::Provisional => (None, None),
+    };
+    let image_sources = input.assets.iter().map(|(id, bytes)| crate::api::PreviewImageSource {
+        asset_id: id.clone(),
+        data_url: data_url(if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) { "image/jpeg" } else { "image/png" }, bytes),
+    }).collect();
+    Ok(crate::api::PrescriptionPreview {
+        id: snapshot.prescription_id,
+        status: found.get("status").and_then(Value::as_str).unwrap_or("signed").to_owned(),
+        rx_number: input.rx_number,
+        provisional: verification_code.is_none(),
+        verification_code,
+        issued_at: snapshot.issued_at,
+        doc_json: input.doc_json,
+        margin_mm: input.margin_mm,
+        variables: input.values.into_iter().map(|(key, value)| crate::api::PreviewVariable { key, value }).collect(),
+        medications: input.medications,
+        qr_data_url,
+        image_sources,
+    })
+}
+
+pub(crate) fn apply_issued_snapshot_reconciliation(conn: &mut SqliteConnection, payload: &Value, response: &Value) -> Result<(), String> {
+    immediate(conn, |conn| {
+        serde_json::from_value::<crate::api::Prescription>(response.clone())
+            .map_err(|_| "La respuesta de emisión está incompleta.".to_owned())?;
+        let snapshot: crate::api::IssuedSnapshot = serde_json::from_value(
+            payload.get("issuedSnapshot").cloned().ok_or(HISTORY_UNAVAILABLE)?
+        ).map_err(|_| HISTORY_UNAVAILABLE.to_owned())?;
+        snapshot.validate_structure()?;
+        let found = get_prescription(conn, &snapshot.prescription_id)?.ok_or("Receta no encontrada en la caché local.")?;
+        if issued_snapshot_from_row(&found)? != snapshot
+            || response.get("issuedSnapshot") != payload.get("issuedSnapshot")
+            || response.get("id").and_then(Value::as_str) != Some(snapshot.prescription_id.as_str())
+            || response.get("rxNumber").and_then(Value::as_i64) != Some(i64::from(snapshot.rx_number))
+            || response.get("rxBlockId").and_then(Value::as_str) != Some(snapshot.rx_block_id.as_str())
+            || response.get("signedAt").and_then(Value::as_str) != Some(snapshot.issued_at.as_str())
+            || response.get("clinicId").and_then(Value::as_str) != Some(snapshot.clinic_id.as_str())
+            || response.get("patientId").and_then(Value::as_str) != Some(snapshot.patient_id.as_str())
+            || response.get("doctorId").and_then(Value::as_str) != Some(snapshot.doctor_id.as_str())
+            || response.get("clientId").and_then(Value::as_str) != Some(snapshot.client_id.as_str())
+            || response.get("templateVersionId").and_then(Value::as_str) != Some(snapshot.template_version_id.as_str())
+            || !matches!(response.get("status").and_then(Value::as_str), Some("signed" | "voided" | "superseded"))
+        {
+            return Err("La respuesta no coincide con la emisión pendiente. Conserva la receta para resolver el conflicto.".to_owned());
+        }
+        let verification = response.get("verification").filter(|value| value.get("code").and_then(Value::as_str).is_some_and(|code| !code.is_empty()))
+            .ok_or("La respuesta de emisión no contiene un código de verificación.")?;
+        if let Some(original) = found.pointer("/verification/code").and_then(Value::as_str) {
+            if verification.get("code").and_then(Value::as_str) != Some(original) {
+                return Err("El código de verificación no coincide con la emisión reconciliada.".to_owned());
+            }
+        }
+        diesel::sql_query("UPDATE prescriptions SET verification_json = ?, synced_at = ? WHERE id = ?")
+            .bind::<Text, _>(verification.to_string())
+            .bind::<Text, _>(now())
+            .bind::<Text, _>(&snapshot.prescription_id)
+            .execute(conn).map_err(|error| error.to_string())?;
+        Ok(())
+    })
 }
 
 pub fn get_template_version(
@@ -1003,13 +1300,7 @@ pub fn evict_local_cache_row(
     if created >= cutoff {
         return Ok(false);
     }
-    let queued = diesel::sql_query(&format!(
-        "SELECT COUNT(*) AS value FROM outbox WHERE entity_id = '{}' AND status = 'pending'",
-        row_id.replace('\'', "''")
-    ))
-    .load::<IntRow>(conn)
-    .map_err(|error| error.to_string())?;
-    if queued.iter().any(|row| row.value > 0) {
+    if has_pending_outbox(conn, row_id)? {
         return Ok(false);
     }
     if table == "prescriptions" {
@@ -1153,10 +1444,12 @@ pub fn active_block_remaining(conn: &mut SqliteConnection, device_id: &str) -> R
 }
 
 pub fn asset_referenced(conn: &mut SqliteConnection, asset_id: &str) -> Result<bool, String> {
-    let rows = diesel::sql_query(&format!(
-        "SELECT COUNT(*) AS value FROM template_version_assets WHERE asset_id = '{}'",
-        asset_id.replace('\'', "''")
-    ))
+    let rows = diesel::sql_query(
+        "SELECT (SELECT COUNT(*) FROM template_version_assets WHERE asset_id = ?) + \
+         (SELECT COUNT(*) FROM prescriptions, json_each(issued_snapshot_json, '$.assets') WHERE json_extract(json_each.value, '$.id') = ?) AS value"
+    )
+    .bind::<Text, _>(asset_id)
+    .bind::<Text, _>(asset_id)
     .load::<IntRow>(conn)
     .map_err(|error| error.to_string())?;
     Ok(rows.iter().any(|row| row.value > 0))
@@ -1222,14 +1515,6 @@ pub fn evict_asset_cache(conn: &mut SqliteConnection, asset_id: &str) -> Result<
     Ok(true)
 }
 
-pub fn cached_asset_path(asset_id: &str) -> Option<PathBuf> {
-    let path = cache_dir().join(format!("{asset_id}.bin"));
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
-}
 pub fn cached_asset_ids(conn: &mut SqliteConnection) -> Result<Vec<String>, String> {
     let rows = diesel::sql_query("SELECT asset_id AS value FROM asset_cache")
         .load::<TextRow>(conn)
@@ -1254,17 +1539,6 @@ pub fn doc_asset_ids(doc_json: &str) -> Vec<String> {
     ids
 }
 
-pub fn cached_doc_assets(doc_json: &str) -> Vec<(String, Vec<u8>)> {
-    let mut assets = Vec::new();
-    for asset_id in doc_asset_ids(doc_json) {
-        if let Some(path) = cached_asset_path(&asset_id) {
-            if let Ok(bytes) = std::fs::read(path) {
-                assets.push((asset_id, bytes));
-            }
-        }
-    }
-    assets
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OfflineSignResult {
@@ -1272,6 +1546,108 @@ pub struct OfflineSignResult {
     pub rx_block_id: String,
     pub outbox_id: String,
     pub remaining: i64,
+}
+
+fn capture_issued_snapshot(
+    conn: &mut SqliteConnection,
+    prescription: &Value,
+    source_id: &str,
+    device_id: &str,
+    doctor_id: &str,
+    actor_id: &str,
+    at: &str,
+) -> Result<crate::api::IssuedSnapshot, String> {
+    let required = |key: &str| prescription.get(key).and_then(Value::as_str)
+        .filter(|value| !value.is_empty()).map(str::to_owned)
+        .ok_or_else(|| "Faltan datos de la receta. Conéctate antes de emitir.".to_owned());
+    let id = required("id")?;
+    let clinic_id = required("clinicId")?;
+    let patient_id = required("patientId")?;
+    let version_id = required("templateVersionId")?;
+    let identity = local_identity(conn)?.ok_or("Sesión local no disponible.")?;
+    let profile: crate::api::Me = serde_json::from_value(identity)
+        .map_err(|_| "El perfil médico local está incompleto. Conéctate antes de emitir.")?;
+    if profile.profile.id != actor_id
+        || profile.profile.display_name.trim().is_empty()
+        || profile.doctor.as_ref().map(|doctor| doctor.id.as_str()) != Some(doctor_id)
+        || profile.clinic.as_ref().map(|clinic| clinic.id.as_str()) != Some(clinic_id.as_str())
+    {
+        return Err("El perfil médico local no corresponde a la emisión.".to_owned());
+    }
+    let patient = list_patients(conn)?.into_iter()
+        .find(|patient| patient.get("id").and_then(Value::as_str) == Some(patient_id.as_str()))
+        .filter(|patient| patient.get("clinicId").and_then(Value::as_str) == Some(clinic_id.as_str()))
+        .ok_or("Faltan los datos del paciente. Conéctate antes de emitir.")?;
+    if patient.get("fullName").and_then(Value::as_str).is_none_or(|name| name.trim().is_empty()) {
+        return Err("Falta el nombre del paciente.".to_owned());
+    }
+    let clinic = get_clinic(conn, &clinic_id)?
+        .ok_or("Faltan los datos de la clínica. Conéctate antes de emitir.")?;
+    let version = get_template_version(conn, &version_id)?
+        .ok_or("Falta la plantilla fijada. Conéctate antes de emitir.")?;
+    if version.get("status").and_then(Value::as_str) != Some("published") {
+        return Err("La plantilla debe estar publicada antes de emitir.".to_owned());
+    }
+    let doc_json = version.get("docJson").and_then(Value::as_str)
+        .ok_or("La plantilla local no contiene un documento válido.")?.to_owned();
+    crate::forms::parse_document(&doc_json)?;
+    let theme = version.get("theme").and_then(Value::as_str).map(str::to_owned);
+    let mut assets = Vec::new();
+    let asset_ids = doc_asset_ids(&doc_json);
+    for asset_id in &asset_ids {
+        let rows = diesel::sql_query(
+            "SELECT sha256 AS value FROM assets WHERE id = ? AND clinic_id = ? AND status = 'ready' AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM template_version_assets WHERE template_version_id = ? AND asset_id = assets.id)"
+        ).bind::<Text, _>(asset_id).bind::<Text, _>(&clinic_id).bind::<Text, _>(&version_id)
+            .load::<OptRow>(conn).map_err(|error| error.to_string())?;
+        let sha256 = rows.into_iter().next().and_then(|row| row.value)
+            .filter(|hash| hash.len() == 64).ok_or("Faltan imágenes fijadas de la plantilla. Conéctate antes de emitir.")?;
+        assets.push(crate::api::IssuedSnapshotAsset { id: asset_id.clone(), sha256 });
+    }
+    let medications = local_prescription_items(conn, source_id)?.into_iter().map(|item| {
+        let field = |key: &str| item.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+        crate::forms::MedicationBlock {
+            name: field("medName"), dose: field("dose"), route: field("route"),
+            frequency: field("frequency"), duration: field("duration"), quantity: field("quantity"),
+            quantity_number: item.get("quantityNumber").and_then(Value::as_i64).map(|number| number as i32),
+            notes: field("notes"),
+        }
+    }).collect::<Vec<_>>();
+    let mut issued = prescription.clone();
+    issued["doctorId"] = doctor_id.into();
+    let variables = crate::offline_preview_variables(&issued, Some(&patient), Some(&clinic), &profile, at, &medications)
+        .into_iter().map(|variable| (variable.key, variable.value)).collect();
+    let snapshot = crate::api::IssuedSnapshot {
+        version: 1,
+        prescription_id: id,
+        client_id: required("clientId")?,
+        clinic_id, patient_id, doctor_id: doctor_id.to_owned(), actor_id: actor_id.to_owned(),
+        device_id: device_id.to_owned(), template_version_id: version_id, rx_block_id: String::new(),
+        rx_number: 0, issued_at: at.to_owned(),
+        doc_sha256: hex::encode(Sha256::digest(doc_json.as_bytes())),
+        theme_sha256: hex::encode(Sha256::digest(theme.as_deref().unwrap_or("").as_bytes())),
+        doc_json, theme, assets, variables, medications,
+        patient_birth_date: patient.get("birthDate").and_then(Value::as_str).map(str::to_owned),
+    };
+    for (_, bytes) in issued_snapshot_assets(conn, &snapshot)? {
+        printpdf::RawImage::decode_from_bytes(&bytes, &mut Vec::new())
+            .map_err(|_| "Una imagen fijada no es válida.")?;
+    }
+    let block = diesel::sql_query("SELECT COUNT(*) AS value FROM (SELECT clinic_id FROM rx_blocks WHERE device_id = ? AND status = 'active' AND consumed <= end_number - start_number ORDER BY allocated_at DESC LIMIT 1) WHERE clinic_id = ?")
+        .bind::<Text, _>(device_id).bind::<Text, _>(&snapshot.clinic_id)
+        .load::<IntRow>(conn).map_err(|error| error.to_string())?;
+    if !block.iter().any(|row| row.value > 0) {
+        return Err("No hay un bloque de números disponible para esta clínica y dispositivo.".to_owned());
+    }
+    Ok(snapshot)
+}
+
+fn bind_issued_snapshot_number(snapshot: &mut crate::api::IssuedSnapshot, consumed: &ConsumedNumber) -> Result<(), String> {
+    snapshot.rx_number = i32::try_from(consumed.number).map_err(|_| "Número de receta fuera de rango.")?;
+    snapshot.rx_block_id = consumed.block_id.clone();
+    let number = snapshot.variables.iter_mut().find(|(key, _)| key == "prescription.number")
+        .ok_or("Falta el número en las variables de emisión.")?;
+    number.1 = format!("{:06}", snapshot.rx_number);
+    snapshot.validate_structure()
 }
 
 pub fn offline_sign(
@@ -1284,29 +1660,33 @@ pub fn offline_sign(
     immediate(conn, |conn| {
         let prescription = get_prescription(conn, prescription_id)?
             .ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
+        authorize_action(conn, &prescription, "sign", actor_id, Some(doctor_id))?;
         if prescription.get("status").and_then(Value::as_str) != Some("draft") {
             return Err("Solo un borrador puede firmarse.".to_owned());
         }
+        let at = now();
+        let mut snapshot = capture_issued_snapshot(conn, &prescription, prescription_id, device_id, doctor_id, actor_id, &at)?;
         let consumed = consume_local_rx_number(conn, device_id).map_err(|exhausted| {
             format!(
                 "Bloque de números agotado. Quedan {} números.",
                 exhausted.remaining
             )
         })?;
-        let at = now();
+        bind_issued_snapshot_number(&mut snapshot, &consumed)?;
         let client_id = prescription
             .get("clientId")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
         diesel::sql_query(
-            "UPDATE prescriptions SET status = 'signed', doctor_id = :doctor_id, rx_number = :rx_number, rx_block_id = :rx_block_id, signed_at = :signed_at, synced_at = NULL, updated_at = :updated_at WHERE id = :id",
+            "UPDATE prescriptions SET status = 'signed', doctor_id = :doctor_id, rx_number = :rx_number, rx_block_id = :rx_block_id, signed_at = :signed_at, synced_at = NULL, updated_at = :updated_at, issued_snapshot_json = :snapshot WHERE id = :id",
         )
         .bind::<Text, _>(doctor_id)
         .bind::<Integer, _>(&(consumed.number as i32))
         .bind::<Text, _>(consumed.block_id.as_str())
         .bind::<Text, _>(at.as_str())
         .bind::<Text, _>(at.as_str())
+        .bind::<Text, _>(serde_json::to_string(&snapshot).map_err(|error| error.to_string())?)
         .bind::<Text, _>(prescription_id)
         .execute(conn)
         .map_err(|error| error.to_string())?;
@@ -1323,6 +1703,7 @@ pub fn offline_sign(
                 "doctorId": doctor_id,
                 "createdBy": actor_id,
                 "signedAt": at,
+                "issuedSnapshot": snapshot,
             }),
         )?;
         Ok(OfflineSignResult {
@@ -1405,6 +1786,16 @@ pub fn create_local_prescription(
     instructions: &str,
     actor_id: &str,
 ) -> Result<LocalCreatePrescription, String> {
+    let identity = local_identity(conn)?.ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
+    let row = json!({"clinicId": clinic_id, "doctorId": doctor_id, "status": "draft"});
+    authorize_action(conn, &row, "edit", actor_id, None)?;
+    let role = identity.get("role").and_then(Value::as_str);
+    let current_doctor = identity.pointer("/doctor/id").and_then(Value::as_str);
+    if (role == Some("doctor") && (current_doctor.is_none() || doctor_id != current_doctor))
+        || (role == Some("nursing") && doctor_id.is_some())
+    {
+        return Err("Receta no encontrada en la caché local.".to_owned());
+    }
     let id = Uuid::now_v7().to_string();
     let at = now();
     let diagnosis = clean_local_text(diagnosis, 2000);
@@ -1432,6 +1823,8 @@ pub fn create_local_prescription(
     .bind::<Text, _>(actor_id)
     .execute(conn)
     .map_err(|error| error.to_string())?;
+    let scope = local_scope(conn)?.ok_or("Sesión local no disponible.")?;
+    set_meta(conn, &format!("prescription_scope:{id}"), &scope)?;
     let outbox_id = enqueue_outbox(
         conn,
         "create_prescription",
@@ -1477,6 +1870,7 @@ pub fn update_local_prescription(
 ) -> Result<String, String> {
     let prescription = get_prescription(conn, prescription_id)?
         .ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
+    authorize_action(conn, &prescription, "edit", actor_id, None)?;
     if prescription.get("status").and_then(Value::as_str) != Some("draft") {
         return Err("La receta no se puede editar.".to_owned());
     }
@@ -1544,6 +1938,7 @@ pub fn upsert_local_prescription_item(
 ) -> Result<String, String> {
     let prescription = get_prescription(conn, prescription_id)?
         .ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
+    authorize_action(conn, &prescription, "edit", actor_id, None)?;
     if prescription.get("status").and_then(Value::as_str) != Some("draft") {
         return Err("La receta no se puede editar.".to_owned());
     }
@@ -1652,6 +2047,9 @@ pub fn local_prescription_items(
     conn: &mut SqliteConnection,
     prescription_id: &str,
 ) -> Result<Vec<Value>, String> {
+    if get_prescription(conn, prescription_id)?.is_none() {
+        return Err("Receta no encontrada en la caché local.".to_owned());
+    }
     json_rows(
         conn,
         &format!(
@@ -1847,6 +2245,7 @@ pub fn offline_void(
     }
     let prescription = get_prescription(conn, prescription_id)?
         .ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
+    authorize_action(conn, &prescription, "transition", actor_id, None)?;
     if prescription.get("status").and_then(Value::as_str) != Some("signed") {
         return Err("Solo una receta firmada puede anularse.".to_owned());
     }
@@ -1891,141 +2290,327 @@ pub fn offline_supersede(
     immediate(conn, |conn| {
         let original = get_prescription(conn, prescription_id)?
             .ok_or_else(|| "Receta no encontrada en la caché local.".to_owned())?;
-        if original.get("status").and_then(Value::as_str) != Some("signed") {
-            return Err("Solo una receta firmada puede reemplazarse.".to_owned());
-        }
-        let consumed = consume_local_rx_number(conn, device_id).map_err(|exhausted| {
-            format!(
-                "Bloque de números agotado. Quedan {} números.",
-                exhausted.remaining
-            )
-        })?;
-        let items = local_prescription_items(conn, prescription_id)?;
+        authorize_action(conn, &original, "transition", actor_id, Some(doctor_id))?;
         let at = now();
         let id = Uuid::now_v7().to_string();
-        diesel::sql_query(
-        "INSERT INTO prescriptions (id, patient_id, doctor_id, clinic_id, template_version_id, diagnosis, validity, instructions, status, rx_number, rx_block_id, signed_at, synced_at, client_id, supersedes_id, created_at, updated_at, created_by) \
-         VALUES (:id, :patient_id, :doctor_id, :clinic_id, :template_version_id, :diagnosis, :validity, :instructions, 'signed', :rx_number, :rx_block_id, :signed_at, NULL, :client_id, :supersedes_id, :created_at, :updated_at, :created_by)",
-    )
-    .bind::<Text, _>(id.as_str())
-    .bind::<Text, _>(
-        original
-            .get("patientId")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    )
-    .bind::<Text, _>(doctor_id)
-    .bind::<Text, _>(
-        original
-            .get("clinicId")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    )
-    .bind::<Text, _>(
-        original
-            .get("templateVersionId")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    )
-    .bind::<Text, _>(
-        original
-            .get("diagnosis")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    )
-    .bind::<Text, _>(
-        original
-            .get("validity")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    )
-    .bind::<Text, _>(
-        original
-            .get("instructions")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    )
-    .bind::<Integer, _>(&(consumed.number as i32))
-    .bind::<Text, _>(consumed.block_id.as_str())
-    .bind::<Text, _>(at.as_str())
-    .bind::<Text, _>(id.as_str())
-    .bind::<Text, _>(prescription_id)
-    .bind::<Text, _>(at.as_str())
-    .bind::<Text, _>(at.as_str())
-    .bind::<Text, _>(actor_id)
-    .execute(conn)
-    .map_err(|error| error.to_string())?;
-        for item in items {
-            let item_id = Uuid::now_v7().to_string();
-            diesel::sql_query(
-            "INSERT INTO prescription_items (id, prescription_id, position, med_name, dose, route, frequency, duration, quantity, notes, created_at, updated_at, created_by) VALUES (:id, :prescription_id, :position, :med_name, :dose, :route, :frequency, :duration, :quantity, :notes, :created_at, :updated_at, :created_by)",
-        )
-        .bind::<Text, _>(item_id.as_str())
-        .bind::<Text, _>(id.as_str())
-        .bind::<Integer, _>(
-            &(item.get("position").and_then(Value::as_i64).unwrap_or(1) as i32),
-        )
-        .bind::<Text, _>(
-            item.get("medName")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-        )
-        .bind::<Text, _>(item.get("dose").and_then(Value::as_str).unwrap_or_default())
-        .bind::<Text, _>(item.get("route").and_then(Value::as_str).unwrap_or_default())
-        .bind::<Text, _>(
-            item.get("frequency")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-        )
-        .bind::<Text, _>(
-            item.get("duration")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-        )
-        .bind::<Text, _>(
-            item.get("quantity")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-        )
-        .bind::<Text, _>(item.get("notes").and_then(Value::as_str).unwrap_or_default())
-        .bind::<Text, _>(at.as_str())
-        .bind::<Text, _>(at.as_str())
-        .bind::<Text, _>(actor_id)
-        .execute(conn)
-        .map_err(|error| error.to_string())?;
+        let mut replacement = original.clone();
+        replacement["id"] = id.clone().into();
+        replacement["clientId"] = id.clone().into();
+        let mut snapshot = capture_issued_snapshot(conn, &replacement, prescription_id, device_id, doctor_id, actor_id, &at)?;
+        let consumed = consume_local_rx_number(conn, device_id)
+            .map_err(|_| "Bloque de números agotado.".to_owned())?;
+        bind_issued_snapshot_number(&mut snapshot, &consumed)?;
+        cache_prescription(conn, &json!({
+            "id": id, "patient_id": original["patientId"], "doctor_id": doctor_id,
+            "clinic_id": original["clinicId"], "template_version_id": original["templateVersionId"],
+            "status": "signed", "rx_number": consumed.number, "rx_block_id": consumed.block_id,
+            "diagnosis": original["diagnosis"], "validity": original["validity"],
+            "recetario_type": original["recetarioType"], "validity_days": original["validityDays"],
+            "warning_signs": original["warningSigns"], "instructions": original["instructions"],
+            "signed_at": at, "issued_snapshot": snapshot, "client_id": id, "supersedes_id": prescription_id,
+            "created_at": at, "updated_at": at, "created_by": actor_id
+        }))?;
+        for item in local_prescription_items(conn, prescription_id)? {
+            cache_prescription_item(conn, &json!({
+                "id": Uuid::now_v7().to_string(), "prescription_id": id,
+                "position": item["position"], "med_name": item["medName"], "dose": item["dose"],
+                "route": item["route"], "frequency": item["frequency"], "duration": item["duration"],
+                "quantity": item["quantity"], "quantity_number": item["quantityNumber"], "notes": item["notes"],
+                "created_at": at, "updated_at": at, "created_by": actor_id
+            }))?;
         }
-        diesel::sql_query(
-        "UPDATE prescriptions SET status = 'superseded', synced_at = NULL, updated_at = :updated_at WHERE id = :id",
-    )
-    .bind::<Text, _>(at.as_str())
-    .bind::<Text, _>(prescription_id)
-    .execute(conn)
-    .map_err(|error| error.to_string())?;
-        let outbox_id = enqueue_outbox(
-            conn,
-            "supersede_prescription",
-            "prescription",
-            &id,
-            &json!({
-                "prescriptionId": prescription_id,
-                "newPrescriptionId": id,
-                "rxNumber": consumed.number,
-                "rxBlockId": consumed.block_id,
-                "clientId": id,
-                "doctorId": doctor_id,
-                "createdBy": actor_id,
-                "signedAt": at,
-            }),
-        )?;
-        Ok(OfflineSupersedeResult {
-            id,
-            rx_number: consumed.number,
-            rx_block_id: consumed.block_id,
-            outbox_id,
-        })
+        diesel::sql_query("UPDATE prescriptions SET status = 'superseded', synced_at = NULL, updated_at = ? WHERE id = ?")
+            .bind::<Text, _>(&at).bind::<Text, _>(prescription_id)
+            .execute(conn).map_err(|error| error.to_string())?;
+        let outbox_id = enqueue_outbox(conn, "supersede_prescription", "prescription", &id, &json!({
+            "prescriptionId": prescription_id, "newPrescriptionId": id, "rxNumber": consumed.number,
+            "rxBlockId": consumed.block_id, "clientId": id, "doctorId": doctor_id,
+            "createdBy": actor_id, "signedAt": at, "issuedSnapshot": snapshot
+        }))?;
+        Ok(OfflineSupersedeResult { id, rx_number: consumed.number, rx_block_id: consumed.block_id, outbox_id })
     })
 }
 
 pub fn date_now() -> NaiveDate {
     Utc::now().date_naive()
+}
+
+#[cfg(test)]
+pub(crate) mod issued_snapshot_tests {
+    use super::*;
+
+    pub(crate) fn seed_render_inputs(conn: &mut SqliteConnection, actor: &str, doctor: &str) {
+        set_meta(conn, "session_token", "fixture-token").unwrap();
+        set_meta(conn, "session_expires_at", "2099-01-01T00:00:00Z").unwrap();
+        set_meta(conn, "session_user", &json!({"id": actor}).to_string()).unwrap();
+        set_meta(conn, "session_profile", &json!({
+            "profile": {"id": actor, "displayName": "Fixture Doctor", "status": "active"},
+            "role": "doctor", "doctor": {"id": doctor, "specialty": "Fixture specialty",
+                "licenseNo": "FIXTURE", "nationalId": "fixture-doctor", "phone": "fixture-phone", "email": "fixture@example.invalid"},
+            "clinic": {"id": "clinic", "name": "Fixture Clinic", "timezone": "America/Guayaquil"}
+        }).to_string()).unwrap();
+        cache_clinic(conn, &json!({
+            "id": "clinic", "name": "Fixture Clinic", "address": "Fixture Address", "phone": "Fixture Phone",
+            "timezone": "America/Guayaquil", "retention_days": 30, "rx_block_size": 50,
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+        })).unwrap();
+        cache_patient(conn, &json!({
+            "id": "patient", "clinic_id": "clinic", "full_name": "Fixture Patient", "birth_date": "2000-01-01",
+            "national_id": "fixture-patient", "sex": "fixture-sex", "medical_record_no": "fixture-record",
+            "allergies": "fixture-allergy", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+        })).unwrap();
+        cache_template_version(conn, &json!({
+            "id": "template", "template_id": "parent-template", "version_no": 1,
+            "doc_json": crate::forms::default_document_json(), "variables_spec": "[]",
+            "theme": "{\"marginMm\":14}", "status": "published",
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+        })).unwrap();
+    }
+
+    fn fixture() -> (PathBuf, SqliteConnection) {
+        let path = std::env::temp_dir().join(format!("issued-snapshot-{}.sqlite", Uuid::now_v7()));
+        let mut conn = SqliteConnection::establish(&path.to_string_lossy()).unwrap();
+        initialize_test_db(&mut conn);
+        seed_render_inputs(&mut conn, "actor", "doctor");
+        cache_rx_block(&mut conn, &json!({
+            "id": "block", "clinic_id": "clinic", "device_id": "device", "start_number": 100, "end_number": 109,
+            "consumed": 0, "status": "active", "allocated_at": "2026-01-01T00:00:00Z",
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+        })).unwrap();
+        cache_prescription(&mut conn, &json!({
+            "id": "issued", "patient_id": "patient", "doctor_id": "doctor", "clinic_id": "clinic",
+            "template_version_id": "template", "status": "draft", "client_id": "issued",
+            "diagnosis": "Fixture diagnosis", "recetario_type": "ambulatorio", "validity_days": 3,
+            "warning_signs": "Fixture warning", "instructions": "Fixture instructions",
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z", "created_by": "actor"
+        })).unwrap();
+        for (position, name) in [(2, "Fixture B"), (1, "Fixture A")] {
+            cache_prescription_item(&mut conn, &json!({
+                "id": format!("item-{position}"), "prescription_id": "issued", "position": position,
+                "med_name": name, "dose": "Fixture dose", "route": "Fixture route", "frequency": "Fixture frequency",
+                "duration": "Fixture duration", "quantity": "Fixture quantity", "quantity_number": position,
+                "notes": "Fixture notes", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+            })).unwrap();
+        }
+        (path, conn)
+    }
+
+    fn preview(conn: &mut SqliteConnection) -> crate::api::PrescriptionPreview {
+        let profile = serde_json::from_str::<crate::api::Me>(&get_meta(conn, "session_profile").unwrap().unwrap()).unwrap();
+        crate::build_local_preview(conn, "issued", &profile).unwrap().unwrap()
+    }
+
+    #[test]
+    fn issued_snapshot_restart_cache_mutation_transport_and_final_replay() {
+        let (path, mut conn) = fixture();
+        let before = Utc::now().timestamp();
+        let sign = offline_sign(&mut conn, "issued", "device", "doctor", "actor").unwrap();
+        let row = get_prescription(&mut conn, "issued").unwrap().unwrap();
+        let snapshot = issued_snapshot_from_row(&row).unwrap();
+        assert!(DateTime::parse_from_rfc3339(&snapshot.issued_at).unwrap().timestamp() >= before);
+        assert_eq!(row["signedAt"], snapshot.issued_at);
+        assert_eq!(snapshot.medications[0].name, "Fixture A");
+        assert_eq!(snapshot.medications[1].quantity_number, Some(2));
+        let provisional = preview(&mut conn);
+        assert!(provisional.provisional);
+        assert!(provisional.qr_data_url.is_none());
+        let original_outbox = outbox_rows(&mut conn).unwrap();
+        let payload: Value = serde_json::from_str(original_outbox[0]["payloadJson"].as_str().unwrap()).unwrap();
+        assert_eq!(payload["issuedSnapshot"], row["issuedSnapshot"]);
+        assert!(offline_sign(&mut conn, "issued", "device", "doctor", "actor").is_err());
+        assert_eq!(active_block_remaining(&mut conn, "device").unwrap(), 9);
+        drop(conn);
+        let mut conn = SqliteConnection::establish(&path.to_string_lossy()).unwrap();
+        exec(&mut conn, "UPDATE patients SET full_name = 'Changed', birth_date = '2010-01-01', national_id = 'changed', sex = 'changed', medical_record_no = 'changed', allergies = 'changed'").unwrap();
+        exec(&mut conn, "UPDATE clinics SET name = 'Changed', address = 'Changed', phone = 'Changed'").unwrap();
+        exec(&mut conn, "UPDATE template_versions SET doc_json = '{}', theme = '{}'").unwrap();
+        exec(&mut conn, "UPDATE prescriptions SET diagnosis = 'Changed', validity_days = 99, warning_signs = 'Changed', instructions = 'Changed'").unwrap();
+        exec(&mut conn, "DELETE FROM prescription_items").unwrap();
+        let mut profile: Value = serde_json::from_str(&get_meta(&mut conn, "session_profile").unwrap().unwrap()).unwrap();
+        profile["profile"]["displayName"] = "Changed".into();
+        profile["doctor"]["specialty"] = "Changed".into();
+        profile["doctor"]["nationalId"] = "Changed".into();
+        profile["doctor"]["licenseNo"] = "Changed".into();
+        profile["doctor"]["phone"] = "Changed".into();
+        profile["doctor"]["email"] = "Changed".into();
+        set_meta(&mut conn, "session_profile", &profile.to_string()).unwrap();
+        assert_eq!(preview(&mut conn), provisional);
+        assert!(crate::finish_prescription_replay(&mut conn, &sign.outbox_id, 0, Err(crate::http::RequestError::Network("fixture transport unavailable".into()))));
+        assert!(has_pending_outbox(&mut conn, "issued").unwrap());
+        assert_eq!(outbox_rows(&mut conn).unwrap()[0]["payloadJson"], original_outbox[0]["payloadJson"]);
+        assert_eq!(preview(&mut conn), provisional);
+        assert!(cache_prescription(&mut conn, &json!({"id":"issued", "clinic_id":"clinic", "doctor_id":"doctor", "status":"signed"})).is_err());
+        assert!(!evict_local_cache_row(&mut conn, "prescriptions", "issued").unwrap());
+        assert!(!crate::finish_prescription_replay(&mut conn, &sign.outbox_id, 1, Err(crate::http::RequestError::Response("fixture mismatch".into()))));
+        assert!(has_pending_outbox(&mut conn, "issued").unwrap());
+        assert_eq!(outbox_rows(&mut conn).unwrap()[0]["payloadJson"], original_outbox[0]["payloadJson"]);
+        assert_eq!(preview(&mut conn), provisional);
+        let mut response = row.clone();
+        response["verification"] = json!({"code": "fixture-opaque-code", "status": "valid", "createdAt": snapshot.issued_at, "updatedAt": snapshot.issued_at});
+        let mut altered = payload.clone();
+        altered["issuedSnapshot"]["variables"][0][1] = "Altered".into();
+        assert!(apply_issued_snapshot_reconciliation(&mut conn, &altered, &response).is_err());
+        assert_eq!(preview(&mut conn), provisional);
+        apply_issued_snapshot_reconciliation(&mut conn, &payload, &response).unwrap();
+        apply_issued_snapshot_reconciliation(&mut conn, &payload, &response).unwrap();
+        assert!(!crate::finish_prescription_replay(&mut conn, &sign.outbox_id, 1, Ok(())));
+        let final_preview = preview(&mut conn);
+        assert!(!final_preview.provisional);
+        assert!(final_preview.qr_data_url.is_some());
+        assert_eq!(final_preview.doc_json, provisional.doc_json);
+        assert_eq!(final_preview.variables, provisional.variables);
+        assert_eq!(final_preview.medications, provisional.medications);
+        assert_eq!(final_preview.image_sources, provisional.image_sources);
+        assert_eq!(final_preview.margin_mm, provisional.margin_mm);
+        assert_eq!(final_preview.issued_at, provisional.issued_at);
+        let final_row = get_prescription(&mut conn, "issued").unwrap().unwrap();
+        let input = issued_snapshot_pdf_input(&mut conn, &final_row, "fixture.pdf").unwrap();
+        assert_eq!(input.values, snapshot.variables);
+        assert_eq!(input.medications, snapshot.medications);
+        assert!(matches!(input.mode, crate::pdf::RenderMode::Final { .. }));
+        assert!(render_prescription_pdf(&mut conn, "issued", &input).unwrap().starts_with(b"%PDF-"));
+        assert_eq!(issued_snapshot_from_row(&final_row).unwrap(), snapshot);
+        offline_void(&mut conn, "issued", "Fixture void reason", "actor").unwrap();
+        assert_eq!(issued_snapshot_from_row(&get_prescription(&mut conn, "issued").unwrap().unwrap()).unwrap(), snapshot);
+        assert_eq!(preview(&mut conn).variables, provisional.variables);
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn issued_snapshot_missing_inputs_and_assets_never_consume_number() {
+        let (path, mut conn) = fixture();
+        for statement in [
+            "DELETE FROM patients",
+            "DELETE FROM clinics",
+            "DELETE FROM template_versions",
+            "UPDATE template_versions SET doc_json = '{}'",
+            "UPDATE template_versions SET status = 'draft'",
+        ] {
+            exec(&mut conn, statement).unwrap();
+            let error = offline_sign(&mut conn, "issued", "device", "doctor", "actor").unwrap_err();
+            assert!(!error.contains("transaction"), "{error}");
+            assert_eq!(active_block_remaining(&mut conn, "device").unwrap(), 10);
+            assert!(outbox_rows(&mut conn).unwrap().is_empty());
+            seed_render_inputs(&mut conn, "actor", "doctor");
+        }
+        let mut document = crate::forms::parse_document(&crate::forms::default_document_json()).unwrap();
+        document.letterhead.logo_asset_id = Some("asset".into());
+        diesel::sql_query("UPDATE template_versions SET doc_json = ?")
+            .bind::<Text, _>(serde_json::to_string(&document).unwrap()).execute(&mut conn).unwrap();
+        assert!(offline_sign(&mut conn, "issued", "device", "doctor", "actor").is_err());
+        let bytes = crate::pdf::qr_png("issued-snapshot-asset-fixture").unwrap();
+        let hash = hex::encode(Sha256::digest(&bytes));
+        cache_asset_meta(&mut conn, &json!({
+            "id": "asset", "clinic_id": "clinic", "kind": "logo", "status": "ready", "sha256": hash,
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
+        })).unwrap();
+        upsert_pinned_assets(&mut conn, "template", &["asset".into()]).unwrap();
+        assert!(offline_sign(&mut conn, "issued", "device", "doctor", "actor").is_err());
+        assert_eq!(active_block_remaining(&mut conn, "device").unwrap(), 10);
+        let asset_path = path.with_extension("png");
+        std::fs::write(&asset_path, b"corrupt").unwrap();
+        diesel::sql_query("INSERT INTO asset_cache VALUES ('asset', ?, ?, ?, ?)")
+            .bind::<Text, _>(&hash).bind::<Integer, _>(bytes.len() as i32)
+            .bind::<Text, _>(asset_path.to_string_lossy().as_ref()).bind::<Text, _>(now()).execute(&mut conn).unwrap();
+        assert!(offline_sign(&mut conn, "issued", "device", "doctor", "actor").is_err());
+        assert_eq!(active_block_remaining(&mut conn, "device").unwrap(), 10);
+        assert!(outbox_rows(&mut conn).unwrap().is_empty());
+        std::fs::write(&asset_path, &bytes).unwrap();
+        offline_sign(&mut conn, "issued", "device", "doctor", "actor").unwrap();
+        assert_eq!(preview(&mut conn).image_sources.len(), 1);
+        let provisional = preview(&mut conn);
+        let row = get_prescription(&mut conn, "issued").unwrap().unwrap();
+        let pending = outbox_rows(&mut conn).unwrap();
+        let payload: Value = serde_json::from_str(pending[0]["payloadJson"].as_str().unwrap()).unwrap();
+        let mut response = row.clone();
+        response["verification"] = json!({"code":"fixture-asset-code", "status":"valid", "createdAt":row["signedAt"], "updatedAt":row["signedAt"]});
+        apply_issued_snapshot_reconciliation(&mut conn, &payload, &response).unwrap();
+        exec(&mut conn, "UPDATE assets SET sha256 = 'changed', status = 'deleted'").unwrap();
+        let final_preview = preview(&mut conn);
+        assert_eq!(final_preview.image_sources, provisional.image_sources);
+        assert_eq!(final_preview.doc_json, provisional.doc_json);
+        assert_eq!(final_preview.variables, provisional.variables);
+        assert!(!final_preview.provisional);
+        let final_row = get_prescription(&mut conn, "issued").unwrap().unwrap();
+        let input = issued_snapshot_pdf_input(&mut conn, &final_row, "asset-fixture.pdf").unwrap();
+        assert_eq!(input.assets, vec![("asset".to_owned(), bytes.clone())]);
+        assert!(render_prescription_pdf(&mut conn, "issued", &input).unwrap().starts_with(b"%PDF-"));
+        exec(&mut conn, "DELETE FROM template_version_assets").unwrap();
+        assert!(!evict_asset_cache(&mut conn, "asset").unwrap());
+        std::fs::write(&asset_path, b"changed").unwrap();
+        let row = get_prescription(&mut conn, "issued").unwrap().unwrap();
+        assert!(issued_snapshot_preview(&mut conn, &row).is_err());
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(asset_path).unwrap();
+    }
+
+    #[test]
+    fn issued_snapshot_outbox_failure_rolls_back_entire_issue() {
+        let (path, mut conn) = fixture();
+        exec(&mut conn, "CREATE TRIGGER reject_issue BEFORE INSERT ON outbox WHEN NEW.operation = 'sign_prescription' BEGIN SELECT RAISE(ABORT, 'fixture failure'); END").unwrap();
+        assert!(offline_sign(&mut conn, "issued", "device", "doctor", "actor").is_err());
+        let row = get_prescription(&mut conn, "issued").unwrap().unwrap();
+        assert_eq!(row["status"], "draft");
+        assert!(row["signedAt"].is_null());
+        assert!(row["issuedSnapshot"].is_null());
+        assert_eq!(active_block_remaining(&mut conn, "device").unwrap(), 10);
+        assert!(outbox_rows(&mut conn).unwrap().is_empty());
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn issued_snapshot_migration_preserves_legacy_pending_without_backfill() {
+        use diesel::connection::SimpleConnection;
+        let path = std::env::temp_dir().join(format!("issued-snapshot-legacy-{}.sqlite", Uuid::now_v7()));
+        let mut conn = SqliteConnection::establish(&path.to_string_lossy()).unwrap();
+        conn.batch_execute(&SCHEMA.replace("  issued_snapshot_json TEXT,\n", "").replace("  verification_json TEXT,\n", "")).unwrap();
+        seed_render_inputs(&mut conn, "actor", "doctor");
+        exec(&mut conn, "INSERT INTO prescriptions (id, patient_id, doctor_id, clinic_id, status, client_id, created_at, updated_at) VALUES ('legacy', 'patient', 'doctor', 'clinic', 'signed', 'legacy', '2026', '2026'), ('draft', 'patient', 'doctor', 'clinic', 'draft', 'draft', '2026', '2026'), ('pending', 'patient', 'doctor', 'clinic', 'signed', 'pending', '2026', '2026')").unwrap();
+        let pending = json!({"prescriptionId": "pending", "rxNumber": 9, "rxBlockId": "old-block", "signedAt": "2026-01-01T00:00:00Z", "createdBy": "actor"});
+        enqueue_outbox(&mut conn, "sign_prescription", "prescription", "pending", &pending).unwrap();
+        let original = outbox_rows(&mut conn).unwrap();
+        migrate_issued_snapshot(&mut conn).unwrap();
+        migrate_issued_snapshot(&mut conn).unwrap();
+        let scope = local_scope(&mut conn).unwrap().unwrap();
+        for id in ["legacy", "draft", "pending"] {
+            set_meta(&mut conn, &format!("prescription_scope:{id}"), &scope).unwrap();
+        }
+        drop(conn);
+        let mut conn = SqliteConnection::establish(&path.to_string_lossy()).unwrap();
+        assert_eq!(outbox_rows(&mut conn).unwrap(), original);
+        for id in ["legacy", "pending"] {
+            let row = get_prescription(&mut conn, id).unwrap().unwrap();
+            assert!(row["issuedSnapshot"].is_null());
+            assert_eq!(issued_snapshot_preview(&mut conn, &row).unwrap_err(), HISTORY_UNAVAILABLE);
+        }
+        assert!(matches!(crate::replay_prescription_outbox("sign_prescription", &pending).await, Err(crate::http::RequestError::Response(_))));
+        assert!(update_local_prescription(&mut conn, "draft", "Editable", "", "ambulatorio", None, "", "", "actor").is_ok());
+        assert_eq!(outbox_rows(&mut conn).unwrap()[0], original[0]);
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn issued_snapshot_supersede_preserves_original_and_freezes_replacement() {
+        let (path, mut conn) = fixture();
+        offline_sign(&mut conn, "issued", "device", "doctor", "actor").unwrap();
+        let original = issued_snapshot_from_row(&get_prescription(&mut conn, "issued").unwrap().unwrap()).unwrap();
+        let corrected = offline_supersede(&mut conn, "issued", "device", "doctor", "actor").unwrap();
+        let old = get_prescription(&mut conn, "issued").unwrap().unwrap();
+        assert_eq!(old["status"], "superseded");
+        assert_eq!(issued_snapshot_from_row(&old).unwrap(), original);
+        let replacement = get_prescription(&mut conn, &corrected.id).unwrap().unwrap();
+        let replacement_snapshot = issued_snapshot_from_row(&replacement).unwrap();
+        assert_eq!(replacement_snapshot.rx_number, original.rx_number + 1);
+        assert_eq!(replacement_snapshot.medications, original.medications);
+        assert_eq!(replacement_snapshot.variables.iter().find(|(key, _)| key == "prescription.warning_signs"), original.variables.iter().find(|(key, _)| key == "prescription.warning_signs"));
+        let actual_items = local_prescription_items(&mut conn, &corrected.id).unwrap();
+        assert_eq!(actual_items[1]["quantityNumber"], 2);
+        assert_eq!(issued_snapshot_preview(&mut conn, &replacement).unwrap().medications, original.medications);
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
+    }
 }

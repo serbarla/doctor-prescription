@@ -138,13 +138,101 @@ pub struct PrescriptionItem {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerificationCode {
     pub code: String,
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IssuedSnapshotAsset {
+    pub id: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IssuedSnapshot {
+    pub version: u32,
+    pub prescription_id: String,
+    pub client_id: String,
+    pub clinic_id: String,
+    pub patient_id: String,
+    pub patient_birth_date: Option<String>,
+    pub doctor_id: String,
+    pub actor_id: String,
+    pub device_id: String,
+    pub template_version_id: String,
+    pub rx_block_id: String,
+    pub rx_number: i32,
+    pub issued_at: String,
+    pub doc_json: String,
+    pub doc_sha256: String,
+    pub theme: Option<String>,
+    pub theme_sha256: String,
+    pub assets: Vec<IssuedSnapshotAsset>,
+    pub variables: Vec<(String, String)>,
+    pub medications: Vec<crate::forms::MedicationBlock>,
+}
+
+#[cfg(any(feature = "server", feature = "desktop"))]
+impl IssuedSnapshot {
+    pub fn validate_structure(&self) -> Result<(), String> {
+        use chrono::Datelike;
+        use sha2::{Digest, Sha256};
+        let invalid = || "El documento emitido está incompleto o no coincide con sus datos fijados.".to_owned();
+        let hash = |value: &str| format!("{:x}", Sha256::digest(value.as_bytes()));
+        if self.version != 1 || self.rx_number < 1
+            || [&self.prescription_id, &self.client_id, &self.clinic_id, &self.patient_id,
+                &self.doctor_id, &self.actor_id, &self.device_id, &self.template_version_id, &self.rx_block_id]
+                .iter().any(|value| value.trim().is_empty() || value.len() > 200)
+            || self.doc_sha256 != hash(&self.doc_json)
+            || self.theme_sha256 != hash(self.theme.as_deref().unwrap_or(""))
+            || self.variables.len() != crate::forms::TEMPLATE_VARIABLES.len()
+            || self.variables.iter().zip(crate::forms::TEMPLATE_VARIABLES).any(|((key, value), expected)| key != expected || value.len() > 16000)
+        { return Err(invalid()); }
+        let document = crate::forms::parse_document(&self.doc_json)?;
+        let mut ids: Vec<_> = document.images.into_iter().filter_map(|image| image.asset_id).collect();
+        ids.extend(document.letterhead.logo_asset_id);
+        ids.sort();
+        ids.dedup();
+        if self.assets.iter().map(|asset| &asset.id).ne(ids.iter())
+            || self.assets.iter().any(|asset| asset.sha256.len() != 64 || !asset.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        { return Err(invalid()); }
+        let instant = chrono::DateTime::parse_from_rfc3339(&self.issued_at).map_err(|_| invalid())?;
+        let local = instant.with_timezone(&chrono::FixedOffset::west_opt(5 * 3600).ok_or_else(invalid)?);
+        if ["patient.name", "doctor.name", "clinic.name"].iter().any(|key| {
+            self.variables.iter().find(|(name, _)| name == *key).is_none_or(|(_, value)| value.trim().is_empty() || value == "—")
+        }) { return Err(invalid()); }
+        let value = |key: &str| self.variables.iter().find(|(name, _)| name == key).map(|(_, value)| value.as_str()).unwrap_or("");
+        if value("prescription.number") != format!("{:06}", self.rx_number)
+            || value("prescription.date") != local.format("%d-%m-%Y").to_string()
+            || value("prescription.time") != local.format("%H:%M").to_string()
+        { return Err(invalid()); }
+        let (age, detail) = if let Some(raw) = self.patient_birth_date.as_deref() {
+            let birth = chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| invalid())?;
+            let on = local.date_naive();
+            if birth > on { return Err(invalid()); }
+            let mut years = on.year() - birth.year();
+            if (on.month(), on.day()) < (birth.month(), birth.day()) { years -= 1; }
+            let mut cursor = birth.with_year(on.year() - i32::from((on.month(), on.day()) < (birth.month(), birth.day()))).unwrap_or(birth);
+            let mut months = 0;
+            while let Some(next) = cursor.checked_add_months(chrono::Months::new(1)).filter(|next| *next <= on) {
+                cursor = next;
+                months += 1;
+            }
+            (format!("{years} años"), format!("{years}a {months}m {}d", (on - cursor).num_days()))
+        } else { ("—".to_owned(), "—".to_owned()) };
+        if value("patient.age") != age || value("patient.age_detail") != detail
+            || self.medications.iter().any(|item| item.name.trim().is_empty()
+                || [&item.name, &item.dose, &item.route, &item.frequency, &item.duration, &item.quantity, &item.notes].iter().any(|text| text.len() > 16000))
+        { return Err(invalid()); }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -177,6 +265,8 @@ pub struct Prescription {
     pub items: Vec<PrescriptionItem>,
     #[serde(default)]
     pub verification: Option<VerificationCode>,
+    #[serde(default)]
+    pub issued_snapshot: Option<IssuedSnapshot>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -215,7 +305,7 @@ pub async fn fetch_prescriptions(
     patient_id: &str,
     status: &str,
     date: &str,
-) -> Result<Vec<Prescription>, String> {
+) -> Result<Vec<Prescription>, crate::http::RequestError> {
     let mut params = Vec::new();
     if !patient_id.trim().is_empty() {
         params.push(format!("patientId={}", encode_query(patient_id)));
@@ -231,15 +321,15 @@ pub async fn fetch_prescriptions(
     } else {
         format!("/api/prescriptions?{}", params.join("&"))
     };
-    let value = get_json(&path).await?;
+    let value = crate::http::get_json_typed(&path).await?;
     let response: PrescriptionsResponse = serde_json::from_value(value)
-        .map_err(|_| "No se pudo leer el historial de recetas.".to_owned())?;
+        .map_err(|_| crate::http::RequestError::Response("No se pudo leer el historial de recetas.".to_owned()))?;
     Ok(response.prescriptions)
 }
 
-pub async fn fetch_prescription(id: &str) -> Result<Prescription, String> {
-    let value = get_json(&format!("/api/prescriptions/{id}")).await?;
-    serde_json::from_value(value).map_err(|_| "No se pudo leer la receta.".to_owned())
+pub async fn fetch_prescription(id: &str) -> Result<Prescription, crate::http::RequestError> {
+    let value = crate::http::get_json_typed(&format!("/api/prescriptions/{id}")).await?;
+    serde_json::from_value(value).map_err(|_| crate::http::RequestError::Response("No se pudo leer la receta.".to_owned()))
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -272,9 +362,9 @@ pub struct PrescriptionPreview {
     pub image_sources: Vec<PreviewImageSource>,
 }
 
-pub async fn fetch_prescription_preview(id: &str) -> Result<PrescriptionPreview, String> {
-    let value = get_json(&format!("/api/prescriptions/{id}/preview")).await?;
-    serde_json::from_value(value).map_err(|_| "No se pudo leer la vista previa.".to_owned())
+pub async fn fetch_prescription_preview(id: &str) -> Result<PrescriptionPreview, crate::http::RequestError> {
+    let value = crate::http::get_json_typed(&format!("/api/prescriptions/{id}/preview")).await?;
+    serde_json::from_value(value).map_err(|_| crate::http::RequestError::Response("No se pudo leer la vista previa.".to_owned()))
 }
 
 fn parse_optional_i32(value: &str) -> Option<i32> {
@@ -400,10 +490,11 @@ pub async fn reconcile_sign_prescription(
     id: &str,
     rx_number: i64,
     rx_block_id: &str,
+    issued_snapshot: &IssuedSnapshot,
 ) -> Result<Prescription, String> {
     let value = post_json(
         &format!("/api/prescriptions/{id}/sign"),
-        json!({ "acknowledgeWarnings": true, "rxNumber": rx_number, "rxBlockId": rx_block_id }),
+        json!({ "acknowledgeWarnings": true, "rxNumber": rx_number, "rxBlockId": rx_block_id, "issuedSnapshot": issued_snapshot }),
     )
     .await?;
     serde_json::from_value(value).map_err(|_| "No se pudo leer la receta firmada.".to_owned())
@@ -434,6 +525,7 @@ pub async fn reconcile_supersede_prescription(
     new_prescription_id: &str,
     rx_number: i64,
     rx_block_id: &str,
+    issued_snapshot: &IssuedSnapshot,
 ) -> Result<Prescription, String> {
     let value = post_json(
         &format!("/api/prescriptions/{id}/supersede"),
@@ -443,6 +535,7 @@ pub async fn reconcile_supersede_prescription(
             "acknowledgeWarnings": true,
             "rxNumber": rx_number,
             "rxBlockId": rx_block_id,
+            "issuedSnapshot": issued_snapshot,
         }),
     )
     .await?;

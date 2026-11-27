@@ -2231,14 +2231,14 @@ input[type="file"]:focus-visible {
 .ui-footer {
   background-color: var(--color-paper);
   border-top: 1px solid var(--color-hairline);
-  padding: var(--spacing-40) var(--spacing-24);
+  padding: var(--spacing-64) var(--spacing-24);
 }
 
 .ui-footer-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-16);
+  gap: var(--spacing-24);
   text-align: center;
 }
 
@@ -2248,6 +2248,28 @@ input[type="file"]:focus-visible {
   justify-content: center;
   gap: var(--spacing-24);
   flex-wrap: wrap;
+}
+
+.ui-footer-brand .ui-logo-word {
+  font-size: var(--text-heading);
+}
+
+.ui-footer-brand .ui-logo-mark {
+  width: 26px;
+  height: 26px;
+}
+
+.ui-footer-brand .ui-logo-glyph {
+  width: 16px;
+  height: 16px;
+}
+
+.ui-footer-rule {
+  width: 100%;
+  max-width: var(--content-copy);
+  border: 0;
+  border-top: 1px solid var(--color-hairline);
+  margin: 0;
 }
 
 .ui-footer-brand a:not(.ui-logo) {

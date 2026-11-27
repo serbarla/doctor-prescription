@@ -33,9 +33,10 @@ One band, centered column, symmetric — the same posture as every other region 
 | Order | Region | `id` / class | Band tone | Contents |
 |---|---|---|---|---|
 | — | Root | `<footer id="ui-footer">` | Paper `#ffffff`, top hairline 1px `#e5e7eb` | `div.ui-container` wrapper |
-| 1 | Inner | `.ui-footer-inner` | Paper | Centered column: brand row (when the surface has one), then legal row |
+| 1 | Inner | `.ui-footer-inner` | Paper | Centered column: brand row (when the surface has one), divider (same condition), then legal row |
 | 2 | Brand row | `.ui-footer-brand` | Paper | `LogoLockup` (`PersonaSanus` → `/`) +, on `/` only, the plain anchor `Verificar una receta` (`<a href="#verificar">`) |
-| 3 | Legal row | `.ui-footer-legal` | Paper | `TrustSecurityRow` (`/login` only), disclosure line (`/verify/:code` only), version line (desktop build only) |
+| 3 | Divider | `.ui-footer-rule` | Paper | Decorative `<hr aria-hidden="true">` hairline between the brand row and the legal row, rendered only on `/` and `/login` (the surfaces whose brand row exists) |
+| 4 | Legal row | `.ui-footer-legal` | Paper | `TrustSecurityRow` (`/login` only), disclosure line (`/verify/:code` only), version line (desktop build only) |
 
 No form, no input, no button, no icon-only control, no button-shaped link anywhere in the footer.
 
@@ -50,7 +51,7 @@ No form, no input, no button, no icon-only control, no button-shaped link anywhe
 
 Rules behind the matrix:
 
-- One `TrustSecurityRow` per page; the footer renders it only on the surface whose body renders none. `/` already carries two instances in the body (hero + mint band, plan step 11), `/verify/:code` carries one (step 12's card), `/login` carries none — so the footer adds the row on `/login` and nowhere else. It never renders a hand-rolled shield-plus-text variant: the primitive renders as defined or not at all.
+- One `TrustSecurityRow` per page; the footer renders it only on the surface whose body renders none. `/` already carries three instances in the body (hero + mint verify band + closing band, `Home.md` §3.2/§3.6/§3.7), `/verify/:code` carries one (step 12's card), `/login` carries none — so the footer adds the row on `/login` and nowhere else. It never renders a hand-rolled shield-plus-text variant: the primitive renders as defined or not at all.
 - The disclosure limit (doctor, date, prescription number, nothing else) appears exactly once per page. Home states it in its mint band (Home.md §3.5). The shipped `Verify` body states it nowhere — only the four status titles and the `Doctor` / `Fecha` / `No.` fields (`main.rs:1465-1519`) — and plan step 12 adds no sentence, so on `/verify/:code` the footer is that one instance. The future `Verify.md` spec must not repeat it.
 - The footer brand row is skipped on `/verify/:code`: step 12's `.ui-public-head` (`LogoLockup` + `PillBadge`) is that page's brand row and return path; a second wordmark at the bottom resolves nothing.
 - No footer link can target `/verify/:code`: the route requires a `code` param and "Only the path form is routed" (sitemap §1.1 `:74`, §5 `:188`). A code-entry page at `/verify` would need a sitemap and PRD change first. On `/login` the wordmark back to `/` is the verification path, and `/verify/:code` already holds its own code form.
@@ -136,7 +137,7 @@ Measured contrast (AA needs ≥ 4.5 for body, same method as Home.md §5.1): Ink
 
 | Element | Family | Weight | Size / line-height |
 |---|---|---|---|
-| Wordmark | `--font-mint` | 500 | 22px / 1.22 (Logo Lockup) |
+| Wordmark | `--font-mint` | 500 | 26px / 1.22 in the footer (scoped `.ui-footer-brand .ui-logo-word` override; the shared `LogoLockup` stays 22px elsewhere) |
 | Verify link | `--font-mint` | 400 | 14px / 1.5, Mist |
 | Law row | `--font-mint` | 500 | 14px / 1.4, Ink (`TrustSecurityRow` and `.ui-trust` contract) |
 | Disclosure line | `--font-mint` | 400 | 14px / 1.5, Mist |
@@ -146,9 +147,11 @@ Measured contrast (AA needs ≥ 4.5 for body, same method as Home.md §5.1): Ink
 
 ### 5.3 Geometry
 
-- Base unit 4px. Band padding-block 40px (`--spacing-40`; 24px below 640px wide), inline padding `--spacing-24`; inner `.ui-container` max-width 1200px, centered.
+- Base unit 4px. Band padding-block 64px (`--spacing-64`; 24px below 640px wide), inline padding `--spacing-24`; inner `.ui-container` max-width 1200px, centered.
 - Gap between the band and the region above: none beyond the hairline — the preceding band already carries its own 64–80px block padding.
-- Brand row: single centered row, `--spacing-24` gap between wordmark and verify link; wraps to a stacked column below 640px.
+- Inner column: `.ui-footer-inner` gap `--spacing-24` between the brand row, divider, and legal row.
+- Brand row: single centered row, `--spacing-24` gap between wordmark and verify link; wraps to a stacked column below 640px. The footer wordmark is 26px (the `--text-heading` mint ceiling) with a 26px mark and 16px glyph — a larger brand than the 22px header lockup.
+- Divider: `.ui-footer-rule` is a full-width hairline (`border-top: 1px solid var(--color-hairline)`), `max-width: var(--content-copy)`, no height, rendered only on `/` and `/login`.
 - Legal row: centered, max-width 560px (`--content-copy`, plan step 2), `--spacing-16` between the law row, disclosure line, and version line; inside the row the gap between glyph and text is the primitive's 12px.
 - Border radii: none — the band is a full-width edge-to-edge region; no card, no pill.
 - Elevation: flat. Top hairline and whitespace only; no drop shadow on any footer element (Design.md Elevation).
@@ -170,10 +173,11 @@ On `/login` only: the `TrustSecurityRow` primitive exactly as defined — `Shiel
 - Status: shipped. `Footer` at `persona-sanus/src/main.rs:1333` with `enum FooterSurface { Home, Auth, Verify }` at `main.rs:1326`; `footer#ui-footer.ui-footer` > `.ui-container` > `.ui-footer-inner` (`persona-sanus/assets/main.css:2124`, `.ui-footer-inner` `:2130`), composes `LogoLockup` (`persona-sanus/src/ui/brand.rs:13`) and `TrustSecurityRow` (`persona-sanus/src/ui/brand.rs:28`). No signal, fetch, or context is read.
 - Call sites (the §2.1 matrix is the only branch in the body): `Home` at `main.rs:1460` (`FooterSurface::Home`, last child of `#home-page`), `Verify` at `main.rs:1517` (`FooterSurface::Verify`, last child of `#verify-page`), and the signed-out branch of `AuthPage` at `main.rs:1980` (`FooterSurface::Auth`, inside `PageShell` — never the signed-in early return). Brand row on `Home`/`Auth` only; verify anchor `Verificar una receta` → `#verificar` on `Home` only; `TrustSecurityRow` on `Auth` only; disclosure line `Solo se muestran el médico, la fecha y el número de la receta.` on `Verify` only.
 - Version line is gated `#[cfg(feature = "desktop")]` at `main.rs:1334` — `Versión {env!("CARGO_PKG_VERSION")}`; the web bundle renders none. No layout change: `#[layout(Navbar)]` stays unclosed, the footer is the page's last child, and `Verify` remains before the layout marker (`main.rs:65-69`).
+- Poolmoney-inspired refinements: the band now uses 64px block padding, the footer wordmark renders at 26px with a 26px mark and 16px glyph (`.ui-footer-brand .ui-logo-*`), and a decorative `<hr class="ui-footer-rule" aria-hidden="true">` separates the brand row from the legal row on `/` and `/login` only. No new copy, link, or route; the §2.1 matrix and the hard rules are unchanged.
 - No new route, endpoint, crate, network font, CDN, icon package, or JS bridge. `/verify/:code` renders the footer on a route whose sitemap status cell may still lag the shipped code; footer copy is static and unaffected.
 - `context/screens/done/Home.md` §2 and `context/screens/done/Header.md` §4.2 already point at this file; no page-file edit is part of this change.
 - Verify, in order (shipped state): `cd persona-sanus && cargo check` clean, then `dx build --release --fullstack`, then
-  - `curl -s http://127.0.0.1:8080/` contains `id="ui-footer"` once, `href="#verificar"` twice (hero secondary + footer anchor), and still exactly one `ui-button--primary`; the law line appears exactly twice — hero and mint band — the footer adds none;
+  - `curl -s http://127.0.0.1:8080/` contains `id="ui-footer"` once, `href="#verificar"` twice (hero secondary + footer anchor), and still exactly one `ui-button--primary`; the law line appears three times — hero, mint verify band, and closing band — the footer adds none;
   - `curl -s http://127.0.0.1:8080/login` contains `Datos protegidos · Ley Orgánica de Protección de Datos Personales` exactly once, and it sits inside `ui-footer`;
   - `curl -s http://127.0.0.1:8080/verify/PS-TEST` contains the law line exactly once (the `Verificar otra receta` card) and `Solo se muestran el médico, la fecha y el número de la receta.` exactly once (the footer);
   - `curl -s http://127.0.0.1:8080/dashboard` contains no `ui-footer`;
